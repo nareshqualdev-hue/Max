@@ -1222,7 +1222,6 @@ $item['FreeGiftAutoAdded'] =
      * FreeGiftCoupon fields but carry their product id in
      * freeproductsid, so they are left untouched here.
      */
-
 public function removeAutoAddedFreeGifts(): int
 {
     $cart = Session::get(
@@ -1230,7 +1229,10 @@ public function removeAutoAddedFreeGifts(): int
         []
     );
 
-    if (!is_array($cart) || empty($cart)) {
+    if (
+        !is_array($cart) ||
+        empty($cart)
+    ) {
         return 0;
     }
 
@@ -1245,30 +1247,23 @@ public function removeAutoAddedFreeGifts(): int
         $isFreeSample =
             ($item['Is_Free_Sample'] ?? 'No') === 'Yes';
 
-        $sku = strtoupper(
-            trim(
-                (string) ($item['SKU'] ?? '')
-            )
-        );
+        $sku =
+            strtoupper(
+                trim(
+                    (string) (
+                        $item['SKU'] ?? ''
+                    )
+                )
+            );
 
         /*
-         * Automatic rule-generated Free Gift.
+         * Only gifts automatically added by
+         * the Free Gift rule engine are removable.
          *
-         * IMPORTANT:
-         * New Checkout automatic gifts contain:
-         *
-         * IS_Free_Gift = Yes
-         * FreeGiftAutoAdded = Yes
-         *
-         * They may also contain FreeGiftCoupon = Yes
-         * because of the legacy addGift array structure.
-         *
-         * Therefore FreeGiftCoupon MUST NOT be used
-         * to identify automatic gifts.
+         * Do NOT use FreeGiftCoupon here.
+         * Auto-added gifts may also contain the
+         * legacy FreeGiftCoupon = Yes flag.
          */
-        $isFreeGiftAutoAdded =
-            ($item['FreeGiftAutoAdded'] ?? 'No') === 'Yes';
-
         $isRuleAutoGift =
             $isFreeGift
             && !$isFreeSample
@@ -1276,15 +1271,23 @@ public function removeAutoAddedFreeGifts(): int
                 $sku,
                 'GIFT-'
             )
-            && $isFreeGiftAutoAdded;
+            && (
+                ($item['FreeGiftAutoAdded'] ?? 'No')
+                === 'Yes'
+            );
 
         if ($isRuleAutoGift) {
+
             $removed++;
+
             continue;
         }
 
         /*
-         * Coupon-selected Free Gift is preserved.
+         * Preserve:
+         * - normal products
+         * - Free Samples
+         * - coupon-generated Free Gifts
          */
         $newCart[] = $item;
     }
@@ -1310,7 +1313,9 @@ public function removeAutoAddedFreeGifts(): int
 
     return $removed;
 }
-    /**
+
+
+   /**
      * Resolve the legacy Free Gift rule for the current cart.
      *
      * This is a migration of the existing GetFreeCouponPopup()

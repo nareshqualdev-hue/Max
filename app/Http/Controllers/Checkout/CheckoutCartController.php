@@ -281,8 +281,11 @@ class CheckoutCartController extends Controller
 
     protected function resolveFreeGiftAfterCartChange(): array
     {
-        $cart =
-            $this->cartService->getCart();
+        $shoppingCart =
+    $this->cartService->getCart();
+
+$cart =
+    $shoppingCart['Cart'] ?? [];
 
         if (empty($cart)) {
             return [
@@ -346,6 +349,21 @@ class CheckoutCartController extends Controller
             &&
             $existingGiftCount > 0
         ) {
+			
+			Log::info(
+    'Free Gift Removal Attempt',
+    [
+        'decisionStatus' =>
+            $decision['status'] ?? null,
+
+        'existingGiftCount' =>
+            $existingGiftCount,
+
+        'cartBeforeRemoval' =>
+            $cart,
+    ]
+);
+
             $removedFreeGifts =
                 $this->freeGiftService
                     ->removeAutoAddedFreeGifts();
