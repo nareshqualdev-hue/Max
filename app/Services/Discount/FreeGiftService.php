@@ -762,8 +762,10 @@ class FreeGiftService
             '';
 
         $item['IS_Free_Gift'] =
-            'Yes';
+    'Yes';
 
+$item['FreeGiftAutoAdded'] =
+    'Yes';
         /*
          * Important:
          * Existing FreeGiftInsertProductValue()
