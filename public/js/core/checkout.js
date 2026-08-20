@@ -2906,13 +2906,13 @@ function handleCartResponse(response) {
      * Backend owns Free Gift add/remove.
      * Frontend only renders the result.
      */
-    handleFreeGiftResponse(
-        response
-    );
+appendFreeGiftCartItems(
+    uiResponse
+);
 
-    appendFreeGiftCartItems(
-        uiResponse
-    );
+handleFreeGiftResponse(
+    uiResponse
+);
 
 
     document.dispatchEvent(
@@ -3378,6 +3378,104 @@ function handleFreeGiftResponse(response) {
         response.free_gift ||
         null;
 
+    /*
+     * =====================================================
+     * FINAL BACKEND CART
+     * =====================================================
+     *
+     * The backend is the source of truth.
+     */
+    let cart = [];
+
+    if (
+        Array.isArray(response.cart)
+    ) {
+
+        cart = response.cart;
+
+    } else if (
+        response.cart &&
+        Array.isArray(response.cart.Cart)
+    ) {
+
+        cart = response.cart.Cart;
+    }
+
+    /*
+     * =====================================================
+     * CHECK FINAL BACKEND CART FOR FREE GIFT
+     * =====================================================
+     *
+     * If backend removed the automatic Free Gift,
+     * remove only the existing Free Gift UI rows.
+     *
+     * Normal products are untouched.
+     */
+    const hasFreeGift =
+        cart.some(function (item) {
+
+            return (
+                item &&
+                String(
+                    item.IS_Free_Gift ||
+                    item.Is_Free_Gift ||
+                    ''
+                ).toLowerCase() === 'yes'
+            );
+        });
+
+    if (!hasFreeGift) {
+
+        document
+            .querySelectorAll(
+                '.order-item-row[data-free-gift="1"]'
+            )
+            .forEach(function (row) {
+                row.remove();
+            });
+
+        document
+            .querySelectorAll(
+                '.cart-drawer-body .order-item-row[data-free-gift="1"]'
+            )
+            .forEach(function (row) {
+                row.remove();
+            });
+
+        updateCartItemCountAfterChange(
+            cart
+        );
+
+        /*
+         * Backend has already removed the Free Gift.
+         * Nothing else needs to be done here.
+         */
+        if (!freeGift) {
+            return;
+        }
+
+        const removedStatus =
+            String(
+                freeGift.status ||
+                ''
+            ).toLowerCase();
+
+        if (
+            removedStatus === 'no_rule' ||
+            removedStatus === 'none' ||
+            removedStatus === 'qualification_lost' ||
+            parseInt(
+                freeGift.removedFreeGiftCount || 0,
+                10
+            ) > 0
+        ) {
+            return;
+        }
+    }
+
+    /*
+     * No Free Gift response.
+     */
     if (!freeGift) {
         return;
     }
@@ -3389,34 +3487,14 @@ function handleFreeGiftResponse(response) {
         ).toLowerCase();
 
     /*
-     * No Free Gift rule.
+     * =====================================================
+     * FREE GIFT RULE LOST
+     * =====================================================
      */
     if (
-    status === 'no_rule' ||
-    status === 'none' ||
-    status === 'qualification_lost' ||
-    status === ''
-) {
-
-    /*
-     * Backend is the source of truth.
-     *
-     * When the cart falls below the active Free Gift rule,
-     * remove only the Free Gift rows from the UI.
-     *
-     * Normal cart products are untouched.
-     */
-    if (
+        status === 'no_rule' ||
+        status === 'none' ||
         status === 'qualification_lost'
-        ||
-        (
-            freeGift
-            &&
-            parseInt(
-                freeGift.removedFreeGiftCount || 0,
-                10
-            ) > 0
-        )
     ) {
 
         document
@@ -3427,10 +3505,6 @@ function handleFreeGiftResponse(response) {
                 row.remove();
             });
 
-        /*
-         * Remove the corresponding Free Gift row
-         * from the cart drawer as well.
-         */
         document
             .querySelectorAll(
                 '.cart-drawer-body .order-item-row[data-free-gift="1"]'
@@ -3438,61 +3512,25 @@ function handleFreeGiftResponse(response) {
             .forEach(function (row) {
                 row.remove();
             });
-    }
 
-    return;
-}
+        updateCartItemCountAfterChange(
+            cart
+        );
+
+        return;
+    }
 
     /*
      * =====================================================
      * AUTOMATIC SINGLE GIFT
      * =====================================================
+     *
+     * Backend has already handled the automatic gift.
      */
     if (
-    status === 'auto_add' ||
-    status === 'auto_added'
-	) {
-		return;
-	}{
-
-        const gift =
-            freeGift.gift ||
-            (
-                Array.isArray(
-                    freeGift.eligibleGifts
-                )
-                    ? freeGift.eligibleGifts[0]
-                    : null
-            );
-
-        if (!gift) {
-            return;
-        }
-
-        const productId =
-            parseInt(
-                gift.product_id ||
-                gift.ProductID ||
-                gift.id ||
-                0,
-                10
-            );
-
-        if (!productId) {
-            return;
-        }
-
-        /*
-         * Do NOT directly modify the DOM.
-         * Backend must add the Free Gift.
-         */
-        addFreeGiftFromCheckout(
-            productId,
-            gift.free_product_id ||
-            gift.FreeProductID ||
-            0
-        );
-
+        status === 'auto_add' ||
+        status === 'auto_added'
+    ) {
         return;
     }
 
