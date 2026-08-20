@@ -3389,47 +3389,50 @@ function handleFreeGiftResponse(response) {
         ).toLowerCase();
 
     /*
-     * No Free Gift rule.
-     */
-    if (
-    status === 'no_rule' ||
-    status === 'none' ||
-    status === 'qualification_lost' ||
-    status === ''
-) {
-
-    /*
+     * =====================================================
+     * NO FREE GIFT RULE
+     * =====================================================
+     *
      * Backend is the source of truth.
      *
-     * When the cart falls below the active Free Gift rule,
-     * remove only the Free Gift rows from the UI.
+     * When the cart no longer qualifies for a Free Gift,
+     * remove only Free Gift rows from the UI.
      *
-     * Normal cart products are untouched.
+     * Important:
+     * Backend can return:
+     *
+     * existingGiftCount = 0
+     * status = no_rule
+     *
+     * while the browser still has the previously rendered
+     * Free Gift row.
+     *
+     * Therefore no_rule itself is enough to clear the
+     * stale Free Gift UI.
      */
+
     if (
-        status === 'qualification_lost'
-        ||
-        (
-            freeGift
-            &&
-            parseInt(
-                freeGift.removedFreeGiftCount || 0,
-                10
-            ) > 0
-        )
+        status === 'no_rule' ||
+        status === 'none' ||
+        status === 'qualification_lost' ||
+        status === ''
     ) {
 
+        /*
+         * Remove Free Gift rows from main checkout list.
+         *
+         * Normal cart products are untouched.
+         */
         document
             .querySelectorAll(
-                '.order-item-row[data-free-gift="1"]'
+                '#checkout-cart-items .order-item-row[data-free-gift="1"]'
             )
             .forEach(function (row) {
                 row.remove();
             });
 
         /*
-         * Remove the corresponding Free Gift row
-         * from the cart drawer as well.
+         * Remove Free Gift rows from cart drawer.
          */
         document
             .querySelectorAll(
@@ -3438,60 +3441,20 @@ function handleFreeGiftResponse(response) {
             .forEach(function (row) {
                 row.remove();
             });
-    }
 
-    return;
-}
+        return;
+    }
 
     /*
      * =====================================================
      * AUTOMATIC SINGLE GIFT
      * =====================================================
      */
+
     if (
-    status === 'auto_add' ||
-    status === 'auto_added'
-	) {
-		return;
-	}{
-
-        const gift =
-            freeGift.gift ||
-            (
-                Array.isArray(
-                    freeGift.eligibleGifts
-                )
-                    ? freeGift.eligibleGifts[0]
-                    : null
-            );
-
-        if (!gift) {
-            return;
-        }
-
-        const productId =
-            parseInt(
-                gift.product_id ||
-                gift.ProductID ||
-                gift.id ||
-                0,
-                10
-            );
-
-        if (!productId) {
-            return;
-        }
-
-        /*
-         * Do NOT directly modify the DOM.
-         * Backend must add the Free Gift.
-         */
-        addFreeGiftFromCheckout(
-            productId,
-            gift.free_product_id ||
-            gift.FreeProductID ||
-            0
-        );
+        status === 'auto_add' ||
+        status === 'auto_added'
+    ) {
 
         return;
     }
@@ -3503,6 +3466,7 @@ function handleFreeGiftResponse(response) {
      *
      * Customer must choose from popup.
      */
+
     if (
         status === 'popup'
     ) {
