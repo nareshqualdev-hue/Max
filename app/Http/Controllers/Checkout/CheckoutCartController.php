@@ -326,7 +326,7 @@ class CheckoutCartController extends Controller
         return $freeGift;
     }
 
-    protected function resolveFreeGiftAfterCartChange(): array
+   protected function resolveFreeGiftAfterCartChange(): array
     {
         /*
          * CartService::getCart() returns the actual cart array.
@@ -478,86 +478,6 @@ class CheckoutCartController extends Controller
         }
 
         /*
-         * A rule-change re-resolve can produce the popup decision.
-         * Render the existing popup here as well because this
-         * decision replaces the original one.
-         */
-        if (
-            ($decision['status'] ?? '') === 'popup'
-            && !empty($decision['eligibleGifts'])
-        ) {
-            $popupGifts =
-                is_array($decision['eligibleGifts'])
-                    ? $decision['eligibleGifts']
-                    : [];
-
-            $popupGifts =
-                array_map(
-                    function ($gift) use ($decision) {
-                        $gift =
-                            is_array($gift)
-                                ? $gift
-                                : [];
-
-                        $gift['free_gift_products_id'] =
-                            (int) (
-                                $gift['free_gift_products_id']
-                                ?? $gift['freeproductsid']
-                                ?? $gift['FreeGiftRuleId']
-                                ?? $decision['rule']['id']
-                                ?? 0
-                            );
-
-                        $gift['freegift_add_count'] =
-                            (int) (
-                                $gift['freegift_add_count']
-                                ?? $decision['remainingCount']
-                                ?? 1
-                            );
-
-                        return $gift;
-                    },
-                    $popupGifts
-                );
-
-            $totalListItems =
-                (int) (
-                    $popupGifts[0]['freegift_add_count']
-                    ?? $decision['remainingCount']
-                    ?? 1
-                );
-
-            try {
-                $decision['popupHtml'] =
-                    view(
-                        'popup.freegift-popup'
-                    )
-                    ->with([
-                        'TotalListItems' =>
-                            $totalListItems,
-
-                        'Free_Gift_Res' =>
-                            $popupGifts,
-                    ])
-                    ->render();
-            } catch (\Throwable $e) {
-                Log::error(
-                    'Free Gift popup render failed after rule change',
-                    [
-                        'message' =>
-                            $e->getMessage(),
-
-                        'rule' =>
-                            $decision['rule']
-                            ?? null,
-                    ]
-                );
-
-                $decision['popupHtml'] = '';
-            }
-        }
-
-        /*
          * ---------------------------------------------------------
          * QUALIFICATION LOST
          * ---------------------------------------------------------
@@ -614,65 +534,168 @@ class CheckoutCartController extends Controller
          * POPUP HTML
          * ---------------------------------------------------------
          *
-         * The existing Free Gift popup Blade is the source of truth
-         * for the popup UI. New checkout must return the rendered
-         * popup HTML because checkout.js only opens the modal after
-         * receiving freeGift.popupHtml.
+         * Keep using the existing legacy popup Blade:
+         * popup.freegift-popup
          *
-         * Keep the existing popup Blade unchanged.
+         * The Blade requires:
+         * - products_id
+         * - product_name
+         * - sku
+         * - thumb_image
+         * - short_description
+         * - FoundSku
+         * - free_gift_products_id
+         * - freegift_add_count
+         *
+         * Do not change the Blade. Normalize the new service
+         * response into the exact structure expected by it.
          */
         if (
             ($decision['status'] ?? '') === 'popup'
             && !empty($decision['eligibleGifts'])
         ) {
+
             $popupGifts =
                 is_array($decision['eligibleGifts'])
                     ? $decision['eligibleGifts']
                     : [];
 
-            /*
-             * The old popup expects:
-             *
-             * - TotalListItems
-             * - Free_Gift_Res
-             *
-             * FreeGiftService already supplies the eligible gift
-             * records. Only normalize the legacy field names that
-             * the existing Blade expects.
-             */
             $popupGifts =
                 array_map(
                     function ($gift) use ($decision) {
+
                         $gift =
                             is_array($gift)
                                 ? $gift
                                 : [];
 
-                        if (
-                            !isset(
+                        /*
+                         * -------------------------------------------------
+                         * Product fields required by old popup
+                         * -------------------------------------------------
+                         */
+                        $productId =
+                            (int) (
+                                $gift['products_id']
+                                ?? $gift['product_id']
+                                ?? $gift['ProductID']
+                                ?? 0
+                            );
+
+                        $gift['products_id'] =
+                            $productId;
+
+                        $gift['product_name'] =
+                            $gift['product_name']
+                            ?? $gift['ProductName']
+                            ?? $gift['name']
+                            ?? '';
+
+                        $gift['sku'] =
+                            $gift['sku']
+                            ?? $gift['SKU']
+                            ?? '';
+
+                        $gift['short_description'] =
+                            $gift['short_description']
+                            ?? $gift['ProductName_description']
+                            ?? '';
+
+                        $gift['FoundSku'] =
+                            $gift['FoundSku']
+                            ?? 'No';
+
+                        /*
+                         * -------------------------------------------------
+                         * IMPORTANT:
+                         * free_gift_products_id is the Free Gift rule/
+                         * mapping id used by the old popup.
+                         *
+                         * Do NOT replace this with products_id.
+                         * -------------------------------------------------
+                         */
+                        $gift['free_gift_products_id'] =
+                            (int) (
                                 $gift['free_gift_products_id']
-                            )
+                                ?? $gift['freeproductsid']
+                                ?? $gift['FreeGiftRuleId']
+                                ?? $decision['rule']['id']
+                                ?? 0
+                            );
+
+                        $gift['freegift_add_count'] =
+                            (int) (
+                                $gift['freegift_add_count']
+                                ?? $decision['remainingCount']
+                                ?? 1
+                            );
+
+                        /*
+                         * -------------------------------------------------
+                         * Legacy popup requires thumb_image.
+                         *
+                         * First use an already-normalized thumb_image.
+                         * Then use image if supplied by the service.
+                         * Finally load the product image directly so the
+                         * old Blade never receives an undefined key.
+                         * -------------------------------------------------
+                         */
+                        $thumbImage =
+                            $gift['thumb_image']
+                            ?? null;
+
+                        if (
+                            empty($thumbImage)
+                            && !empty($gift['image'])
                         ) {
-                            $gift['free_gift_products_id'] =
-                                (int) (
-                                    $gift['freeproductsid']
-                                    ?? $gift['FreeGiftRuleId']
-                                    ?? $decision['rule']['id']
-                                    ?? 0
-                                );
+                            $thumbImage =
+                                config(
+                                    'global.PRD_THUMB_IMG_URL'
+                                ) .
+                                $gift['image'];
                         }
 
                         if (
-                            !isset(
-                                $gift['freegift_add_count']
-                            )
+                            empty($thumbImage)
+                            && $productId > 0
                         ) {
-                            $gift['freegift_add_count'] =
-                                (int) (
-                                    $decision['remainingCount']
-                                    ?? 1
+                            try {
+                                $productImage =
+                                    \App\Models\Products::where(
+                                        'products_id',
+                                        $productId
+                                    )->value('image');
+
+                                if (!empty($productImage)) {
+                                    $thumbImage =
+                                        config(
+                                            'global.PRD_THUMB_IMG_URL'
+                                        ) .
+                                        $productImage;
+                                }
+                            } catch (\Throwable $e) {
+                                Log::warning(
+                                    'Free Gift popup product image lookup failed',
+                                    [
+                                        'products_id' =>
+                                            $productId,
+
+                                        'message' =>
+                                            $e->getMessage(),
+                                    ]
+                                );
+                            }
+                        }
+
+                        if (empty($thumbImage)) {
+                            $thumbImage =
+                                config(
+                                    'global.NO_IMAGE_THUMB'
                                 );
                         }
+
+                        $gift['thumb_image'] =
+                            $thumbImage;
 
                         return $gift;
                     },
@@ -687,6 +710,7 @@ class CheckoutCartController extends Controller
                 );
 
             try {
+
                 $decision['popupHtml'] =
                     view(
                         'popup.freegift-popup'
@@ -699,7 +723,9 @@ class CheckoutCartController extends Controller
                             $popupGifts,
                     ])
                     ->render();
+
             } catch (\Throwable $e) {
+
                 Log::error(
                     'Free Gift popup render failed',
                     [
@@ -709,10 +735,14 @@ class CheckoutCartController extends Controller
                         'rule' =>
                             $decision['rule']
                             ?? null,
+
+                        'eligibleGifts' =>
+                            $popupGifts,
                     ]
                 );
 
-                $decision['popupHtml'] = '';
+                $decision['popupHtml'] =
+                    '';
             }
         }
 
@@ -809,6 +839,7 @@ class CheckoutCartController extends Controller
             !isset($decision['cart'])
             || !is_array($decision['cart'])
         ) {
+
             $finalCart =
                 $this->cartService
                     ->getCart();
@@ -865,5 +896,4 @@ class CheckoutCartController extends Controller
 
         return $decision;
     }
-
 }
