@@ -1,4 +1,3 @@
-@include('layouts.popups')
 <header class="checkout-header" role="banner">
   <div class="checkout-header-inner">
     <a href="https://www.maxaroma.com" class="checkout-logo" aria-label="MaxAroma — Return to home">
