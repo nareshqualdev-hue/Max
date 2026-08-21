@@ -762,16 +762,21 @@ class FreeGiftService
             '';
 
         $item['IS_Free_Gift'] =
-            'Yes';
+    'Yes';
 
+$item['FreeGiftAutoAdded'] =
+    'Yes';
         /*
          * Important:
          * Existing FreeGiftInsertProductValue()
          * sets FreeGiftCoupon = Yes.
          */
-        $item['FreeGiftCoupon'] =
-            'Yes';
-
+        /*
+         * Automatic rule-generated Free Gifts in the legacy
+         * checkout did not carry FreeGiftCoupon=Yes.
+         * Coupon-selected gifts use that flag, so keep the
+         * distinction intact.
+         */
         $item['image_forpopup'] =
             $this->popupImage(
                 $product
@@ -779,16 +784,6 @@ class FreeGiftService
 
         $item['freeproductsid'] =
             $freeProductsId;
-
-        /*
-         * Explicit marker for gifts automatically added by the
-         * checkout Free Gift rule flow.
-         *
-         * This prevents removal logic from depending on
-         * freeproductsid being 0.
-         */
-        $item['FreeGiftAutoAdded'] =
-            'Yes';
 
         $item['VendorSKU'] =
             $vendorSku;
@@ -828,6 +823,42 @@ class FreeGiftService
 
         $item['FinalSale'] =
             '';
+
+        /*
+         * ---------------------------------------------------------
+         * Legacy cart-array compatibility.
+         *
+         * Keep the same keys used by the old checkout Free Gift
+         * item so existing cart/checkout consumers receive the
+         * same shape. These are data fields only; no pricing logic
+         * is changed here.
+         * --------------------------------------------------------- */
+        $item['AutoItemWiseDiscout'] =
+            0;
+
+        $item['QuantityItemWiseDiscout'] =
+            0;
+
+        $item['CouponDisItemWiseDiscout'] =
+            0;
+
+        $item['RewardItemWiseDiscout'] =
+            0;
+
+        $item['BogoItemWiseDiscout'] =
+            0;
+
+        $item['BogoDiscountMessage'] =
+            '';
+
+        $item['BogoDiscountID'] =
+            0;
+
+        $item['ShowGiftChkOpt'] =
+            'No';
+
+        $item['ItemWiseCouponDiscount'] =
+            0;
 
         /*
          * ---------------------------------------------------------
@@ -884,22 +915,22 @@ class FreeGiftService
             $product->prod_image
             ?? '';
 
-        /*
-         * If product image already contains HTML,
-         * preserve it.
-         */
         if (
-            str_contains(
-                $image,
-                '<img'
-            )
+            trim((string) $image) === ''
+            && !empty($product->image)
         ) {
-            return $image;
+            $image = $product->image;
         }
+
+        $imageUrl =
+            $this->resolveProductImageUrl(
+                $image,
+                'large'
+            );
 
         return
             '<img src="'
-            . $image
+            . e($imageUrl)
             . '" border="0" width="125" alt="'
             . e(
                 $product->product_name
@@ -918,17 +949,21 @@ class FreeGiftService
             ?? '';
 
         if (
-            str_contains(
-                $image,
-                '<img'
-            )
+            trim((string) $image) === ''
+            && !empty($product->image)
         ) {
-            return $image;
+            $image = $product->image;
         }
+
+        $imageUrl =
+            $this->resolveProductImageUrl(
+                $image,
+                'thumb'
+            );
 
         return
             '<img src="'
-            . $image
+            . e($imageUrl)
             . '" border="0" width="75" alt="'
             . e(
                 $product->product_name
@@ -944,30 +979,202 @@ class FreeGiftService
     ): string {
         $image =
             $product->billing_image
-            ?? $product->prod_image
             ?? '';
 
+        if (
+            trim((string) $image) === ''
+            && !empty($product->prod_image)
+        ) {
+            $image = $product->prod_image;
+        }
+
+        if (
+            trim((string) $image) === ''
+            && !empty($product->image)
+        ) {
+            $image = $product->image;
+        }
+
+        $imageUrl =
+            $this->resolveProductImageUrl(
+                $image,
+                'large'
+            );
+
+        return
+            '<img src="'
+            . e($imageUrl)
+            . '" border="0" width="195" alt="'
+            . e(
+                $product->product_name
+            ) . '" title="' .
+            e(
+                $product->product_name
+            ) . '" />';
+    }
+
+    /**
+     * Resolve a Free Gift image to the same full Maxaroma image URL
+     * format used by the existing product/cart flow.
+     *
+     * - Keeps an existing absolute URL.
+     * - Extracts src from existing <img ...> values.
+     * - Uses the configured large/thumb image URL for a filename.
+     * - Uses the configured no-image URL when the image is missing
+     *   or the actual image file does not exist.
+     */
+    protected function resolveProductImageUrl(
+        $image,
+        string $size
+    ): string {
+        $image =
+            trim((string) $image);
+
+        /*
+         * If the database field contains an <img> tag,
+         * use its src value as the source.
+         */
         if (
             str_contains(
                 $image,
                 '<img'
             )
         ) {
+            if (
+                preg_match(
+                    '/<img[^>]+src=["\']([^"\']*)["\']/i',
+                    $image,
+                    $matches
+                )
+            ) {
+                $image =
+                    trim(
+                        (string) (
+                            $matches[1]
+                            ?? ''
+                        )
+                    );
+            } else {
+                $image = '';
+            }
+        }
+
+        /*
+         * Empty image -> existing configured No Image URL.
+         */
+        if ($image === '') {
+            return $size === 'thumb'
+                ? config(
+                    'global.NO_IMAGE_THUMB'
+                )
+                : config(
+                    'global.NO_IMAGE_LARGE'
+                );
+        }
+
+        /*
+         * Already an absolute URL.
+         */
+        if (
+            preg_match(
+                '#^https?://#i',
+                $image
+            )
+        ) {
             return $image;
         }
 
+        /*
+         * Protocol-relative URL.
+         */
+        if (
+            str_starts_with(
+                $image,
+                '//'
+            )
+        ) {
+            return
+                request()->getScheme()
+                . ':'
+                . $image;
+        }
+
+        /*
+         * Use the same configured image location as the
+         * existing Maxaroma product flow.
+         */
+        if (
+            $size === 'thumb'
+        ) {
+            $imagePath =
+                config(
+                    'global.PRD_THUMB_IMG_PATH'
+                );
+
+            $imageUrl =
+                config(
+                    'global.PRD_THUMB_IMG_URL'
+                );
+
+            $noImage =
+                config(
+                    'global.NO_IMAGE_THUMB'
+                );
+        } else {
+            $imagePath =
+                config(
+                    'global.PRD_LARGE_IMG_PATH'
+                );
+
+            $imageUrl =
+                config(
+                    'global.PRD_LARGE_IMG_URL'
+                );
+
+            $noImage =
+                config(
+                    'global.NO_IMAGE_LARGE'
+                );
+        }
+
+        /*
+         * Normalize accidental leading slash because the
+         * configured image URL already owns its path.
+         */
+        $filename =
+            ltrim(
+                stripslashes($image),
+                '/'
+            );
+
+        /*
+         * Only return the product image when the actual
+         * file exists. Otherwise return the configured
+         * full No Image URL.
+         */
+        if (
+            $imagePath
+            &&
+            file_exists(
+                rtrim(
+                    $imagePath,
+                    '/'
+                )
+                . '/'
+                . $filename
+            )
+        ) {
+            return
+                rtrim(
+                    (string) $imageUrl,
+                    '/'
+                )
+                . '/'
+                . $filename;
+        }
+
         return
-            '<img src="'
-            . $image
-            . '" border="0" width="195" alt="'
-            . e(
-                $product->product_name
-            )
-            . '" title="'
-            . e(
-                $product->product_name
-            )
-            . '" />';
+            $noImage;
     }
 
     /**
@@ -1006,74 +1213,161 @@ class FreeGiftService
      * - Do not remove normal cart products.
      * - Do not remove Free Samples.
      * - Do not change the existing FreeGiftCoupon behaviour.
-     * - Remove only the automatic rule-generated gift marked by
-     *   addProductToCart(): FreeGiftAutoAdded=Yes.
-     * - Do not depend on freeproductsid being 0 because the current
-     *   automatic add flow can pass a non-zero rule/product id.
+     * - Remove only the automatic rule-generated gift shape used
+     *   by addProductToCart(): IS_Free_Gift=Yes, GIFT-* SKU and
+     *   freeproductsid=0.
      *
-     * Coupon-generated Free Gifts are left untouched because they
-     * do not receive the FreeGiftAutoAdded marker.
+     * The current automatic gift response uses freeproductsid=0.
+     * Coupon-generated Free Gifts use the same GIFT-* /
+     * FreeGiftCoupon fields but carry their product id in
+     * freeproductsid, so they are left untouched here.
      */
-    public function removeAutoAddedFreeGifts(): int
-    {
-        $cart = Session::get(
-            'ShoppingCart.Cart',
-            []
-        );
+public function removeAutoAddedFreeGifts(): int
+{
+    $cart = Session::get(
+        'ShoppingCart.Cart',
+        []
+    );
 
-        if (!is_array($cart) || empty($cart)) {
-            return 0;
-        }
+    if (
+        !is_array($cart) ||
+        empty($cart)
+    ) {
+        return 0;
+    }
 
-        $removed = 0;
-        $newCart = [];
+    $removed = 0;
+    $newCart = [];
 
-        foreach ($cart as $item) {
-            $isFreeGift =
-                ($item['IS_Free_Gift'] ?? 'No') === 'Yes';
+    foreach ($cart as $item) {
 
-            $isFreeSample =
-                ($item['Is_Free_Sample'] ?? 'No') === 'Yes';
+        $isFreeGift =
+            ($item['IS_Free_Gift'] ?? 'No') === 'Yes';
 
-            $sku = strtoupper(
+        $isFreeSample =
+            ($item['Is_Free_Sample'] ?? 'No') === 'Yes';
+
+        $sku =
+            strtoupper(
                 trim(
-                    (string) ($item['SKU'] ?? '')
+                    (string) (
+                        $item['SKU'] ?? ''
+                    )
                 )
             );
 
-            $isRuleAutoGift =
-                $isFreeGift
-                && !$isFreeSample
-                && str_starts_with($sku, 'GIFT-')
-                && ($item['FreeGiftAutoAdded'] ?? 'No') === 'Yes';
+        $isAutomaticFlag =
+            ($item['FreeGiftAutoAdded'] ?? 'No') === 'Yes';
 
-            if ($isRuleAutoGift) {
-                $removed++;
-                continue;
-            }
-
-            $newCart[] = $item;
-        }
-
-        if ($removed > 0) {
-            Session::put(
-                'ShoppingCart.Cart',
-                array_values($newCart)
+        $freeProductsId =
+            (int) (
+                $item['freeproductsid']
+                ?? $item['FreeGiftRuleId']
+                ?? 0
             );
+
+        /*
+         * ---------------------------------------------------------
+         * AUTOMATIC FREE GIFT
+         * ---------------------------------------------------------
+         *
+         * New checkout gifts:
+         *   FreeGiftAutoAdded = Yes
+         *
+         * But an already existing gift can come from the
+         * previous checkout/session and may not have that flag.
+         *
+         * Therefore support BOTH:
+         *
+         * 1. Explicit FreeGiftAutoAdded flag
+         * 2. Legacy GIFT-* free-gift shape
+         *
+         * Free Samples are never removed here.
+         */
+        $isRuleAutoGift =
+            $isFreeGift
+            && !$isFreeSample
+            && str_starts_with(
+                $sku,
+                'GIFT-'
+            )
+            && (
+                $isAutomaticFlag
+                ||
+                $freeProductsId === 0
+            );
+
+        if ($isRuleAutoGift) {
+
+            $removed++;
 
             Log::info(
-                'Free Gift automatic removal',
+                'Free Gift automatic removal item',
                 [
-                    'removedCount' => $removed,
-                    'reason' => 'qualification_lost',
+                    'sku' =>
+                        $sku,
+
+                    'freeproductsid' =>
+                        $freeProductsId,
+
+                    'FreeGiftAutoAdded' =>
+                        $item['FreeGiftAutoAdded']
+                        ?? null,
+
+                    'FreeGiftCoupon' =>
+                        $item['FreeGiftCoupon']
+                        ?? null,
+
+                    'IS_Free_Gift' =>
+                        $item['IS_Free_Gift']
+                        ?? null,
                 ]
             );
+
+            continue;
         }
 
-        return $removed;
+        /*
+         * Preserve:
+         *
+         * - Normal products
+         * - Free Samples
+         * - Coupon-selected Free Gifts
+         * - Other non-rule cart items
+         */
+        $newCart[] = $item;
     }
 
-    /**
+    /*
+     * ---------------------------------------------------------
+     * SAVE FINAL CART
+     * ---------------------------------------------------------
+     */
+    if ($removed > 0) {
+
+        Session::put(
+            'ShoppingCart.Cart',
+            array_values(
+                $newCart
+            )
+        );
+
+        Log::info(
+            'Free Gift automatic removal',
+            [
+                'removedCount' =>
+                    $removed,
+
+                'reason' =>
+                    'rule_changed',
+            ]
+        );
+    }
+
+    return $removed;
+}
+
+   /**
      * Resolve the legacy Free Gift rule for the current cart.
      *
      * This is a migration of the existing GetFreeCouponPopup()
@@ -1610,7 +1904,7 @@ if ($eligibleProducts->isEmpty()) {
                         (int) $product->products_id,
                     'free_gift_products_id' =>
                         (int) (
-                            $selectedRule->free_gift_products_id
+                            $selectedRule->products_id
                             ?? 0
                         ),
                     'freegift_add_count' =>
@@ -1659,7 +1953,7 @@ if ($eligibleProducts->isEmpty()) {
 
         $selectedRuleId =
             (int) (
-                $selectedRule->free_gift_products_id
+                $selectedRule->products_id
                 ?? $selectedRule->id
                 ?? 0
             );
@@ -1858,6 +2152,7 @@ if ($eligibleProducts->isEmpty()) {
                 return (int) (
                     $item['freeproductsid']
                     ?? $item['FreeGiftRuleId']
+                    ?? $item['free_gift_products_id']
                     ?? 0
                 );
             }
