@@ -3414,105 +3414,104 @@ function handleFreeGiftResponse(response) {
 
     /*
      * =====================================================
+     * REMOVE OLD FREE GIFT FROM UI FIRST
+     * =====================================================
+     *
+     * IMPORTANT:
+     *
+     * Rule change:
+     *
+     * $400
+     * -> old Free Gift
+     *
+     * $450
+     * -> old Free Gift removed by backend
+     * -> new rule popup
+     *
+     * Backend can return:
+     *
+     * status = popup
+     * removedFreeGiftCount = 1
+     *
+     * Therefore we MUST remove the old UI gift
+     * BEFORE opening the popup.
+     */
+    if (
+        removedFreeGiftCount > 0
+    ) {
+
+        document
+            .querySelectorAll(
+                '.order-item-row[data-free-gift="1"]'
+            )
+            .forEach(function (row) {
+
+                row.remove();
+            });
+
+
+        document
+            .querySelectorAll(
+                '.cart-drawer-body .order-item-row[data-free-gift="1"]'
+            )
+            .forEach(function (row) {
+
+                row.remove();
+            });
+
+
+        if (
+            typeof updateCartItemCountAfterChange ===
+            'function'
+        ) {
+
+            updateCartItemCountAfterChange(
+                cart
+            );
+        }
+    }
+
+
+    /*
+     * =====================================================
      * MULTIPLE FREE GIFT POPUP
      * =====================================================
      *
      * IMPORTANT:
      *
-     * When changing from one Free Gift rule to another,
-     * backend can remove the old Free Gift first.
-     *
-     * Example:
-     *
-     * $400
-     * -> 280-400 Free Gift already exists
-     *
-     * $450
-     * -> old Free Gift removed
-     * -> 401-500 rule matched
-     * -> popup required
-     *
-     * In this situation:
-     *
-     * removedFreeGiftCount > 0
-     *
-     * AND
-     *
-     * status === popup
-     *
-     * The popup MUST win.
-     *
-     * Therefore popup handling MUST happen
-     * BEFORE the generic removed-gift return.
-     * =====================================================
+     * This now happens AFTER old Free Gift UI removal.
      */
     if (
-    status === 'popup' &&
-    freeGift
-) {
+        status === 'popup' &&
+        freeGift
+    ) {
 
-    /*
-     * Backend has removed the previous Free Gift
-     * because the customer moved into a new rule.
-     *
-     * Remove the old Free Gift from UI first.
-     */
-    if (removedFreeGiftCount > 0) {
-
-        document
-            .querySelectorAll(
-                '.order-item-row[data-free-gift="1"]'
-            )
-            .forEach(function (row) {
-
-                row.remove();
-            });
-
-
-        document
-            .querySelectorAll(
-                '.cart-drawer-body .order-item-row[data-free-gift="1"]'
-            )
-            .forEach(function (row) {
-
-                row.remove();
-            });
-
-
-        updateCartItemCountAfterChange(
-            cart
+        openFreeGiftPopup(
+            freeGift
         );
+
+        return;
     }
 
 
     /*
-     * Now open the popup for the NEW rule.
-     */
-    openFreeGiftPopup(
-        freeGift
-    );
-
-    return;
-}
-
-    /*
      * =====================================================
-     * FREE GIFT REMOVED
+     * FREE GIFT REMOVED / NO RULE
      * =====================================================
-     *
-     * Only remove the UI Free Gift when backend
-     * actually says there is no popup to show.
      */
     const freeGiftRemoved =
         status === 'removed' ||
         status === 'no_rule' ||
         status === 'none' ||
-        status === 'qualification_lost' ||
-        removedFreeGiftCount > 0;
+        status === 'qualification_lost';
 
 
     if (freeGiftRemoved) {
 
+        /*
+         * In case backend says removed but did not provide
+         * removedFreeGiftCount, still clean stale UI.
+         */
         document
             .querySelectorAll(
                 '.order-item-row[data-free-gift="1"]'
@@ -3533,10 +3532,15 @@ function handleFreeGiftResponse(response) {
             });
 
 
-        updateCartItemCountAfterChange(
-            cart
-        );
+        if (
+            typeof updateCartItemCountAfterChange ===
+            'function'
+        ) {
 
+            updateCartItemCountAfterChange(
+                cart
+            );
+        }
 
         return;
     }
@@ -3554,69 +3558,8 @@ function handleFreeGiftResponse(response) {
 
     /*
      * =====================================================
-     * CHECK FINAL CART
-     * =====================================================
-     */
-    const hasFreeGift =
-        cart.some(function (item) {
-
-            return (
-                item &&
-                String(
-                    item.IS_Free_Gift ||
-                    item.Is_Free_Gift ||
-                    ''
-                ).toLowerCase() === 'yes'
-            );
-        });
-
-
-    /*
-     * =====================================================
-     * NO FREE GIFT IN BACKEND
-     * =====================================================
-     *
-     * If there is no Free Gift and backend did not
-     * request a popup, remove stale UI Free Gift.
-     */
-    if (!hasFreeGift) {
-
-        document
-            .querySelectorAll(
-                '.order-item-row[data-free-gift="1"]'
-            )
-            .forEach(function (row) {
-
-                row.remove();
-            });
-
-
-        document
-            .querySelectorAll(
-                '.cart-drawer-body .order-item-row[data-free-gift="1"]'
-            )
-            .forEach(function (row) {
-
-                row.remove();
-            });
-
-
-        updateCartItemCountAfterChange(
-            cart
-        );
-
-        return;
-    }
-
-
-    /*
-     * =====================================================
      * AUTOMATIC SINGLE GIFT
      * =====================================================
-     *
-     * Backend has already added the Free Gift.
-     *
-     * appendFreeGiftCartItems() has already rendered it.
      */
     if (
         status === 'auto_add' ||

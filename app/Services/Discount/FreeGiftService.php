@@ -1247,6 +1247,14 @@ public function removeAutoAddedFreeGifts(): int
         $isFreeSample =
             ($item['Is_Free_Sample'] ?? 'No') === 'Yes';
 
+        if (
+            !$isFreeGift ||
+            $isFreeSample
+        ) {
+            $newCart[] = $item;
+            continue;
+        }
+
         $sku =
             strtoupper(
                 trim(
@@ -1256,59 +1264,58 @@ public function removeAutoAddedFreeGifts(): int
                 )
             );
 
-        $isAutomaticFlag =
-            ($item['FreeGiftAutoAdded'] ?? 'No') === 'Yes';
-
-        $freeProductsId =
-            (int) (
-                $item['freeproductsid']
-                ?? $item['FreeGiftRuleId']
-                ?? 0
-            );
+        /*
+         * Coupon-selected Free Gift must stay.
+         */
+        $isCouponGift =
+            ($item['FreeGiftCoupon'] ?? 'No') === 'Yes';
 
         /*
-         * ---------------------------------------------------------
-         * AUTOMATIC FREE GIFT
-         * ---------------------------------------------------------
+         * Automatic / rule-based Free Gift.
          *
-         * New checkout gifts:
+         * Both new checkout and legacy checkout are supported:
+         *
+         * New:
          *   FreeGiftAutoAdded = Yes
          *
-         * But an already existing gift can come from the
-         * previous checkout/session and may not have that flag.
+         * Legacy:
+         *   IS_Free_Gift = Yes
+         *   SKU starts with GIFT-
+         *   FreeGiftCoupon != Yes
          *
-         * Therefore support BOTH:
-         *
-         * 1. Explicit FreeGiftAutoAdded flag
-         * 2. Legacy GIFT-* free-gift shape
-         *
-         * Free Samples are never removed here.
+         * We intentionally do NOT require freeproductsid = 0.
+         * Legacy rule gifts can have a rule id stored there.
          */
         $isRuleAutoGift =
-            $isFreeGift
-            && !$isFreeSample
-            && str_starts_with(
+            !$isCouponGift
+            &&
+            str_starts_with(
                 $sku,
                 'GIFT-'
-            )
-            && (
-                $isAutomaticFlag
-                ||
-                $freeProductsId === 0
             );
 
-        if ($isRuleAutoGift) {
+        if (
+            $isRuleAutoGift
+        ) {
 
             $removed++;
 
             Log::info(
                 'Free Gift automatic removal item',
                 [
+                    'ProductID' =>
+                        $item['ProductID'] ?? null,
+
                     'sku' =>
                         $sku,
 
                     'freeproductsid' =>
-                        $freeProductsId,
+                        $item['freeproductsid']
+                        ?? null,
+
+                    'FreeGiftRuleId' =>
+                        $item['FreeGiftRuleId']
+                        ?? null,
 
                     'FreeGiftAutoAdded' =>
                         $item['FreeGiftAutoAdded']
@@ -1328,28 +1335,16 @@ public function removeAutoAddedFreeGifts(): int
         }
 
         /*
-         * Preserve:
-         *
-         * - Normal products
-         * - Free Samples
-         * - Coupon-selected Free Gifts
-         * - Other non-rule cart items
+         * Preserve every other cart item.
          */
         $newCart[] = $item;
     }
 
-    /*
-     * ---------------------------------------------------------
-     * SAVE FINAL CART
-     * ---------------------------------------------------------
-     */
     if ($removed > 0) {
 
         Session::put(
             'ShoppingCart.Cart',
-            array_values(
-                $newCart
-            )
+            array_values($newCart)
         );
 
         Log::info(
@@ -1365,8 +1360,7 @@ public function removeAutoAddedFreeGifts(): int
     }
 
     return $removed;
-}
-
+} 
    /**
      * Resolve the legacy Free Gift rule for the current cart.
      *
