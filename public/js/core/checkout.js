@@ -3947,8 +3947,6 @@ function removeItem(btn) {
              * =====================================================
              * EMPTY CART
              * =====================================================
-             *
-             * Last normal cart item removed.
              */
             if (!cart.length) {
 
@@ -3960,13 +3958,8 @@ function removeItem(btn) {
 
             /*
              * =====================================================
-             * REMOVE THE DELETED PRODUCT FROM BOTH UI LOCATIONS
+             * REMOVE DELETED PRODUCT FROM BOTH UI LOCATIONS
              * =====================================================
-             *
-             * The same product can exist in:
-             *
-             * 1. Order Summary
-             * 2. Cart Drawer
              */
             document
                 .querySelectorAll(
@@ -3993,36 +3986,32 @@ function removeItem(btn) {
              * =====================================================
              * RE-SYNC ORDER SUMMARY
              * =====================================================
-             *
-             * Example:
-             *
-             * Cart:
-             * A
-             * B
-             * C
-             *
-             * Summary:
-             * A
-             * B
-             * +1 More Items
-             *
-             * Remove A
-             *
-             * Backend:
-             * B
-             * C
-             *
-             * Summary becomes:
-             * B
-             * C
-             *
-             * C automatically takes A's old position.
              */
             setTimeout(function () {
 
                 syncCheckoutSummaryAfterCartChange(
                     cart
                 );
+
+                /*
+                 * =================================================
+                 * UPDATE SUBTOTAL FROM FINAL BACKEND CART
+                 * =================================================
+                 *
+                 * IMPORTANT:
+                 *
+                 * Do NOT call:
+                 *
+                 * updateTotals(response.checkout)
+                 *
+                 * here.
+                 *
+                 * The cart response is the source of truth
+                 * after remove.
+                 */
+                updateCheckoutDrawerSubtotal({
+                    cart: cart
+                });
 
             }, 180);
 
@@ -4261,6 +4250,177 @@ function syncCheckoutSummaryAfterCartChange(cart) {
         cart
     );
 }
+function updateCheckoutDrawerSubtotal(response) {
+
+    if (!response) {
+        return;
+    }
+
+    /*
+     * =====================================================
+     * FINAL BACKEND CART
+     * =====================================================
+     */
+    let cart = [];
+
+    if (
+        Array.isArray(response.cart)
+    ) {
+
+        cart =
+            response.cart;
+
+    } else if (
+        response.cart &&
+        Array.isArray(
+            response.cart.Cart
+        )
+    ) {
+
+        cart =
+            response.cart.Cart;
+    }
+
+    /*
+     * =====================================================
+     * CALCULATE SUBTOTAL
+     * =====================================================
+     *
+     * IMPORTANT:
+     *
+     * Use Unit Price × Quantity.
+     *
+     * Do NOT use TotPrice here because TotPrice can be
+     * stale in the cart response immediately after remove.
+     *
+     * Free Gift / Free Sample are excluded.
+     */
+    let subtotal = 0;
+
+    cart.forEach(function (item) {
+
+        if (!item) {
+            return;
+        }
+
+        const isFreeGift =
+            String(
+                item.IS_Free_Gift ??
+                item.Is_Free_Gift ??
+                ''
+            ).toLowerCase() === 'yes';
+
+        const isFreeSample =
+            String(
+                item.IS_Free_Sample ??
+                item.Is_Free_Sample ??
+                ''
+            ).toLowerCase() === 'yes';
+
+        if (
+            isFreeGift ||
+            isFreeSample
+        ) {
+            return;
+        }
+
+        const unitPrice =
+            parseFloat(
+                String(
+                    item.Price ??
+                    item.ItemPrice ??
+                    item.final_price ??
+                    item.price ??
+                    0
+                ).replace(
+                    /[^0-9.-]/g,
+                    ''
+                )
+            ) || 0;
+
+        const quantity =
+            parseInt(
+                item.Qty ??
+                item.qty ??
+                item.quantity ??
+                1,
+                10
+            ) || 1;
+
+        subtotal +=
+            unitPrice * quantity;
+    });
+
+    /*
+     * =====================================================
+     * FORMAT
+     * =====================================================
+     */
+    const formattedSubtotal =
+        '$' +
+        subtotal.toFixed(2);
+
+    /*
+     * =====================================================
+     * MAIN CHECKOUT SUMMARY SUBTOTAL
+     * =====================================================
+     */
+    $('#summary-subtotal-value')
+        .text(
+            formattedSubtotal
+        )
+        .attr(
+            'data-value',
+            subtotal
+        );
+
+    $('#checkout-subtotal')
+        .text(
+            formattedSubtotal
+        )
+        .attr(
+            'data-value',
+            subtotal
+        );
+
+    /*
+     * =====================================================
+     * CART DRAWER SUBTOTAL
+     * =====================================================
+     *
+     * Exact selector from checkout-page.blade.php:
+     *
+     * .cart-drawer-foot-total
+     *      <span>Subtotal</span>
+     *      <strong>$20.00</strong>
+     *
+     * So update the STRONG directly.
+     */
+    const drawerSubtotal =
+        document.querySelector(
+            '.cart-drawer-foot-total strong'
+        );
+
+    if (drawerSubtotal) {
+
+        drawerSubtotal.textContent =
+            formattedSubtotal;
+    }
+
+    /*
+     * =====================================================
+     * DEBUG
+     * =====================================================
+     */
+    console.log(
+        'Checkout drawer subtotal updated:',
+        {
+            itemCount: cart.length,
+            subtotal: subtotal
+        }
+    );
+}
+
 function updateCartItemCountAfterChange(cart) {
 
     if (!Array.isArray(cart)) {
