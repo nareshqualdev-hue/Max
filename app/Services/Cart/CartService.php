@@ -411,60 +411,143 @@ class CartService
     }
 
     /**
-     * Remove cart item by session cart index.
+     * Remove cart item.
+     *
+     * The frontend sends ProductID as cart_id (for example 33032).
+     * ShoppingCart.Cart contains the actual cart item array, while
+     * CartSessionService::getCart() returns the complete ShoppingCart
+     * wrapper. Therefore removal must operate on getItems() and save
+     * only ShoppingCart.Cart.
      */
     public function remove(int $cartId): array
     {
-        $cart = $this->cartSessionService->getCart();
+        $cart = $this->cartSessionService->getItems();
 
+        $removeIndex = null;
+
+        /*
+         * Primary new-checkout contract:
+         * cart_id is ProductID for a normal cart item.
+         */
+        foreach ($cart as $index => $item) {
+
+            if (!is_array($item)) {
+                continue;
+            }
+
+            if (
+                (int) ($item['ProductID'] ?? 0)
+                !== $cartId
+            ) {
+                continue;
+            }
+
+            /*
+             * Free Gift / Free Sample must not be removed through
+             * the normal product-remove fallback.
+             */
+            if (
+                ($item['IS_Free_Gift'] ?? 'No') === 'Yes'
+                ||
+                ($item['Is_Free_Sample'] ?? 'No') === 'Yes'
+            ) {
+                continue;
+            }
+
+            $removeIndex = $index;
+            break;
+        }
+
+        /*
+         * Backward compatibility:
+         * if the caller sends the actual session-cart array index,
+         * allow that as well, but never use it to remove a special
+         * Free Gift / Free Sample line.
+         */
         if (
-            !isset($cart[$cartId])
-            || !is_array($cart[$cartId])
+            $removeIndex === null
+            && isset($cart[$cartId])
+            && is_array($cart[$cartId])
         ) {
+            $candidate = $cart[$cartId];
+
+            if (
+                ($candidate['IS_Free_Gift'] ?? 'No') !== 'Yes'
+                &&
+                ($candidate['Is_Free_Sample'] ?? 'No') !== 'Yes'
+            ) {
+                $removeIndex = $cartId;
+            }
+        }
+
+        if ($removeIndex === null) {
             return [
                 'success' => false,
                 'message' => 'Cart item not found.',
+                'cart' => $cart,
             ];
         }
 
-        $removed = $cart[$cartId];
+        $removed = $cart[$removeIndex];
 
         if (
-            isset($removed['IsYotpoFreeProduct'])
-            && $removed['IsYotpoFreeProduct'] === 'Yes'
+            ($removed['IsYotpoFreeProduct'] ?? 'No') === 'Yes'
         ) {
             Session::forget(
                 'ShoppingCart.YotpoFreeGiftCoupon'
             );
         }
 
-        unset($cart[$cartId]);
+        unset($cart[$removeIndex]);
+
+        /*
+         * Re-index the actual ShoppingCart.Cart array.
+         */
         $cart = array_values($cart);
 
+        /*
+         * Preserve the existing legacy Yotpo-only-cart behavior.
+         */
         if (
             count($cart) === 1
-            && isset($cart[0]['IsYotpoFreeProduct'])
-            && $cart[0]['IsYotpoFreeProduct'] === 'Yes'
+            &&
+            ($cart[0]['IsYotpoFreeProduct'] ?? 'No') === 'Yes'
         ) {
             $cart = [];
+
+            Session::forget(
+                'ShoppingCart.YotpoFreeGiftCoupon'
+            );
         }
 
-        $this->cartSessionService->putCart($cart);
+        /*
+         * IMPORTANT:
+         * Do NOT call putCart($cart) here because putCart() stores
+         * the complete ShoppingCart wrapper. We only changed the
+         * ShoppingCart.Cart collection.
+         */
+        $this->cartSessionService->put(
+            'Cart',
+            $cart
+        );
+
+        /*
+         * Always recalculate subtotal after a successful removal,
+         * including when the cart becomes empty.
+         */
         $this->cartCalculatorService->calculateSubTotal();
 
         /*
-         * Removing an item changes all cart-dependent discounts
-         * and the Gift Certificate applicable amount.
+         * Removing an item changes cart-dependent discounts and
+         * Gift Certificate applicability.
          */
-        if (!empty($cart)) {
-            $this->recalculateAfterCartMutation();
-        }
+        $this->recalculateAfterCartMutation();
 
         return [
             'success' => true,
             'message' => 'Item removed successfully.',
             'cart' =>
-                $this->cartSessionService->getCart(),
+                $this->cartSessionService->getItems(),
             'removed' => $removed,
         ];
     }
