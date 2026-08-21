@@ -209,7 +209,7 @@
 @extends('layouts.app')
 @section('content')
 <div class="checkout-page" id="checkout-app">
-  @include('checkout-new.checkout-header')
+  @include('newcheckout.checkout-header')
   <main class="checkout-main" role="main" id="main-content">
 
     <!-- ── LEFT COLUMN ──────────────────────────────────────── -->

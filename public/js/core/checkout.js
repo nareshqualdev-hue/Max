@@ -3671,19 +3671,7 @@ function addFreeGiftFromCheckout(
 }
 
 function openFreeGiftPopup(freeGift) {
-
-    freeGift =
-        freeGift || {};
-
-    /*
-     * Existing Free Gift popup.
-     *
-     * The popup is already rendered by the existing
-     * freegift-popup.blade.php.
-     *
-     * We only need to populate the existing popup
-     * data and OPEN it.
-     */
+    freeGift = freeGift || {};
 
     const popup =
         document.getElementById(
@@ -3691,85 +3679,34 @@ function openFreeGiftPopup(freeGift) {
         );
 
     if (!popup) {
-
         console.error(
             'Free Gift popup #FreeGiftViewPopup not found.'
         );
-
         return;
     }
 
-    /*
-     * Existing popup expects these hidden fields.
-     *
-     * Keep existing popup HTML untouched.
-     */
-    const gifts =
-        Array.isArray(
-            freeGift.eligibleGifts
-        )
-            ? freeGift.eligibleGifts
-            : [];
+    const popupHtml =
+        freeGift.popupHtml || '';
 
-    /*
-     * If backend returned the eligible gifts
-     * but popup HTML was not rendered with them,
-     * log the response so we can trace it.
-     */
-    console.log(
-        'Free Gift popup opening:',
-        freeGift
-    );
+    if (!popupHtml) {
+        console.error(
+            'Free Gift popup HTML is empty.',
+            freeGift
+        );
+        return;
+    }
 
-    /*
-     * =====================================================
-     * OPEN EXISTING BOOTSTRAP MODAL
-     * =====================================================
-     */
+    $('#FreeGiftViewPopup')
+        .html(popupHtml);
+
     if (
-        typeof $ !== 'undefined' &&
         typeof $.fn.modal === 'function'
     ) {
-
         $('#FreeGiftViewPopup')
             .modal('show');
-
-        return;
     }
-
-    /*
-     * Bootstrap 5 fallback.
-     */
-    if (
-        typeof bootstrap !== 'undefined' &&
-        bootstrap.Modal
-    ) {
-
-        const modal =
-            bootstrap.Modal.getOrCreateInstance(
-                popup
-            );
-
-        modal.show();
-
-        return;
-    }
-
-    /*
-     * Final fallback.
-     */
-    popup.style.display =
-        'block';
-
-    popup.classList.add(
-        'show'
-    );
-
-    popup.setAttribute(
-        'aria-hidden',
-        'false'
-    );
 }
+
 $(document).off(
     'click.maxaromaFreeGift',
     '#btnfreegift'
