@@ -3555,12 +3555,16 @@ function handleFreeGiftResponse(response) {
      * MULTIPLE GIFTS
      * =====================================================
      */
-    if (status === 'popup') {
+    if (
+    status === 'popup'
+	) {
 
-        openFreeGiftPopup(
-            freeGift
-        );
-    }
+		openFreeGiftPopup(
+			freeGift
+		);
+
+		return;
+	}
 }
 
 function addFreeGiftFromCheckout(
@@ -3672,70 +3676,98 @@ function openFreeGiftPopup(freeGift) {
         freeGift || {};
 
     /*
-     * =====================================================
-     * OLD POPUP
-     * =====================================================
+     * Existing Free Gift popup.
      *
-     * Reuse existing legacy Free Gift popup.
+     * The popup is already rendered by the existing
+     * freegift-popup.blade.php.
      *
-     * Old shoppingcart.js already provides:
-     * DisplayPopupFreeGift()
+     * We only need to populate the existing popup
+     * data and OPEN it.
      */
-    if (
-        typeof window.DisplayPopupFreeGift ===
-        'function'
-    ) {
 
-        window.DisplayPopupFreeGift();
-
-        return;
-    }
-
-    /*
-     * If popup is already rendered in DOM,
-     * show the existing modal.
-     */
     const popup =
-        document.querySelector(
-            '#FreeGiftViewPopup'
+        document.getElementById(
+            'FreeGiftViewPopup'
         );
 
-    if (popup) {
+    if (!popup) {
 
-        if (
-            window.jQuery &&
-            typeof $(popup).modal ===
-                'function'
-        ) {
-
-            $(popup).modal('show');
-
-        } else {
-
-            popup.style.display =
-                'block';
-
-            popup.classList.add(
-                'show'
-            );
-        }
+        console.error(
+            'Free Gift popup #FreeGiftViewPopup not found.'
+        );
 
         return;
     }
 
     /*
-     * Compatibility event.
+     * Existing popup expects these hidden fields.
+     *
+     * Keep existing popup HTML untouched.
      */
-    document.dispatchEvent(
-        new CustomEvent(
-            'maxaroma:free-gift-popup',
-            {
-                detail: {
-                    freeGift:
-                        freeGift
-                }
-            }
+    const gifts =
+        Array.isArray(
+            freeGift.eligibleGifts
         )
+            ? freeGift.eligibleGifts
+            : [];
+
+    /*
+     * If backend returned the eligible gifts
+     * but popup HTML was not rendered with them,
+     * log the response so we can trace it.
+     */
+    console.log(
+        'Free Gift popup opening:',
+        freeGift
+    );
+
+    /*
+     * =====================================================
+     * OPEN EXISTING BOOTSTRAP MODAL
+     * =====================================================
+     */
+    if (
+        typeof $ !== 'undefined' &&
+        typeof $.fn.modal === 'function'
+    ) {
+
+        $('#FreeGiftViewPopup')
+            .modal('show');
+
+        return;
+    }
+
+    /*
+     * Bootstrap 5 fallback.
+     */
+    if (
+        typeof bootstrap !== 'undefined' &&
+        bootstrap.Modal
+    ) {
+
+        const modal =
+            bootstrap.Modal.getOrCreateInstance(
+                popup
+            );
+
+        modal.show();
+
+        return;
+    }
+
+    /*
+     * Final fallback.
+     */
+    popup.style.display =
+        'block';
+
+    popup.classList.add(
+        'show'
+    );
+
+    popup.setAttribute(
+        'aria-hidden',
+        'false'
     );
 }
 $(document).off(
