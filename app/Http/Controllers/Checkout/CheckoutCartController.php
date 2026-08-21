@@ -992,7 +992,13 @@ protected function resolveFreeGiftAfterCartChange(): array
 
             'remainingCount' =>
                 $decision['remainingCount'] ?? null,
-        ]
+            
+			'popupHtmlExists' =>
+				!empty($decision['popupHtml']),
+
+			'popupHtmlLength' =>
+				strlen($decision['popupHtml'] ?? ''),    
+			]
     );
 
     return $decision;

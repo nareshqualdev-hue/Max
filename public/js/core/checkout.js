@@ -3366,9 +3366,8 @@ function handleFreeGiftResponse(response) {
         response.freeGift ||
         response.free_gift ||
         null;
-	
-	 
-	
+
+
     /*
      * =====================================================
      * FINAL BACKEND CART
@@ -3415,17 +3414,94 @@ function handleFreeGiftResponse(response) {
 
     /*
      * =====================================================
-     * IMPORTANT
+     * MULTIPLE FREE GIFT POPUP
      * =====================================================
      *
-     * Backend is the source of truth.
+     * IMPORTANT:
      *
-     * If backend says Free Gift was removed,
-     * remove it from UI immediately.
+     * When changing from one Free Gift rule to another,
+     * backend can remove the old Free Gift first.
      *
-     * Do NOT depend on response.cart here because
-     * response.cart can contain the previous/stale
-     * Free Gift line.
+     * Example:
+     *
+     * $400
+     * -> 280-400 Free Gift already exists
+     *
+     * $450
+     * -> old Free Gift removed
+     * -> 401-500 rule matched
+     * -> popup required
+     *
+     * In this situation:
+     *
+     * removedFreeGiftCount > 0
+     *
+     * AND
+     *
+     * status === popup
+     *
+     * The popup MUST win.
+     *
+     * Therefore popup handling MUST happen
+     * BEFORE the generic removed-gift return.
+     * =====================================================
+     */
+    if (
+    status === 'popup' &&
+    freeGift
+) {
+
+    /*
+     * Backend has removed the previous Free Gift
+     * because the customer moved into a new rule.
+     *
+     * Remove the old Free Gift from UI first.
+     */
+    if (removedFreeGiftCount > 0) {
+
+        document
+            .querySelectorAll(
+                '.order-item-row[data-free-gift="1"]'
+            )
+            .forEach(function (row) {
+
+                row.remove();
+            });
+
+
+        document
+            .querySelectorAll(
+                '.cart-drawer-body .order-item-row[data-free-gift="1"]'
+            )
+            .forEach(function (row) {
+
+                row.remove();
+            });
+
+
+        updateCartItemCountAfterChange(
+            cart
+        );
+    }
+
+
+    /*
+     * Now open the popup for the NEW rule.
+     */
+    openFreeGiftPopup(
+        freeGift
+    );
+
+    return;
+}
+
+    /*
+     * =====================================================
+     * FREE GIFT REMOVED
+     * =====================================================
+     *
+     * Only remove the UI Free Gift when backend
+     * actually says there is no popup to show.
      */
     const freeGiftRemoved =
         status === 'removed' ||
@@ -3467,84 +3543,68 @@ function handleFreeGiftResponse(response) {
 
 
     /*
-     /*
- * =====================================================
- * POPUP MUST BE HANDLED BEFORE hasFreeGift CHECK
- * =====================================================
- *
- * When backend says "popup", the current backend cart
- * may correctly contain NO Free Gift yet.
- *
- * The customer has to select one first.
- *
- * Therefore do NOT remove UI and return before
- * opening the popup.
- */
-if (
-    status === 'popup'
-) {
-
-    openFreeGiftPopup(
-        freeGift
-    );
-
-    return;
-}
-
-
-/*
- * =====================================================
- * CHECK FINAL CART
- * =====================================================
- */
-const hasFreeGift =
-    cart.some(function (item) {
-
-        return (
-            item &&
-            String(
-                item.IS_Free_Gift ||
-                item.Is_Free_Gift ||
-                ''
-            ).toLowerCase() === 'yes'
-        );
-    });
-
-
-if (!hasFreeGift) {
-
-    document
-        .querySelectorAll(
-            '.order-item-row[data-free-gift="1"]'
-        )
-        .forEach(function (row) {
-
-            row.remove();
-        });
-
-    document
-        .querySelectorAll(
-            '.cart-drawer-body .order-item-row[data-free-gift="1"]'
-        )
-        .forEach(function (row) {
-
-            row.remove();
-        });
-
-    updateCartItemCountAfterChange(
-        cart
-    );
-
-    return;
-}
-
-
-    /*
      * =====================================================
      * NO FREE GIFT RESPONSE
      * =====================================================
      */
     if (!freeGift) {
+        return;
+    }
+
+
+    /*
+     * =====================================================
+     * CHECK FINAL CART
+     * =====================================================
+     */
+    const hasFreeGift =
+        cart.some(function (item) {
+
+            return (
+                item &&
+                String(
+                    item.IS_Free_Gift ||
+                    item.Is_Free_Gift ||
+                    ''
+                ).toLowerCase() === 'yes'
+            );
+        });
+
+
+    /*
+     * =====================================================
+     * NO FREE GIFT IN BACKEND
+     * =====================================================
+     *
+     * If there is no Free Gift and backend did not
+     * request a popup, remove stale UI Free Gift.
+     */
+    if (!hasFreeGift) {
+
+        document
+            .querySelectorAll(
+                '.order-item-row[data-free-gift="1"]'
+            )
+            .forEach(function (row) {
+
+                row.remove();
+            });
+
+
+        document
+            .querySelectorAll(
+                '.cart-drawer-body .order-item-row[data-free-gift="1"]'
+            )
+            .forEach(function (row) {
+
+                row.remove();
+            });
+
+
+        updateCartItemCountAfterChange(
+            cart
+        );
+
         return;
     }
 
@@ -3565,27 +3625,7 @@ if (!hasFreeGift) {
 
         return;
     }
-
-
-    /*
-     * =====================================================
-     * MULTIPLE GIFTS
-     * =====================================================
-     */
-    
-     
-    if (
-    status === 'popup'
-	) {
-
-		openFreeGiftPopup(
-			freeGift
-		);
-
-		return;
-	}
 }
-
 function addFreeGiftFromCheckout(
     productId,
     freeProductId,
