@@ -3046,6 +3046,7 @@ function clearCheckoutCart() {
         {}
     );
 }
+
 function updateQty(btn, delta) {
 
     const row =
@@ -3130,140 +3131,155 @@ function updateQty(btn, delta) {
 
             return;
         }
-        let finalQty = nextQty;
-        let lineTotal = null;
 
-       let responseCart = [];
-
-if (
-    Array.isArray(
-        response.cart
-    )
-) {
-
-    responseCart =
-        response.cart;
-
-} else if (
-    response.cart &&
-    Array.isArray(
-        response.cart.Cart
-    )
-) {
-
-    responseCart =
-        response.cart.Cart;
-
-} else if (
-    response.freeGift &&
-    Array.isArray(
-        response.freeGift.cart
-    )
-) {
-
-    responseCart =
-        response.freeGift.cart;
-
-} else if (
-    response.freeGift &&
-    response.freeGift.cart &&
-    Array.isArray(
-        response.freeGift.cart.Cart
-    )
-) {
-
-    responseCart =
-        response.freeGift.cart.Cart;
-}
-
-if (
-    responseCart.length
-) {
-
-    const cartItem =
-        responseCart.find(
-            function (item) {
-
-                return (
-                    parseInt(
-                        item.ProductID ||
-                        0,
-                        10
-                    ) === productId
-                );
-            }
-        );
-
-    if (cartItem) {
-
-        finalQty =
-            parseInt(
-                cartItem.Qty ||
-                nextQty,
-                10
-            );
-
-        if (
-            cartItem.TotPrice !==
-                undefined &&
-            cartItem.TotPrice !==
-                null &&
-            cartItem.TotPrice !== ''
-        ) {
-
-            lineTotal =
-                parseFloat(
-                    String(
-                        cartItem.TotPrice
-                    ).replace(
-                        /[^0-9.-]/g,
-                        ''
-                    )
-                );
-        }
-
-        if (
-            (
-                lineTotal === null ||
-                isNaN(lineTotal)
-            )
-            &&
-            cartItem.Price !==
-                undefined
-        ) {
-
-            const unitPrice =
-                parseFloat(
-                    String(
-                        cartItem.Price
-                    ).replace(
-                        /[^0-9.-]/g,
-                        ''
-                    )
-                );
-
-            if (
-                !isNaN(unitPrice)
-            ) {
-
-                lineTotal =
-                    unitPrice *
-                    finalQty;
-            }
-        }
-    }
-}
         /*
-         * Update Qty UI.
+         * =====================================================
+         * FINAL BACKEND CART
+         * =====================================================
+         */
+        let responseCart = [];
+
+        if (
+            Array.isArray(
+                response.cart
+            )
+        ) {
+
+            responseCart =
+                response.cart;
+
+        } else if (
+            response.cart &&
+            Array.isArray(
+                response.cart.Cart
+            )
+        ) {
+
+            responseCart =
+                response.cart.Cart;
+
+        } else if (
+            response.freeGift &&
+            Array.isArray(
+                response.freeGift.cart
+            )
+        ) {
+
+            responseCart =
+                response.freeGift.cart;
+
+        } else if (
+            response.freeGift &&
+            response.freeGift.cart &&
+            Array.isArray(
+                response.freeGift.cart.Cart
+            )
+        ) {
+
+            responseCart =
+                response.freeGift.cart.Cart;
+        }
+
+        /*
+         * =====================================================
+         * FINAL QTY / LINE TOTAL
+         * =====================================================
+         */
+        let finalQty =
+            nextQty;
+
+        let lineTotal =
+            null;
+
+        if (
+            responseCart.length
+        ) {
+
+            const cartItem =
+                responseCart.find(
+                    function (item) {
+
+                        return (
+                            parseInt(
+                                item.ProductID ||
+                                0,
+                                10
+                            ) === productId
+                        );
+                    }
+                );
+
+            if (cartItem) {
+
+                finalQty =
+                    parseInt(
+                        cartItem.Qty ||
+                        nextQty,
+                        10
+                    );
+
+                if (
+                    cartItem.TotPrice !==
+                        undefined &&
+                    cartItem.TotPrice !==
+                        null &&
+                    cartItem.TotPrice !== ''
+                ) {
+
+                    lineTotal =
+                        parseFloat(
+                            String(
+                                cartItem.TotPrice
+                            ).replace(
+                                /[^0-9.-]/g,
+                                ''
+                            )
+                        );
+                }
+
+                if (
+                    (
+                        lineTotal === null ||
+                        isNaN(lineTotal)
+                    ) &&
+                    cartItem.Price !==
+                        undefined
+                ) {
+
+                    const unitPrice =
+                        parseFloat(
+                            String(
+                                cartItem.Price
+                            ).replace(
+                                /[^0-9.-]/g,
+                                ''
+                            )
+                        );
+
+                    if (
+                        !isNaN(unitPrice)
+                    ) {
+
+                        lineTotal =
+                            unitPrice *
+                            finalQty;
+                    }
+                }
+            }
+        }
+
+        /*
+         * =====================================================
+         * UPDATE CURRENT QTY UI
+         * =====================================================
          */
         valEl.textContent =
             finalQty;
 
         /*
-         * Update line price.
-         *
-         * Example:
-         * $260 x 2 = $520
+         * =====================================================
+         * UPDATE CURRENT LINE PRICE
+         * =====================================================
          */
         if (
             lineTotal !== null &&
@@ -3284,7 +3300,9 @@ if (
         }
 
         /*
-         * Keep duplicate product rows synchronized.
+         * =====================================================
+         * UPDATE DUPLICATE PRODUCT ROWS
+         * =====================================================
          */
         document
             .querySelectorAll(
@@ -3326,16 +3344,42 @@ if (
 
         /*
          * =====================================================
+         * UPDATE SUBTOTAL
+         * =====================================================
+         *
+         * Same logic as Remove Item.
+         *
+         * Backend final cart is the source of truth.
+         *
+         * Example:
+         *
+         * Product $10 × Qty 1
+         * Subtotal = $10
+         *
+         * Qty +1
+         *
+         * Product $10 × Qty 2
+         * Subtotal = $20
+         *
+         * Qty -1
+         *
+         * Product $10 × Qty 1
+         * Subtotal = $10
+         */
+        updateCheckoutDrawerSubtotal({
+            cart: responseCart
+        });
+
+        /*
+         * =====================================================
          * FREE GIFT
          * =====================================================
          *
-         * Backend CheckoutCartController returns:
+         * Do not change Free Gift logic here.
          *
-         * response.freeGift
-         *
-         * Do not invent another AJAX call here.
+         * Backend response already contains the final
+         * Free Gift state.
          */
-        
 
     })
     .fail(function (xhr) {
@@ -3347,6 +3391,7 @@ if (
             'Cart quantity update request failed:',
             response
         );
+
     })
     .always(function () {
 
