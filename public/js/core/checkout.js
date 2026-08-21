@@ -3565,68 +3565,72 @@ function handleFreeGiftResponse(response) {
 
 function addFreeGiftFromCheckout(
     productId,
-    freeProductId
+    freeProductId,
+    oneGift
 ) {
 
+    productId =
+        parseInt(
+            productId || 0,
+            10
+        );
+
+    freeProductId =
+        parseInt(
+            freeProductId || 0,
+            10
+        );
+
     if (!productId) {
-        return;
+        return $.Deferred()
+            .reject()
+            .promise();
     }
 
     /*
-     * Use existing checkout gift endpoint
-     * exposed by the backend.
+     * Free Gift uses the NEW checkout cart/add route.
+     *
+     * Auto gift:
+     * oneGift = true
+     *
+     * Popup selected gifts:
+     * oneGift = false
+     *
+     * Backend FreeGiftService remains the source of truth.
      */
-    const url =
-        urls.freeGiftAdd ||
-        '/checkoutnew/free-gift';
-
-    queueDiscountMutation({
-
-        type: 'POST',
-
-        url: url,
-
-        headers: {
-            'X-CSRF-TOKEN':
-                csrfToken
-        },
-
-        dataType: 'json',
-
-        data: {
+    return cartRequest(
+        urls.cartAdd ||
+        '/checkoutnew/cart/add',
+        {
             product_id:
                 productId,
 
+            qty:
+                1,
+
+            order_type:
+                'Website',
+
+            cookie:
+                'No',
+
+            gift_wrap:
+                'No',
+
+            free_gift:
+                true,
+
             free_product_id:
-                freeProductId || 0,
+                freeProductId,
 
-            action:
-                'add'
+            free_gift_one:
+                oneGift !== false
         }
-
-    })
+    )
     .done(function (response) {
 
         if (
-            !response ||
-            (
-                response.status &&
-                response.status === 'error'
-            )
-        ) {
-
-            console.error(
-                'Free Gift auto add failed:',
-                response
-            );
-
-            return;
-        }
-
-        /*
-         * Backend is source of truth.
-         */
-        if (
+            response &&
             response.checkout &&
             typeof updateTotals ===
                 'function'
@@ -3635,17 +3639,12 @@ function addFreeGiftFromCheckout(
             updateTotals(
                 response.checkout
             );
-
-        } else if (
-            typeof updateTotals ===
-                'function'
-        ) {
-
-            updateTotals(
-                response
-            );
         }
-		refreshFreeGiftCartUI();
+
+        /*
+         * Backend already returned the final cart.
+         * Do not make another unnecessary add request.
+         */
         document.dispatchEvent(
             new CustomEvent(
                 'maxaroma:free-gift-added',
@@ -3657,42 +3656,75 @@ function addFreeGiftFromCheckout(
                 }
             )
         );
-
     })
     .fail(function (xhr) {
 
         console.error(
-            'Free Gift auto add request failed:',
+            'Free Gift add failed:',
             xhr.responseJSON || {}
         );
     });
 }
+
 function openFreeGiftPopup(freeGift) {
 
-    /*
-     * Existing Free Gift popup should be reused.
-     *
-     * We support the existing global handler if present.
-     */
+    freeGift =
+        freeGift || {};
 
+    /*
+     * =====================================================
+     * OLD POPUP
+     * =====================================================
+     *
+     * Reuse existing legacy Free Gift popup.
+     *
+     * Old shoppingcart.js already provides:
+     * DisplayPopupFreeGift()
+     */
     if (
-        typeof window.openFreeGiftPopup ===
-        'function' &&
-        window.openFreeGiftPopup !==
-            openFreeGiftPopup
+        typeof window.DisplayPopupFreeGift ===
+        'function'
     ) {
 
-        window.openFreeGiftPopup(
-            freeGift
-        );
+        window.DisplayPopupFreeGift();
 
         return;
     }
 
     /*
-     * Compatibility events.
-     *
-     * Existing popup code can listen to this.
+     * If popup is already rendered in DOM,
+     * show the existing modal.
+     */
+    const popup =
+        document.querySelector(
+            '#FreeGiftViewPopup'
+        );
+
+    if (popup) {
+
+        if (
+            window.jQuery &&
+            typeof $(popup).modal ===
+                'function'
+        ) {
+
+            $(popup).modal('show');
+
+        } else {
+
+            popup.style.display =
+                'block';
+
+            popup.classList.add(
+                'show'
+            );
+        }
+
+        return;
+    }
+
+    /*
+     * Compatibility event.
      */
     document.dispatchEvent(
         new CustomEvent(
@@ -3705,12 +3737,162 @@ function openFreeGiftPopup(freeGift) {
             }
         )
     );
-
-    console.log(
-        'Free Gift popup data:',
-        freeGift
-    );
 }
+$(document).off(
+    'click.maxaromaFreeGift',
+    '#btnfreegift'
+);
+
+$(document).on(
+    'click.maxaromaFreeGift',
+    '#btnfreegift',
+    function (e) {
+
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        const button =
+            this;
+
+        const selectedProducts =
+            $('input[name="txtradio[]"]:checked')
+                .map(function () {
+                    return $(this).val();
+                })
+                .get();
+
+        const freeProductId =
+            parseInt(
+                $('#freeproductsid').first().val() ||
+                0,
+                10
+            );
+
+        /*
+         * No gift selected.
+         */
+        if (
+            !selectedProducts.length
+        ) {
+
+            return;
+        }
+
+        /*
+         * Prevent double click.
+         */
+        if (
+            button.dataset.freeGiftAdding ===
+            '1'
+        ) {
+            return;
+        }
+
+        button.dataset.freeGiftAdding =
+            '1';
+
+        button.disabled =
+            true;
+
+        /*
+         * Multiple gifts can be selected.
+         *
+         * Therefore:
+         * free_gift_one = false
+         *
+         * FreeGiftService will NOT remove
+         * the previously selected gift.
+         */
+        let requests = [];
+
+        selectedProducts.forEach(
+            function (productId) {
+
+                requests.push(
+                    addFreeGiftFromCheckout(
+                        productId,
+                        freeProductId,
+                        false
+                    )
+                );
+            }
+        );
+
+        $.when
+            .apply(
+                $,
+                requests
+            )
+            .done(function () {
+
+                /*
+                 * Close the existing old popup.
+                 */
+                const popup =
+                    document.querySelector(
+                        '#FreeGiftViewPopup'
+                    );
+
+                if (popup) {
+
+                    if (
+                        typeof $(popup).modal ===
+                        'function'
+                    ) {
+
+                        $(popup).modal(
+                            'hide'
+                        );
+
+                    } else {
+
+                        popup.style.display =
+                            'none';
+
+                        popup.classList.remove(
+                            'show'
+                        );
+                    }
+                }
+
+                /*
+                 * Refresh checkout UI from backend
+                 * source of truth.
+                 */
+                refreshFreeGiftCartUI();
+
+                /*
+                 * Refresh totals/cart state once.
+                 */
+                if (
+                    typeof loadShippingMethods ===
+                    'function'
+                ) {
+
+                    loadShippingMethods();
+                }
+            })
+            .fail(function (xhr) {
+
+                console.error(
+                    'Free Gift popup add failed:',
+                    xhr &&
+                    xhr.responseJSON
+                        ? xhr.responseJSON
+                        : xhr
+                );
+            })
+            .always(function () {
+
+                delete
+                    button.dataset.freeGiftAdding;
+
+                button.disabled =
+                    false;
+            });
+    }
+);
+
 
 function removeItem(btn) {
 
@@ -5602,7 +5784,7 @@ function refreshFreeGiftCartUI() {
     });
 }
 
-})(jQuery);
+})(jQuery); 
 /* =========================================================
    CHECKOUT LOGIN
    ========================================================= */

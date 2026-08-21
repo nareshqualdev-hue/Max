@@ -34,7 +34,60 @@ class CheckoutCartController extends Controller
             'order_type' => ['nullable', 'string'],
             'cookie' => ['nullable', 'string'],
             'gift_wrap' => ['nullable', 'string'],
+            'free_gift' => ['nullable', 'boolean'],
+            'free_product_id' => ['nullable', 'integer', 'min:0'],
+            'free_gift_one' => ['nullable', 'boolean'],
         ]);
+
+        /*
+         * Free Gift popup selection uses the SAME new checkout
+         * /cart/add route.
+         *
+         * The old Free Gift popup/template remains unchanged.
+         * The selected product is inserted through FreeGiftService
+         * instead of being treated as a normal paid cart product.
+         */
+        if (
+            ($validated['free_gift'] ?? false) === true
+        ) {
+            $message =
+                $this->freeGiftService->addGift(
+                    (int) $validated['product_id'],
+                    (int) ($validated['free_product_id'] ?? 0),
+                    ($validated['free_gift_one'] ?? true)
+                        ? 'Yes'
+                        : 'No'
+                );
+
+            $result = [
+                'success' => $message === '',
+                'status' => $message === ''
+                    ? 'success'
+                    : 'error',
+                'message' => $message,
+            ];
+
+            if ($message === '') {
+                $result['checkout'] =
+                    $this->checkoutService
+                        ->refresh('cart');
+
+                $result['cart'] =
+                    $this->cartService
+                        ->getCart();
+
+                $result['freeGift'] = [
+                    'status' => 'selected',
+                    'shouldPopup' => false,
+                    'shouldAutoAdd' => false,
+                    'eligibleGifts' => [],
+                    'remainingCount' => 0,
+                    'cart' => $result['cart'],
+                ];
+            }
+
+            return response()->json($result);
+        }
 
         $result = $this->cartService->addByProductId(
             (int) $validated['product_id'],
