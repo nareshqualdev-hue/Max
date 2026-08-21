@@ -3919,8 +3919,52 @@ function removeItem(btn) {
             }
 
             /*
-             * Remove every rendered copy of the
-             * same cart item.
+             * -----------------------------------------------------
+             * FINAL BACKEND CART
+             * -----------------------------------------------------
+             *
+             * Backend response.cart is the source of truth.
+             */
+            let cart = [];
+
+            if (
+                Array.isArray(response.cart)
+            ) {
+
+                cart =
+                    response.cart;
+
+            } else if (
+                response.cart &&
+                Array.isArray(
+                    response.cart.Cart
+                )
+            ) {
+
+                cart =
+                    response.cart.Cart;
+            }
+
+            /*
+             * -----------------------------------------------------
+             * EMPTY CART
+             * -----------------------------------------------------
+             *
+             * If the last cart item was removed,
+             * leave checkout and go back to Shopping Cart.
+             */
+            if (!cart.length) {
+
+                window.location.href =
+                    '/shoppingcart';
+
+                return;
+            }
+
+            /*
+             * -----------------------------------------------------
+             * Remove every rendered copy of the clicked item.
+             * -----------------------------------------------------
              */
             document
                 .querySelectorAll(
@@ -3933,7 +3977,8 @@ function removeItem(btn) {
                     element.style.transition =
                         'opacity .2s ease';
 
-                    element.style.opacity = '0';
+                    element.style.opacity =
+                        '0';
 
                     setTimeout(function () {
                         element.remove();
@@ -3941,11 +3986,40 @@ function removeItem(btn) {
                 });
 
             /*
-             * Update visible "More Items" count.
+             * -----------------------------------------------------
+             * Rebuild the main checkout summary from the
+             * CURRENT backend cart.
+             *
+             * This is important:
+             *
+             * 3 items
+             * A
+             * B
+             * +1 More Items
+             *
+             * Remove A
+             *
+             * Backend:
+             * B
+             * C
+             *
+             * UI must become:
+             * B
+             * C
+             *
+             * NOT:
+             * B
+             * +0 More Items
+             * -----------------------------------------------------
              */
-            updateCartItemCountAfterChange(
-                response.cart
-            );
+            setTimeout(function () {
+
+                renderCheckoutSummaryItems(
+                    cart
+                );
+
+            }, 220);
+
         })
         .fail(function (xhr) {
 
@@ -3958,10 +4032,10 @@ function removeItem(btn) {
             );
 
             btn.disabled = false;
+
             delete row.dataset.cartRemoving;
         });
 }
-
 function updateCartItemCountAfterChange(cart) {
 
     if (!Array.isArray(cart)) {
