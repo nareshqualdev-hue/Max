@@ -1586,6 +1586,8 @@
 
   @include("checkout-new.checkout-footer")
 
+  @include('layouts.popups')
+	 
   <!-- ═══════════════════════════════════════════════════════════
        MOBILE STICKY FOOTER
   ═══════════════════════════════════════════════════════════ -->
