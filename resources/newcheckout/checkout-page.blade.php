@@ -1234,6 +1234,16 @@
                   $sku = $cartItemSku($item);
                   $category = $cartItemCategory($item);
                   $productId = $cartItemProductId($item);
+                  $isFreeGift =
+                      (
+                          !empty($item['IS_Free_Gift'])
+                          && strtolower((string) $item['IS_Free_Gift']) === 'yes'
+                      )
+                      ||
+                      (
+                          !empty($item['Is_Free_Gift'])
+                          && strtolower((string) $item['Is_Free_Gift']) === 'yes'
+                      );
                 @endphp
 
                 <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
@@ -1246,12 +1256,19 @@
                     <div class="order-item-variant"></div>
                     <div class="order-item-sku">{{ $sku }}</div>
                     <div class="order-item-controls">
-                      <div class="qty-stepper" role="group" aria-label="Quantity for {{ $productName }}">
-                        <button class="qty-btn" type="button" aria-label="Decrease quantity" onclick="updateQty(this,-1)">−</button>
-                        <span class="qty-value" aria-live="polite">{{ $quantity }}</span>
-                        <button class="qty-btn" type="button" aria-label="Increase quantity" onclick="updateQty(this,1)">+</button>
-                      </div>
-                      <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
+                      @if($isFreeGift)
+                        <div class="qty-stepper" role="group" aria-label="Free Gift quantity">
+                          <span class="qty-value" aria-live="polite">{{ $quantity }}</span>
+                        </div>
+                        <span class="free-gift-label">Free Gift</span>
+                      @else
+                        <div class="qty-stepper" role="group" aria-label="Quantity for {{ $productName }}">
+                          <button class="qty-btn" type="button" aria-label="Decrease quantity" onclick="updateQty(this,-1)">−</button>
+                          <span class="qty-value" aria-live="polite">{{ $quantity }}</span>
+                          <button class="qty-btn" type="button" aria-label="Increase quantity" onclick="updateQty(this,1)">+</button>
+                        </div>
+                        <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
+                      @endif
                     </div>
                   </div>
                   <div class="order-item-price">
@@ -1695,6 +1712,16 @@
             $sku = $cartItemSku($item);
             $category = $cartItemCategory($item);
             $productId = $cartItemProductId($item);
+            $isFreeGift =
+                (
+                    !empty($item['IS_Free_Gift'])
+                    && strtolower((string) $item['IS_Free_Gift']) === 'yes'
+                )
+                ||
+                (
+                    !empty($item['Is_Free_Gift'])
+                    && strtolower((string) $item['Is_Free_Gift']) === 'yes'
+                );
           @endphp
 
           <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
@@ -1707,12 +1734,19 @@
               <div class="order-item-variant"></div>
               <div class="order-item-sku">{{ $sku }}</div>
               <div class="order-item-controls">
-                <div class="qty-stepper" role="group" aria-label="Quantity for {{ $productName }}">
-                  <button class="qty-btn" type="button" aria-label="Decrease quantity" onclick="updateQty(this,-1)">−</button>
-                  <span class="qty-value" aria-live="polite">{{ $quantity }}</span>
-                  <button class="qty-btn" type="button" aria-label="Increase quantity" onclick="updateQty(this,1)">+</button>
-                </div>
-                <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
+                @if($isFreeGift)
+                  <div class="qty-stepper" role="group" aria-label="Free Gift quantity">
+                    <span class="qty-value" aria-live="polite">{{ $quantity }}</span>
+                  </div>
+                  <span class="free-gift-label">Free Gift</span>
+                @else
+                  <div class="qty-stepper" role="group" aria-label="Quantity for {{ $productName }}">
+                    <button class="qty-btn" type="button" aria-label="Decrease quantity" onclick="updateQty(this,-1)">−</button>
+                    <span class="qty-value" aria-live="polite">{{ $quantity }}</span>
+                    <button class="qty-btn" type="button" aria-label="Increase quantity" onclick="updateQty(this,1)">+</button>
+                  </div>
+                  <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
+                @endif
               </div>
             </div>
             <div class="order-item-price">

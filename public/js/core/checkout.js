@@ -2851,47 +2851,60 @@ function handleCartResponse(response) {
      * Do NOT replace the backend response.
      * Only create a UI copy.
      */
-    if (freeGiftCart.length) {
+    const freeGiftStatus =
+    String(
+        response.freeGift &&
+        response.freeGift.status
+            ? response.freeGift.status
+            : ''
+    ).toLowerCase();
 
-        const existingIds =
-            new Set(
-                cart.map(function (item) {
+if (
+    freeGiftCart.length &&
+    (
+        freeGiftStatus === 'auto_add' ||
+        freeGiftStatus === 'auto_added'
+    )
+) {
 
-                    return parseInt(
-                        item.ProductID ||
-                        0,
-                        10
-                    );
-                })
-            );
+    const existingIds =
+        new Set(
+            cart.map(function (item) {
 
-        freeGiftCart.forEach(
-            function (item) {
-
-                const productId =
-                    parseInt(
-                        item.ProductID ||
-                        0,
-                        10
-                    );
-
-                if (
-                    productId &&
-                    !existingIds.has(
-                        productId
-                    )
-                ) {
-
-                    cart.push(item);
-
-                    existingIds.add(
-                        productId
-                    );
-                }
-            }
+                return parseInt(
+                    item.ProductID ||
+                    0,
+                    10
+                );
+            })
         );
-    }
 
+    freeGiftCart.forEach(
+        function (item) {
+
+            const productId =
+                parseInt(
+                    item.ProductID ||
+                    0,
+                    10
+                );
+
+            if (
+                productId &&
+                !existingIds.has(
+                    productId
+                )
+            ) {
+
+                cart.push(item);
+
+                existingIds.add(
+                    productId
+                );
+            }
+        }
+    );
+}
 
     /*
      * UI-only normalized response.
@@ -3141,7 +3154,6 @@ function updateQty(btn, delta) {
 
             return;
         }
-		handleCartResponse(response);	
         let finalQty = nextQty;
         let lineTotal = null;
 
