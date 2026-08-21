@@ -64,11 +64,33 @@
 
     $cartItemCount = 0;
     foreach ($cart as $cartItem) {
-        $cartItemCount += (int) (
-            $cartItem['qty']
-            ?? $cartItem['quantity']
-            ?? 1
-        );
+        $isFreeGift =
+            (
+                !empty($cartItem['IS_Free_Gift'])
+                && strtolower((string) $cartItem['IS_Free_Gift']) === 'yes'
+            )
+            ||
+            (
+                !empty($cartItem['Is_Free_Gift'])
+                && strtolower((string) $cartItem['Is_Free_Gift']) === 'yes'
+            );
+
+        $isFreeSample =
+            (
+                !empty($cartItem['IS_Free_Sample'])
+                && strtolower((string) $cartItem['IS_Free_Sample']) === 'yes'
+            )
+            ||
+            (
+                !empty($cartItem['Is_Free_Sample'])
+                && strtolower((string) $cartItem['Is_Free_Sample']) === 'yes'
+            );
+
+        if ($isFreeGift || $isFreeSample) {
+            continue;
+        }
+
+        $cartItemCount++;
     }
 
     $money = function ($value) {
