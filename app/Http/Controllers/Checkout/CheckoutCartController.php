@@ -447,7 +447,8 @@ $cart =
                             $gift['products_id'] ?? 0
                         ),
                         (int) (
-                            $gift['free_gift_products_id']
+                            $decision['rule']['id']
+                            ?? $gift['free_gift_products_id']
                             ?? 0
                         ),
                         'No'
