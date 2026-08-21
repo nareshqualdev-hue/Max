@@ -122,13 +122,7 @@ class CheckoutCartController extends Controller
                 $this->attachFinalFreeGiftCart(
                     $result['freeGift']
                 );
-          if (isset($result['freeGift']['cart'])
-					&&
-					is_array($result['freeGift']['cart'])
-				) {
-					$result['cart'] =
-						$result['freeGift']['cart'];
-				}      
+
         }
 
         return response()->json($result);
@@ -334,11 +328,21 @@ class CheckoutCartController extends Controller
 
     protected function resolveFreeGiftAfterCartChange(): array
     {
+        /*
+         * CartService::getCart() returns the actual cart array.
+         * Keep compatibility if a caller returns ['Cart' => [...]].
+         */
         $shoppingCart =
-    $this->cartService->getCart();
+            $this->cartService->getCart();
 
-$cart =
-    $shoppingCart['Cart'] ?? [];
+        $cart =
+            is_array($shoppingCart)
+            && isset($shoppingCart['Cart'])
+            && is_array($shoppingCart['Cart'])
+                ? $shoppingCart['Cart']
+                : (is_array($shoppingCart)
+                    ? $shoppingCart
+                    : []);
 
         if (empty($cart)) {
             return [
@@ -347,31 +351,57 @@ $cart =
                 'shouldAutoAdd' => false,
                 'eligibleGifts' => [],
                 'remainingCount' => 0,
+                'cart' => [],
             ];
         }
 
+        /*
+         * Count only automatic rule-generated Free Gifts.
+         * Coupon-generated Free Gifts and Free Samples are not
+         * allowed to satisfy a normal Free Gift rule.
+         */
         $existingGiftCount = 0;
+        $existingAutomaticGiftRuleIds = [];
 
         foreach ($cart as $item) {
             if (
-                ($item['IS_Free_Gift'] ?? 'No') === 'Yes'
+                ($item['IS_Free_Gift'] ?? 'No') !== 'Yes'
+                || ($item['Is_Free_Sample'] ?? 'No') === 'Yes'
             ) {
-                $existingGiftCount +=
-                    (int) ($item['Qty'] ?? 1);
+                continue;
+            }
+
+            $isAutomatic =
+                ($item['FreeGiftAutoAdded'] ?? 'No') === 'Yes';
+
+            if (!$isAutomatic) {
+                continue;
+            }
+
+            $existingGiftCount +=
+                max(1, (int) ($item['Qty'] ?? 1));
+
+            $ruleId =
+                (int) (
+                    $item['freeproductsid']
+                    ?? $item['FreeGiftRuleId']
+                    ?? 0
+                );
+
+            if ($ruleId > 0) {
+                $existingAutomaticGiftRuleIds[$ruleId] = true;
             }
         }
 
-        /*
-         * Checkout refresh has already recalculated the cart subtotal.
-         * Use that current subtotal as the input to the migrated
-         * Free Gift rule engine.
-         */
         $totalValue =
             (float) Session::get(
                 'ShoppingCart.SubTotal',
                 0
             );
 
+        /*
+         * Resolve the current rule first.
+         */
         $decision =
             $this->freeGiftService
                 ->resolveEligibleGifts(
@@ -382,51 +412,101 @@ $cart =
                 );
 
         /*
-         * =========================================================
-         * FREE GIFT QUALIFICATION LOST
-         * =========================================================
+         * ---------------------------------------------------------
+         * DIFFERENT RULE
+         * ---------------------------------------------------------
          *
-         * Example:
-         * Rule = $280 - $400
-         * Cart total falls to $249
-         *
-         * The rule engine returns no_rule. In that case an existing
-         * automatic Free Gift must not remain in the cart.
-         *
-         * Only the automatic rule-generated gift is removed by the
-         * service. Free Samples and coupon-generated Free Gifts are
-         * not removed here.
+         * Old automatic gift belongs to a previous rule.
+         * Remove it before applying the new rule.
          */
-        if (
-            ($decision['status'] ?? '') === 'no_rule'
-            &&
-            $existingGiftCount > 0
-        ) {
-			
-			Log::info(
-    'Free Gift Removal Attempt',
-    [
-        'decisionStatus' =>
-            $decision['status'] ?? null,
+        $newRuleId =
+            (int) (
+                $decision['rule']['id'] ?? 0
+            );
 
-        'existingGiftCount' =>
-            $existingGiftCount,
+        $ruleChanged =
+            $newRuleId > 0
+            && !empty($existingAutomaticGiftRuleIds)
+            && !isset(
+                $existingAutomaticGiftRuleIds[$newRuleId]
+            );
 
-        'cartBeforeRemoval' =>
-            $cart,
-    ]
-);
+        if ($ruleChanged) {
 
-            $removedFreeGifts =
+            $removed =
                 $this->freeGiftService
                     ->removeAutoAddedFreeGifts();
 
-            if ($removedFreeGifts > 0) {
+            if ($removed > 0) {
+
+                $decision['checkout'] =
+                    $this->checkoutService
+                        ->refresh('cart');
+
+                $cart =
+                    $this->cartService
+                        ->getCart();
+
+                if (
+                    is_array($cart)
+                    && isset($cart['Cart'])
+                    && is_array($cart['Cart'])
+                ) {
+                    $cart =
+                        $cart['Cart'];
+                }
+
                 /*
-                 * The previous checkout refresh happened before the
-                 * Free Gift was removed. Refresh once more so the
-                 * response contains the final cart/totals.
+                 * Re-resolve the NEW rule after removing the old gift.
+                 * The old gift must never count toward the new rule.
                  */
+                $decision =
+                    $this->freeGiftService
+                        ->resolveEligibleGifts(
+                            $cart,
+                            $totalValue,
+                            0,
+                            0
+                        );
+
+                $decision['ruleChanged'] =
+                    true;
+
+                $decision['removedFreeGiftCount'] =
+                    $removed;
+            }
+        }
+
+        /*
+         * ---------------------------------------------------------
+         * QUALIFICATION LOST
+         * ---------------------------------------------------------
+         */
+        if (
+            ($decision['status'] ?? '') === 'no_rule'
+            && $existingGiftCount > 0
+        ) {
+
+            Log::info(
+                'Free Gift Removal Attempt',
+                [
+                    'decisionStatus' =>
+                        $decision['status'] ?? null,
+
+                    'existingGiftCount' =>
+                        $existingGiftCount,
+
+                    'cartBeforeRemoval' =>
+                        $cart,
+                ]
+            );
+
+            $removed =
+                $this->freeGiftService
+                    ->removeAutoAddedFreeGifts();
+
+            if ($removed > 0) {
+
                 $decision['checkout'] =
                     $this->checkoutService
                         ->refresh('cart');
@@ -445,51 +525,22 @@ $cart =
                     false;
 
                 $decision['removedFreeGiftCount'] =
-                    $removedFreeGifts;
+                    $removed;
             }
         }
-		
-		Log::info('Free Gift Checkout Debug', [
-    'totalValue' =>
-        $totalValue,
 
-    'existingGiftCount' =>
-        $existingGiftCount,
-
-    'decisionStatus' =>
-        $decision['status'] ?? null,
-
-    'shouldAutoAdd' =>
-        $decision['shouldAutoAdd'] ?? null,
-
-    'shouldPopup' =>
-        $decision['shouldPopup'] ?? null,
-
-    'rule' =>
-        $decision['rule'] ?? null,
-
-    'eligibleGifts' =>
-        $decision['eligibleGifts'] ?? [],
-
-    'remainingCount' =>
-        $decision['remainingCount'] ?? null,
-]);
-		
-			
         /*
-         * Single eligible gift:
-         * preserve the requested automatic-add behavior.
+         * ---------------------------------------------------------
+         * AUTO ADD
+         * ---------------------------------------------------------
          *
-         * Do not auto-add if the decision is not explicitly auto_add.
+         * Only a single eligible product can be automatically added.
          */
         if (
-            ($decision['status'] ?? '')
-                === 'auto_add'
-            &&
-            !empty(
-                $decision['eligibleGifts']
-            )
+            ($decision['status'] ?? '') === 'auto_add'
+            && !empty($decision['eligibleGifts'])
         ) {
+
             $gift =
                 $decision['eligibleGifts'][0];
 
@@ -501,25 +552,13 @@ $cart =
                         ),
                         (int) (
                             $decision['rule']['id']
-                            ?? $gift['free_gift_products_id']
                             ?? 0
                         ),
                         'No'
                     );
 
-            /*
-             * Refresh only after the gift was actually attempted.
-             * This keeps totals/session state synchronized.
-             */
             if ($message === '') {
-                /*
-                 * The gift was actually inserted.
-                 *
-                 * IMPORTANT:
-                 * Return the refreshed cart as well as checkout totals.
-                 * The frontend must use this refreshed state as the
-                 * backend source of truth.
-                 */
+
                 $decision['status'] =
                     'auto_added';
 
@@ -545,11 +584,17 @@ $cart =
                     $this->cartService
                         ->getCart();
 
+                if (
+                    is_array($decision['cart'])
+                    && isset($decision['cart']['Cart'])
+                    && is_array($decision['cart']['Cart'])
+                ) {
+                    $decision['cart'] =
+                        $decision['cart']['Cart'];
+                }
+
             } else {
-                /*
-                 * addGift() did not confirm a successful insert.
-                 * Do not report the gift as added.
-                 */
+
                 $decision['status'] =
                     'auto_add_failed';
 
@@ -566,15 +611,71 @@ $cart =
         }
 
         /*
-         * Keep the decision object self-contained.
-         * The checkout.js layer can use:
-         *   no_rule
-         *   popup
-         *   auto_added
-         *   auto_add_failed
+         * ---------------------------------------------------------
+         * FINAL CART
+         * ---------------------------------------------------------
          *
-         * No extra AJAX call is required just to discover the result.
+         * Always expose the backend's final cart.
+         * The frontend must render this cart as source of truth.
          */
+        if (
+            !isset($decision['cart'])
+            || !is_array($decision['cart'])
+        ) {
+            $finalCart =
+                $this->cartService
+                    ->getCart();
+
+            if (
+                is_array($finalCart)
+                && isset($finalCart['Cart'])
+                && is_array($finalCart['Cart'])
+            ) {
+                $finalCart =
+                    $finalCart['Cart'];
+            }
+
+            $decision['cart'] =
+                is_array($finalCart)
+                    ? $finalCart
+                    : [];
+        }
+
+        Log::info(
+            'Free Gift Checkout Debug',
+            [
+                'totalValue' =>
+                    $totalValue,
+
+                'existingGiftCount' =>
+                    $existingGiftCount,
+
+                'decisionStatus' =>
+                    $decision['status'] ?? null,
+
+                'ruleChanged' =>
+                    $decision['ruleChanged'] ?? false,
+
+                'removedFreeGiftCount' =>
+                    $decision['removedFreeGiftCount'] ?? 0,
+
+                'shouldAutoAdd' =>
+                    $decision['shouldAutoAdd'] ?? null,
+
+                'shouldPopup' =>
+                    $decision['shouldPopup'] ?? null,
+
+                'rule' =>
+                    $decision['rule'] ?? null,
+
+                'eligibleGifts' =>
+                    $decision['eligibleGifts'] ?? [],
+
+                'remainingCount' =>
+                    $decision['remainingCount'] ?? null,
+            ]
+        );
+
         return $decision;
     }
 
