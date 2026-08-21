@@ -3864,8 +3864,6 @@ $(document).on(
             });
     }
 );
-
-
 function removeItem(btn) {
 
     const row =
@@ -3919,11 +3917,11 @@ function removeItem(btn) {
             }
 
             /*
-             * -----------------------------------------------------
+             * =====================================================
              * FINAL BACKEND CART
-             * -----------------------------------------------------
+             * =====================================================
              *
-             * Backend response.cart is the source of truth.
+             * Backend response is the source of truth.
              */
             let cart = [];
 
@@ -3946,12 +3944,11 @@ function removeItem(btn) {
             }
 
             /*
-             * -----------------------------------------------------
+             * =====================================================
              * EMPTY CART
-             * -----------------------------------------------------
+             * =====================================================
              *
-             * If the last cart item was removed,
-             * leave checkout and go back to Shopping Cart.
+             * Last normal cart item removed.
              */
             if (!cart.length) {
 
@@ -3962,9 +3959,14 @@ function removeItem(btn) {
             }
 
             /*
-             * -----------------------------------------------------
-             * Remove every rendered copy of the clicked item.
-             * -----------------------------------------------------
+             * =====================================================
+             * REMOVE THE DELETED PRODUCT FROM BOTH UI LOCATIONS
+             * =====================================================
+             *
+             * The same product can exist in:
+             *
+             * 1. Order Summary
+             * 2. Cart Drawer
              */
             document
                 .querySelectorAll(
@@ -3975,24 +3977,31 @@ function removeItem(btn) {
                 .forEach(function (element) {
 
                     element.style.transition =
-                        'opacity .2s ease';
+                        'opacity .15s ease';
 
                     element.style.opacity =
                         '0';
 
                     setTimeout(function () {
+
                         element.remove();
-                    }, 200);
+
+                    }, 150);
                 });
 
             /*
-             * -----------------------------------------------------
-             * Rebuild the main checkout summary from the
-             * CURRENT backend cart.
+             * =====================================================
+             * RE-SYNC ORDER SUMMARY
+             * =====================================================
              *
-             * This is important:
+             * Example:
              *
-             * 3 items
+             * Cart:
+             * A
+             * B
+             * C
+             *
+             * Summary:
              * A
              * B
              * +1 More Items
@@ -4003,22 +4012,19 @@ function removeItem(btn) {
              * B
              * C
              *
-             * UI must become:
+             * Summary becomes:
              * B
              * C
              *
-             * NOT:
-             * B
-             * +0 More Items
-             * -----------------------------------------------------
+             * C automatically takes A's old position.
              */
             setTimeout(function () {
 
-                renderCheckoutSummaryItems(
+                syncCheckoutSummaryAfterCartChange(
                     cart
                 );
 
-            }, 220);
+            }, 180);
 
         })
         .fail(function (xhr) {
@@ -4035,6 +4041,225 @@ function removeItem(btn) {
 
             delete row.dataset.cartRemoving;
         });
+}
+function syncCheckoutSummaryAfterCartChange(cart) {
+
+    if (!Array.isArray(cart)) {
+        return;
+    }
+
+    const mainList =
+        document.getElementById(
+            'checkout-cart-items'
+        );
+
+    const drawerBody =
+        document.querySelector(
+            '.cart-drawer-body'
+        );
+
+    if (!mainList || !drawerBody) {
+
+        updateCartItemCountAfterChange(
+            cart
+        );
+
+        return;
+    }
+
+    /*
+     * =====================================================
+     * BACKEND CART = SOURCE OF TRUTH
+     * =====================================================
+     */
+
+    const currentIds =
+        new Set(
+            cart.map(function (item) {
+
+                return String(
+                    item && (
+                        item.cart_id ??
+                        item.ProductID ??
+                        item.id ??
+                        ''
+                    )
+                );
+
+            })
+        );
+
+    /*
+     * =====================================================
+     * REMOVE STALE NORMAL ITEMS FROM CART DRAWER
+     * =====================================================
+     *
+     * Free Gift / Free Sample are NOT touched here.
+     */
+    drawerBody
+        .querySelectorAll(
+            '.order-item-row'
+        )
+        .forEach(function (row) {
+
+            const isFreeGift =
+                row.dataset.freeGift === '1';
+
+            if (isFreeGift) {
+                return;
+            }
+
+            const rowId =
+                String(
+                    row.dataset.cartId || ''
+                );
+
+            if (
+                !currentIds.has(rowId)
+            ) {
+
+                row.remove();
+            }
+        });
+
+    /*
+     * =====================================================
+     * REMOVE CURRENT NORMAL SUMMARY ROWS
+     * =====================================================
+     *
+     * We will rebuild the first two positions from the
+     * current backend cart.
+     *
+     * This is what makes:
+     *
+     * A
+     * B
+     *
+     * become:
+     *
+     * B
+     * C
+     *
+     * after A is removed.
+     */
+    mainList
+        .querySelectorAll(
+            '.order-item-row:not([data-free-gift="1"])'
+        )
+        .forEach(function (row) {
+
+            row.remove();
+
+        });
+
+    /*
+     * =====================================================
+     * MORE ITEMS BUTTON
+     * =====================================================
+     */
+    const moreButton =
+        mainList.querySelector(
+            '.view-all-items'
+        );
+
+    if (!moreButton) {
+
+        updateCartItemCountAfterChange(
+            cart
+        );
+
+        return;
+    }
+
+    /*
+     * =====================================================
+     * GET CURRENT NORMAL PRODUCTS FROM DRAWER
+     * =====================================================
+     *
+     * Drawer already contains the latest product HTML.
+     * We use it as the existing UI template.
+     */
+    const normalDrawerRows =
+        Array.from(
+            drawerBody.querySelectorAll(
+                '.order-item-row:not([data-free-gift="1"])'
+            )
+        ).filter(function (row) {
+
+            return currentIds.has(
+                String(
+                    row.dataset.cartId || ''
+                )
+            );
+
+        });
+
+    /*
+     * =====================================================
+     * SHOW FIRST TWO PRODUCTS IN ORDER SUMMARY
+     * =====================================================
+     */
+    normalDrawerRows
+        .slice(0, 2)
+        .forEach(function (drawerRow) {
+
+            const summaryRow =
+                drawerRow.cloneNode(true);
+
+            /*
+             * Make sure the cloned row remains a normal
+             * removable product row.
+             */
+            summaryRow.dataset.freeGift =
+                '0';
+
+            summaryRow.dataset.cartId =
+                drawerRow.dataset.cartId;
+
+            summaryRow.dataset.productId =
+                drawerRow.dataset.productId || '';
+
+            /*
+             * Remove animation/state from drawer clone.
+             */
+            delete summaryRow.dataset.cartRemoving;
+
+            summaryRow.style.opacity =
+                '1';
+
+            /*
+             * Make remove button usable.
+             */
+            summaryRow
+                .querySelectorAll(
+                    '.item-remove'
+                )
+                .forEach(function (button) {
+
+                    button.disabled =
+                        false;
+
+                });
+
+            /*
+             * Insert before:
+             *
+             * + More Items
+             */
+            mainList.insertBefore(
+                summaryRow,
+                moreButton
+            );
+        });
+
+    /*
+     * =====================================================
+     * UPDATE MORE ITEMS COUNT
+     * =====================================================
+     */
+    updateCartItemCountAfterChange(
+        cart
+    );
 }
 function updateCartItemCountAfterChange(cart) {
 
