@@ -1246,7 +1246,7 @@
                       );
                 @endphp
 
-                <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
+                <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-free-gift="{{ $isFreeGift ? '1' : '0' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
                   <div class="order-item-image">
                     <img class="order-item-thumb" src="{{ $image ?: url('/images/noimage-lrg.jpg') }}" alt="{{ $productName }}" loading="lazy">
                   </div>
@@ -1724,7 +1724,7 @@
                 );
           @endphp
 
-          <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
+          <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-free-gift="{{ $isFreeGift ? '1' : '0' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
             <div class="order-item-image">
               <img class="order-item-thumb" src="{{ $image ?: url('/images/noimage-lrg.jpg') }}" alt="{{ $productName }}" loading="lazy">
             </div>
