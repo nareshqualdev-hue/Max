@@ -3366,7 +3366,9 @@ function handleFreeGiftResponse(response) {
         response.freeGift ||
         response.free_gift ||
         null;
-
+	
+	 
+	
     /*
      * =====================================================
      * FINAL BACKEND CART
@@ -3465,61 +3467,76 @@ function handleFreeGiftResponse(response) {
 
 
     /*
-     * =====================================================
-     * CHECK FINAL CART
-     * =====================================================
-     */
-    const hasFreeGift =
-        cart.some(function (item) {
+     /*
+ * =====================================================
+ * POPUP MUST BE HANDLED BEFORE hasFreeGift CHECK
+ * =====================================================
+ *
+ * When backend says "popup", the current backend cart
+ * may correctly contain NO Free Gift yet.
+ *
+ * The customer has to select one first.
+ *
+ * Therefore do NOT remove UI and return before
+ * opening the popup.
+ */
+if (
+    status === 'popup'
+) {
 
-            return (
-                item &&
-                String(
-                    item.IS_Free_Gift ||
-                    item.Is_Free_Gift ||
-                    ''
-                ).toLowerCase() === 'yes'
-            );
+    openFreeGiftPopup(
+        freeGift
+    );
+
+    return;
+}
+
+
+/*
+ * =====================================================
+ * CHECK FINAL CART
+ * =====================================================
+ */
+const hasFreeGift =
+    cart.some(function (item) {
+
+        return (
+            item &&
+            String(
+                item.IS_Free_Gift ||
+                item.Is_Free_Gift ||
+                ''
+            ).toLowerCase() === 'yes'
+        );
+    });
+
+
+if (!hasFreeGift) {
+
+    document
+        .querySelectorAll(
+            '.order-item-row[data-free-gift="1"]'
+        )
+        .forEach(function (row) {
+
+            row.remove();
         });
 
+    document
+        .querySelectorAll(
+            '.cart-drawer-body .order-item-row[data-free-gift="1"]'
+        )
+        .forEach(function (row) {
 
-    /*
-     * =====================================================
-     * NO FREE GIFT IN BACKEND
-     * =====================================================
-     *
-     * If backend cart has no Free Gift,
-     * remove any stale Free Gift from UI.
-     */
-    if (!hasFreeGift) {
+            row.remove();
+        });
 
-        document
-            .querySelectorAll(
-                '.order-item-row[data-free-gift="1"]'
-            )
-            .forEach(function (row) {
+    updateCartItemCountAfterChange(
+        cart
+    );
 
-                row.remove();
-            });
-
-
-        document
-            .querySelectorAll(
-                '.cart-drawer-body .order-item-row[data-free-gift="1"]'
-            )
-            .forEach(function (row) {
-
-                row.remove();
-            });
-
-
-        updateCartItemCountAfterChange(
-            cart
-        );
-
-
-        return;
-    }
+    return;
+}
 
 
     /*
@@ -3555,6 +3572,8 @@ function handleFreeGiftResponse(response) {
      * MULTIPLE GIFTS
      * =====================================================
      */
+    
+     
     if (
     status === 'popup'
 	) {
@@ -3671,6 +3690,7 @@ function addFreeGiftFromCheckout(
 }
 
 function openFreeGiftPopup(freeGift) {
+
     freeGift = freeGift || {};
 
     const popup =

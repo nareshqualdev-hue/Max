@@ -478,6 +478,86 @@ class CheckoutCartController extends Controller
         }
 
         /*
+         * A rule-change re-resolve can produce the popup decision.
+         * Render the existing popup here as well because this
+         * decision replaces the original one.
+         */
+        if (
+            ($decision['status'] ?? '') === 'popup'
+            && !empty($decision['eligibleGifts'])
+        ) {
+            $popupGifts =
+                is_array($decision['eligibleGifts'])
+                    ? $decision['eligibleGifts']
+                    : [];
+
+            $popupGifts =
+                array_map(
+                    function ($gift) use ($decision) {
+                        $gift =
+                            is_array($gift)
+                                ? $gift
+                                : [];
+
+                        $gift['free_gift_products_id'] =
+                            (int) (
+                                $gift['free_gift_products_id']
+                                ?? $gift['freeproductsid']
+                                ?? $gift['FreeGiftRuleId']
+                                ?? $decision['rule']['id']
+                                ?? 0
+                            );
+
+                        $gift['freegift_add_count'] =
+                            (int) (
+                                $gift['freegift_add_count']
+                                ?? $decision['remainingCount']
+                                ?? 1
+                            );
+
+                        return $gift;
+                    },
+                    $popupGifts
+                );
+
+            $totalListItems =
+                (int) (
+                    $popupGifts[0]['freegift_add_count']
+                    ?? $decision['remainingCount']
+                    ?? 1
+                );
+
+            try {
+                $decision['popupHtml'] =
+                    view(
+                        'popup.freegift-popup'
+                    )
+                    ->with([
+                        'TotalListItems' =>
+                            $totalListItems,
+
+                        'Free_Gift_Res' =>
+                            $popupGifts,
+                    ])
+                    ->render();
+            } catch (\Throwable $e) {
+                Log::error(
+                    'Free Gift popup render failed after rule change',
+                    [
+                        'message' =>
+                            $e->getMessage(),
+
+                        'rule' =>
+                            $decision['rule']
+                            ?? null,
+                    ]
+                );
+
+                $decision['popupHtml'] = '';
+            }
+        }
+
+        /*
          * ---------------------------------------------------------
          * QUALIFICATION LOST
          * ---------------------------------------------------------
@@ -526,6 +606,113 @@ class CheckoutCartController extends Controller
 
                 $decision['removedFreeGiftCount'] =
                     $removed;
+            }
+        }
+
+        /*
+         * ---------------------------------------------------------
+         * POPUP HTML
+         * ---------------------------------------------------------
+         *
+         * The existing Free Gift popup Blade is the source of truth
+         * for the popup UI. New checkout must return the rendered
+         * popup HTML because checkout.js only opens the modal after
+         * receiving freeGift.popupHtml.
+         *
+         * Keep the existing popup Blade unchanged.
+         */
+        if (
+            ($decision['status'] ?? '') === 'popup'
+            && !empty($decision['eligibleGifts'])
+        ) {
+            $popupGifts =
+                is_array($decision['eligibleGifts'])
+                    ? $decision['eligibleGifts']
+                    : [];
+
+            /*
+             * The old popup expects:
+             *
+             * - TotalListItems
+             * - Free_Gift_Res
+             *
+             * FreeGiftService already supplies the eligible gift
+             * records. Only normalize the legacy field names that
+             * the existing Blade expects.
+             */
+            $popupGifts =
+                array_map(
+                    function ($gift) use ($decision) {
+                        $gift =
+                            is_array($gift)
+                                ? $gift
+                                : [];
+
+                        if (
+                            !isset(
+                                $gift['free_gift_products_id']
+                            )
+                        ) {
+                            $gift['free_gift_products_id'] =
+                                (int) (
+                                    $gift['freeproductsid']
+                                    ?? $gift['FreeGiftRuleId']
+                                    ?? $decision['rule']['id']
+                                    ?? 0
+                                );
+                        }
+
+                        if (
+                            !isset(
+                                $gift['freegift_add_count']
+                            )
+                        ) {
+                            $gift['freegift_add_count'] =
+                                (int) (
+                                    $decision['remainingCount']
+                                    ?? 1
+                                );
+                        }
+
+                        return $gift;
+                    },
+                    $popupGifts
+                );
+
+            $totalListItems =
+                (int) (
+                    $popupGifts[0]['freegift_add_count']
+                    ?? $decision['remainingCount']
+                    ?? 1
+                );
+
+            try {
+                $decision['popupHtml'] =
+                    view(
+                        'popup.freegift-popup'
+                    )
+                    ->with([
+                        'TotalListItems' =>
+                            $totalListItems,
+
+                        'Free_Gift_Res' =>
+                            $popupGifts,
+                    ])
+                    ->render();
+            } catch (\Throwable $e) {
+                Log::error(
+                    'Free Gift popup render failed',
+                    [
+                        'message' =>
+                            $e->getMessage(),
+
+                        'rule' =>
+                            $decision['rule']
+                            ?? null,
+                    ]
+                );
+
+                $decision['popupHtml'] = '';
             }
         }
 
