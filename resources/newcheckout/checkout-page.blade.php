@@ -2429,11 +2429,59 @@ is_string($image)
     }
 
     function keepProtection() {
-      const checkbox = document.getElementById('protection');
-      if (checkbox) checkbox.checked = true;
-      syncAddonCard('protection');
-      closeProtectConfirm();
-    }
+
+  const checkbox =
+    document.getElementById(
+      'protection'
+    );
+
+  if (checkbox) {
+
+    /*
+     * Restore the checkbox visually.
+     *
+     * Setting .checked programmatically does NOT
+     * trigger the change event automatically.
+     */
+    checkbox.checked =
+      true;
+  }
+
+  /*
+   * Restore the addon card UI.
+   */
+  syncAddonCard(
+    'protection'
+  );
+
+  /*
+   * IMPORTANT:
+   *
+   * The original OFF click may already have triggered
+   * setShippingInsurance('remove').
+   *
+   * "Keep Protection" therefore MUST explicitly add
+   * Insurance back to the backend/session.
+   *
+   * This restores the actual Insurance amount
+   * (for example $17.31), not just the checkbox UI.
+   */
+  if (
+    window.MaxaromaOnePageCheckout &&
+    typeof
+      window.MaxaromaOnePageCheckout
+        .setShippingInsurance ===
+      'function'
+  ) {
+
+    window.MaxaromaOnePageCheckout
+      .setShippingInsurance(
+        'add'
+      );
+  }
+
+  closeProtectConfirm();
+}
 
     function removeProtection() {
       if (

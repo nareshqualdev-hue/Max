@@ -741,55 +741,59 @@
         );
 
     let insuranceValue =
-        totals.insurance ??
-        totals.Insurance ??
-        totals.shipping_insurance ??
-        totals.shipping_insurance_charge ??
-        totals.ShippingInsurance?.charge ??
-        insuranceChargeFromTotals ??
-        response.shipping_insurance_charge ??
-        response.shippingInsuranceCharge ??
-        (
-            typeof insuranceResponse === 'number'
-                ? insuranceResponse
-                : (
-                    insuranceResponse?.charge ??
-                    insuranceResponse?.shipping_insurance_charge ??
-                    insuranceResponse?.amount
-                )
-        );
+    totals.insurance ??
+    totals.Insurance ??
+    totals.shipping_insurance ??
+    totals.shipping_insurance_charge ??
+    totals.ShippingInsurance?.charge ??
+    insuranceChargeFromTotals ??
+    response.shipping_insurance_charge ??
+    response.shippingInsuranceCharge ??
+    (
+        typeof insuranceResponse === 'number'
+            ? insuranceResponse
+            : (
+                insuranceResponse?.charge ??
+                insuranceResponse?.shipping_insurance_charge ??
+                insuranceResponse?.amount ??
+                null
+            )
+    );
 
-    /*
-     * If this response does not contain Insurance,
-     * preserve the last known Insurance amount.
-     *
-     * This is required for:
-     *
-     * Signature ON
-     *     -> updateTotals(signatureResponse)
-     *     -> Insurance must remain $17.31
-     *
-     * Signature OFF
-     *     -> updateTotals(signatureResponse)
-     *     -> Insurance must remain $17.31
-     */
-    if (
-        !hasInsuranceValue &&
-        state.insurance !== undefined &&
-        state.insurance !== null
-    ) {
 
-        insuranceValue =
-            state.insurance;
-    }
+/*
+ * Current AJAX response may not contain Insurance.
+ *
+ * In that case preserve the existing Insurance amount.
+ *
+ * Example:
+ *
+ * Keep Protection ON
+ * -> Insurance = 17.31
+ *
+ * Signature ON/OFF
+ * -> response has no Insurance
+ * -> keep 17.31
+ */
+if (
+    (
+        insuranceValue === null ||
+        insuranceValue === undefined ||
+        insuranceValue === ''
+    ) &&
+    state.insurance !== undefined &&
+    state.insurance !== null
+) {
 
-    /*
-     * Final Insurance amount.
-     */
-    const insurance =
-        parseFloat(
-            insuranceValue || 0
-        );
+    insuranceValue =
+        state.insurance;
+}
+
+
+let insurance =
+    parseFloat(
+        insuranceValue || 0
+    );
 
     /*
      * =========================================================
@@ -890,11 +894,34 @@
         state.insuranceApplied === true;
 
     /*
-     * Keep last known Insurance amount.
+     * =========================================================
+     * PRESERVE ACTIVE INSURANCE AMOUNT
+     * =========================================================
      *
-     * IMPORTANT:
-     * This is what allows a Signature response that does
-     * not contain Insurance to preserve $17.31.
+     * Keep Protection is ON, but the AJAX response can return
+     * an Insurance amount of 0.
+     *
+     * If a valid Insurance amount already exists, preserve it.
+     *
+     * When Protection is explicitly OFF, this condition does
+     * not run, so the normal zero value is preserved.
+     */
+    if (
+        insuranceApplied === true &&
+        insurance <= 0 &&
+        state.insurance !== undefined &&
+        state.insurance !== null &&
+        parseFloat(state.insurance) > 0
+    ) {
+
+        insurance =
+            parseFloat(
+                state.insurance
+            );
+    }
+
+    /*
+     * Keep last known Insurance amount.
      */
     state.insurance =
         insurance;
@@ -975,30 +1002,28 @@ if (
         true;
 
 } else if (
-    explicitSignatureApplied !==
-    null
-) {
-
-    /*
-     * Customer has already explicitly interacted
-     * with Signature, therefore backend is now
-     * the source of truth.
-     */
-    state.signatureApplied =
-        explicitSignatureApplied;
-
-} else if (
     state.signatureApplied ===
     undefined
 ) {
 
-    const $signature =
-        $('#request-signature');
+    if (
+        explicitSignatureApplied !==
+        null
+    ) {
 
-    state.signatureApplied =
-        $signature.length
-            ? $signature.is(':checked')
-            : false;
+        state.signatureApplied =
+            explicitSignatureApplied;
+
+    } else {
+
+        const $signature =
+            $('#request-signature');
+
+        state.signatureApplied =
+            $signature.length
+                ? $signature.is(':checked')
+                : false;
+    }
 }
 
 state.signatureCharge =
@@ -4897,176 +4922,182 @@ const signatureApplied =
        SHIPPING INSURANCE
        ========================================================= */
 
-    function setShippingInsurance(action) {
+	function setShippingInsurance(action) {
 
-        action =
-            action === 'remove'
-                ? 'remove'
-                : 'add';
+    action =
+        action === 'remove'
+            ? 'remove'
+            : 'add';
 
-        if (!urls.shippingInsurance) {
+    if (!urls.shippingInsurance) {
 
-            showMessage(
-                '#shipping-method-messages',
-                'Shipping insurance URL is not configured.',
-                'error'
+        showMessage(
+            '#shipping-method-messages',
+            'Shipping insurance URL is not configured.',
+            'error'
+        );
+
+        return;
+    }
+
+    if (shippingInsuranceRequest) {
+        shippingInsuranceRequest.abort();
+    }
+
+    const $checkbox =
+        $('#protection');
+
+    /*
+     * =========================================================
+     * CHECKOUT STATE
+     * =========================================================
+     *
+     * Preserve the existing checkout state object.
+     */
+    window.MaxaromaCheckout =
+        window.MaxaromaCheckout || {};
+
+    window.MaxaromaCheckout.totalsState =
+        window.MaxaromaCheckout.totalsState || {};
+
+    const state =
+        window.MaxaromaCheckout.totalsState;
+
+    /*
+     * =========================================================
+     * PREVIOUS INSURANCE STATE
+     * =========================================================
+     *
+     * Keep the current amount before making the AJAX request.
+     *
+     * Example:
+     *
+     * currentInsuranceValue = 17.31
+     *
+     * Keep Protection click
+     * -> backend response does not return amount
+     * -> existing $17.31 must NOT become $0.00
+     */
+    const previousInsuranceValue =
+        state.insurance !== undefined &&
+        state.insurance !== null
+            ? parseFloat(state.insurance) || 0
+            : (
+                currentInsuranceValue !== null &&
+                currentInsuranceValue !== undefined
+                    ? parseFloat(
+                        currentInsuranceValue
+                    ) || 0
+                    : 0
             );
 
-            return;
-        }
+    /*
+     * Remember the amount immediately.
+     */
+    if (
+        state.insurance === undefined ||
+        state.insurance === null
+    ) {
 
-        if (shippingInsuranceRequest) {
-            shippingInsuranceRequest.abort();
-        }
+        state.insurance =
+            previousInsuranceValue;
+    }
 
-        const $checkbox =
-            $('#protection');
+    currentInsuranceValue =
+        previousInsuranceValue;
 
-        /*
-         * Remember the user's explicit choice immediately.
-         *
-         * This is important because updateTotals() can run again
-         * after shipping/tax recalculation.
-         */
-        window.MaxaromaCheckout =
-            window.MaxaromaCheckout || {};
+    /*
+     * =========================================================
+     * EXPLICIT USER ACTION
+     * =========================================================
+     *
+     * The customer has explicitly clicked:
+     *
+     * add    = ON
+     * remove = OFF
+     */
+    const requestedState =
+        action === 'add';
 
-        window.MaxaromaCheckout.totalsState =
-            window.MaxaromaCheckout.totalsState || {};
+    state.insuranceApplied =
+        requestedState;
 
-        window.MaxaromaCheckout
-            .totalsState
-            .insuranceApplied =
-            action === 'add';
+    /*
+     * =========================================================
+     * UPDATE UI IMMEDIATELY
+     * =========================================================
+     */
+    if ($checkbox.length) {
 
-        /*
-         * Update UI immediately.
-         */
-        if ($checkbox.length) {
+        $checkbox.prop(
+            'checked',
+            requestedState
+        );
 
-            $checkbox.prop(
-                'checked',
-                action === 'add'
+        $checkbox
+            .closest('.addon-row')
+            .toggleClass(
+                'active',
+                requestedState
             );
+    }
 
-            $checkbox
-                .closest('.addon-row')
-                .toggleClass(
-                    'active',
-                    action === 'add'
-                );
-        }
+    /*
+     * =========================================================
+     * AJAX
+     * =========================================================
+     */
+    shippingInsuranceRequest =
+        $.ajax({
 
-        shippingInsuranceRequest =
-            $.ajax({
+            type: 'POST',
 
-                type: 'POST',
+            url:
+                urls.shippingInsurance,
 
-                url:
-                    urls.shippingInsurance,
+            headers: {
+                'X-CSRF-TOKEN':
+                    csrfToken
+            },
 
-                headers: {
-                    'X-CSRF-TOKEN':
-                        csrfToken
-                },
+            dataType: 'json',
 
-                dataType: 'json',
+            data: {
+                action: action
+            }
 
-                data: {
-                    action: action
-                }
+        })
+            .done(function (response) {
 
-            })
-                .done(function (response) {
-
-                    if (
-                        response.status &&
-                        response.status !== 'success'
-                    ) {
-
-                        /*
-                         * API failed.
-                         * Restore the opposite state.
-                         */
-                        const previousState =
-                            action !== 'add';
-
-                        window.MaxaromaCheckout
-                            .totalsState
-                            .insuranceApplied =
-                            previousState;
-
-                        if ($checkbox.length) {
-
-                            $checkbox.prop(
-                                'checked',
-                                previousState
-                            );
-
-                            $checkbox
-                                .closest('.addon-row')
-                                .toggleClass(
-                                    'active',
-                                    previousState
-                                );
-                        }
-
-                        showMessage(
-                            '#shipping-method-messages',
-                            response.message ||
-                            'Unable to update shipping insurance.',
-                            'error'
-                        );
-
-                        return;
-                    }
+                /*
+                 * =================================================
+                 * API ERROR
+                 * =================================================
+                 */
+                if (
+                    response.status &&
+                    response.status !== 'success'
+                ) {
 
                     /*
-                     * Backend is source of truth after successful AJAX.
-                     */
-                    if (
-                        response.insurance_applied !==
-                        undefined
-                    ) {
-
-                        window.MaxaromaCheckout
-                            .totalsState
-                            .insuranceApplied =
-                            String(
-                                response.insurance_applied
-                            ).toLowerCase() === 'yes';
-
-                    } else if (
-                        response.applied !== undefined
-                    ) {
-
-                        window.MaxaromaCheckout
-                            .totalsState
-                            .insuranceApplied =
-                            String(
-                                response.applied
-                            ).toLowerCase() === 'yes';
-                    }
-
-                    updateTotals(response);
-                })
-                .fail(function (xhr, status) {
-
-                    if (status === 'abort') {
-                        return;
-                    }
-
-                    /*
-                     * API failed.
-                     * Restore the previous state.
+                     * Restore the previous applied state.
                      */
                     const previousState =
-                        action !== 'add';
+                        !requestedState;
 
-                    window.MaxaromaCheckout
-                        .totalsState
-                        .insuranceApplied =
+                    state.insuranceApplied =
                         previousState;
+
+                    /*
+                     * IMPORTANT:
+                     *
+                     * Keep previous Insurance amount.
+                     */
+                    state.insurance =
+                        previousInsuranceValue;
+
+                    currentInsuranceValue =
+                        previousInsuranceValue;
 
                     if ($checkbox.length) {
 
@@ -5083,22 +5114,385 @@ const signatureApplied =
                             );
                     }
 
-                    const response =
-                        xhr.responseJSON || {};
-
                     showMessage(
                         '#shipping-method-messages',
                         response.message ||
                         'Unable to update shipping insurance.',
                         'error'
                     );
-                })
-                .always(function () {
 
-                    shippingInsuranceRequest =
-                        null;
-                });
-    }
+                    return;
+                }
+
+                /*
+                 * =================================================
+                 * INSURANCE AMOUNT FROM BACKEND
+                 * =================================================
+                 *
+                 * IMPORTANT:
+                 *
+                 * Only update the Insurance amount when the
+                 * response ACTUALLY contains an Insurance amount.
+                 *
+                 * If Keep Protection response does not contain
+                 * the amount, preserve the existing $17.31.
+                 */
+
+                let responseInsuranceValue =
+                    null;
+
+                const responseInsurance =
+                    response.insurance;
+
+                const totals =
+                    response.totals ||
+                    response.Totals ||
+                    {};
+
+                const charges =
+                    totals.Charges ||
+                    totals.charges ||
+                    {};
+
+                /*
+                 * Direct response fields.
+                 */
+                if (
+                    response.shipping_insurance_charge !==
+                    undefined &&
+                    response.shipping_insurance_charge !==
+                    null
+                ) {
+
+                    responseInsuranceValue =
+                        parseFloat(
+                            response.shipping_insurance_charge
+                        );
+
+                } else if (
+                    response.shippingInsuranceCharge !==
+                    undefined &&
+                    response.shippingInsuranceCharge !==
+                    null
+                ) {
+
+                    responseInsuranceValue =
+                        parseFloat(
+                            response.shippingInsuranceCharge
+                        );
+                }
+
+                /*
+                 * Response insurance object.
+                 */
+                else if (
+                    responseInsurance &&
+                    typeof responseInsurance ===
+                    'object'
+                ) {
+
+                    if (
+                        responseInsurance.charge !==
+                        undefined &&
+                        responseInsurance.charge !==
+                        null
+                    ) {
+
+                        responseInsuranceValue =
+                            parseFloat(
+                                responseInsurance.charge
+                            );
+
+                    } else if (
+                        responseInsurance.shipping_insurance_charge !==
+                        undefined &&
+                        responseInsurance.shipping_insurance_charge !==
+                        null
+                    ) {
+
+                        responseInsuranceValue =
+                            parseFloat(
+                                responseInsurance
+                                    .shipping_insurance_charge
+                            );
+
+                    } else if (
+                        responseInsurance.amount !==
+                        undefined &&
+                        responseInsurance.amount !==
+                        null
+                    ) {
+
+                        responseInsuranceValue =
+                            parseFloat(
+                                responseInsurance.amount
+                            );
+                    }
+                }
+
+                /*
+                 * Totals / Charges.
+                 */
+                if (
+                    responseInsuranceValue === null ||
+                    Number.isNaN(
+                        responseInsuranceValue
+                    )
+                ) {
+
+                    if (
+                        totals.insurance !==
+                        undefined &&
+                        totals.insurance !==
+                        null
+                    ) {
+
+                        responseInsuranceValue =
+                            parseFloat(
+                                totals.insurance
+                            );
+
+                    } else if (
+                        totals.Insurance !==
+                        undefined &&
+                        totals.Insurance !==
+                        null
+                    ) {
+
+                        responseInsuranceValue =
+                            parseFloat(
+                                totals.Insurance
+                            );
+
+                    } else if (
+                        totals.shipping_insurance !==
+                        undefined &&
+                        totals.shipping_insurance !==
+                        null
+                    ) {
+
+                        responseInsuranceValue =
+                            parseFloat(
+                                totals.shipping_insurance
+                            );
+
+                    } else if (
+                        totals.shipping_insurance_charge !==
+                        undefined &&
+                        totals.shipping_insurance_charge !==
+                        null
+                    ) {
+
+                        responseInsuranceValue =
+                            parseFloat(
+                                totals.shipping_insurance_charge
+                            );
+
+                    } else if (
+                        charges?.ShippingInsurance?.charge !==
+                        undefined &&
+                        charges?.ShippingInsurance?.charge !==
+                        null
+                    ) {
+
+                        responseInsuranceValue =
+                            parseFloat(
+                                charges
+                                    .ShippingInsurance
+                                    .charge
+                            );
+
+                    } else if (
+                        charges?.shipping_insurance?.charge !==
+                        undefined &&
+                        charges?.shipping_insurance?.charge !==
+                        null
+                    ) {
+
+                        responseInsuranceValue =
+                            parseFloat(
+                                charges
+                                    .shipping_insurance
+                                    .charge
+                            );
+                    }
+                }
+
+                /*
+                 * =================================================
+                 * PRESERVE / UPDATE AMOUNT
+                 * =================================================
+                 *
+                 * If backend returned a real amount:
+                 *     use backend amount.
+                 *
+                 * If backend did NOT return amount:
+                 *     preserve previous amount.
+                 */
+                if (
+                    responseInsuranceValue !==
+                    null &&
+                    !Number.isNaN(
+                        responseInsuranceValue
+                    )
+                ) {
+
+                    state.insurance =
+                        responseInsuranceValue;
+
+                    currentInsuranceValue =
+                        responseInsuranceValue;
+
+                } else {
+
+                    state.insurance =
+                        previousInsuranceValue;
+
+                    currentInsuranceValue =
+                        previousInsuranceValue;
+                }
+
+                /*
+                 * =================================================
+                 * BACKEND APPLIED STATE
+                 * =================================================
+                 */
+                if (
+                    response.insurance_applied !==
+                    undefined
+                ) {
+
+                    state.insuranceApplied =
+                        String(
+                            response.insurance_applied
+                        ).toLowerCase() ===
+                        'yes';
+
+                } else if (
+                    response.applied !==
+                    undefined
+                ) {
+
+                    state.insuranceApplied =
+                        String(
+                            response.applied
+                        ).toLowerCase() ===
+                        'yes';
+
+                } else {
+
+                    /*
+                     * Backend did not return applied state.
+                     *
+                     * Keep the explicit user action.
+                     */
+                    state.insuranceApplied =
+                        requestedState;
+                }
+
+                /*
+                 * =================================================
+                 * KEEP CHECKBOX IN SYNC
+                 * =================================================
+                 */
+                if ($checkbox.length) {
+
+                    $checkbox.prop(
+                        'checked',
+                        state.insuranceApplied ===
+                        true
+                    );
+
+                    $checkbox
+                        .closest('.addon-row')
+                        .toggleClass(
+                            'active',
+                            state.insuranceApplied ===
+                            true
+                        );
+                }
+
+                /*
+                 * =================================================
+                 * UPDATE TOTALS
+                 * =================================================
+                 *
+                 * Existing checkout flow preserved.
+                 *
+                 * updateTotals() now receives the response,
+                 * while state.insurance contains the last valid
+                 * Insurance amount.
+                 *
+                 * Therefore:
+                 *
+                 * $17.31
+                 * will NOT become
+                 * $0.00
+                 * merely because this response doesn't contain
+                 * Insurance amount.
+                 */
+                updateTotals(response);
+            })
+            .fail(function (xhr, status) {
+
+                if (status === 'abort') {
+                    return;
+                }
+
+                /*
+                 * =================================================
+                 * REQUEST FAILED
+                 * =================================================
+                 *
+                 * Restore previous state.
+                 */
+                const previousState =
+                    !requestedState;
+
+                state.insuranceApplied =
+                    previousState;
+
+                /*
+                 * Keep previous Insurance amount.
+                 */
+                state.insurance =
+                    previousInsuranceValue;
+
+                currentInsuranceValue =
+                    previousInsuranceValue;
+
+                if ($checkbox.length) {
+
+                    $checkbox.prop(
+                        'checked',
+                        previousState
+                    );
+
+                    $checkbox
+                        .closest('.addon-row')
+                        .toggleClass(
+                            'active',
+                            previousState
+                        );
+                }
+
+                const response =
+                    xhr.responseJSON || {};
+
+                showMessage(
+                    '#shipping-method-messages',
+                    response.message ||
+                    'Unable to update shipping insurance.',
+                    'error'
+                );
+            })
+            .always(function () {
+
+                shippingInsuranceRequest =
+                    null;
+            });
+}
+ 
     /* =========================================================
        INSURANCE CHECKBOX
        ========================================================= */
