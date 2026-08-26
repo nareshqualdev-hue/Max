@@ -49,38 +49,6 @@ class ShippingSignatureService
             return 0.0;
         }
 
-        /*
-         * ---------------------------------------------------------
-         * LEGACY TRUTH MODE RULE
-         * ---------------------------------------------------------
-         *
-         * Old checkout:
-         *
-         * InsureAmount =
-         * NetTotal
-         * - Shipping Insurance
-         * - Shipping Signature
-         *
-         * If InsureAmount > 200, Shipping Signature
-         * must not remain applied.
-         *
-         * Keep the same rule in the new checkout.
-         */
-        $eligibleAmount =
-            $this->getSignatureEligibleAmount();
-
-        if ($eligibleAmount > 200) {
-            $this->remove();
-
-            addLog('RemoveShippingSignature', [
-                'reason' => 'eligible_amount_over_200',
-                'eligible_amount' =>
-                    NumberFormat($eligibleAmount),
-            ]);
-
-            return 0.0;
-        }
-
         Session::put(
             'ShoppingCart.ShippingSignature',
             NumberFormat($charge)
@@ -128,29 +96,6 @@ class ShippingSignatureService
             ) === 46
         ) {
             $this->remove();
-            return 0.0;
-        }
-
-        /*
-         * Legacy eligibility rule:
-         * once the eligible amount becomes greater than $200,
-         * an already-applied Shipping Signature must be removed.
-         *
-         * This is required during address/shipping/totals refresh,
-         * not only when the customer clicks the checkbox.
-         */
-        $eligibleAmount =
-            $this->getSignatureEligibleAmount();
-
-        if ($eligibleAmount > 200) {
-            $this->remove();
-
-            addLog('RemoveShippingSignature', [
-                'reason' => 'eligible_amount_over_200',
-                'eligible_amount' =>
-                    NumberFormat($eligibleAmount),
-            ]);
-
             return 0.0;
         }
 
