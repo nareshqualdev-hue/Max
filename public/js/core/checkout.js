@@ -5338,27 +5338,24 @@
          * =====================================================
          */
 
-        const signatureApplied = true;
+		state.signatureApplied = false;
 
-        state.signatureApplied =
-            true;
+		const $signature =
+			$('#request-signature');
 
-        const $signature =
-            $('#request-signature');
+		if ($signature.length) {
 
-        if ($signature.length) {
+			$signature.prop(
+				'checked',
+				false
+			);
 
-            $signature.prop(
-                'checked',
-                true
-            );
-
-            $signature
-                .closest('.addon-row')
-                .addClass(
-                    'active'
-                );
-        }
+			$signature
+				.closest('.addon-row')
+				.removeClass(
+					'active'
+				);
+		}
 
         /*
          * Re-apply Signature on refresh.

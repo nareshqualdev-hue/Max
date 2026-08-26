@@ -722,17 +722,12 @@ public function setShippingSignature(
                     )
                 );
 
-        $applied =
-            Session::has(
-                'ShoppingCart.ShippingSignature'
-            )
-            &&
-            (float) Session::get(
-                'ShoppingCart.ShippingSignature',
-                0
-            ) > 0
-                ? 'Yes'
-                : 'No';
+	   $applied =
+			Session::has(
+				'ShoppingCart.ShippingSignature'
+			)
+				? 'Yes'
+				: 'No';
 
         $finalCharge =
             (float) Session::get(
@@ -1388,6 +1383,22 @@ public function refreshAfterShippingMethod(
 
         'insurance' =>
             $insurance,
+        
+        'shippingSignature' => [
+			'charge' =>
+				(float) Session::get(
+					'ShoppingCart.ShippingSignature',
+					0
+				),
+
+			'applied' =>
+				Session::has(
+					'ShoppingCart.ShippingSignature'
+				)
+					? 'Yes'
+					: 'No',
+		],
+            
 
         'totals' =>
             $totals,
