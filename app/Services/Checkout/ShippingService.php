@@ -1142,104 +1142,67 @@ class ShippingService
             }
         }
 
-        if (
-            $days > 0
-        ) {
-            $startDate =
-                date('Y-m-d');
+        /*
+         * ---------------------------------------------------------
+         * FINAL DELIVERY DATE
+         * ---------------------------------------------------------
+         *
+         * Keep the same delivery-date calculation used by
+         * getAvailableMethods().
+         *
+         * This prevents the shipping-method load flow and the
+         * shipping-method selection flow from returning different
+         * estimated delivery dates.
+         */
+        if ($days > 0) {
 
-            $endDate =
-                date(
-                    'Y-m-d',
-                    strtotime(
-                        '+' . $days . 'days'
-                    )
-                );
-
-            $weekendDays =
-                $this->countWeekendDays(
-                    $startDate,
-                    $endDate
-                );
-
-            $holidayDays =
-                ShippingHoliday::whereBetween(
-                    'holiday_date',
-                    [
-                        $startDate,
-                        $endDate,
-                    ]
-                )
-                ->where(
-                    'holiday_status',
-                    '=',
-                    '1'
-                )
-                ->where(
-                    'holiday_date',
-                    '!=',
-                    date('Y-m-d')
-                )
-                ->count();
-
-            $exactShipDay =
-                $days
-                +
-                $weekendDays
-                +
-                $holidayDays;
-
-            $approxShipDate =
-                date(
-                    'Y-m-d',
-                    strtotime(
-                        '+' .
-                        $exactShipDay .
-                        'days'
-                    )
-                );
-
-            $extraDays = 0;
-
-            $day =
-                $this->checkDay(
-                    $approxShipDate
-                );
-
-            if (
-                $day === 'saturday'
-            ) {
-                $extraDays = 2;
-            }
-            elseif (
-                $day === 'sunday'
-            ) {
-                $extraDays = 1;
-            }
-
+            /*
+             * Existing 2 PM cutoff.
+             */
             $days =
-                $exactShipDay
-                +
-                $extraDays;
+                $this->applyTimeCutoff(
+                    $days
+                );
 
+            /*
+             * Existing weekend adjustment for methods
+             * 33 / 34 / 29.
+             */
+            $days =
+                $this->applyWeekendAdjustment(
+                    $days,
+                    $shippingModeId
+                );
+
+            /*
+             * Existing holiday-aware delivery calculation.
+             */
+            $delivery =
+                $this->calculateDeliveryDate(
+                    $days
+                );
+
+            /*
+             * Keep existing session values.
+             */
             Session::put(
                 'ShoppingCart.VendorShippingDateVal.setVendorshipDay',
                 $days
             );
 
-            $date =
-                date(
-                    'M d',
-                    strtotime(
-                        '+' . $days . 'days'
-                    )
-                );
-
             Session::put(
                 'ShoppingCart.Shipping.ShippingDays',
-                'Estimated Delivery on or before <b>' .
-                $date .
-                '</b>'
+                $delivery['message']
+            );
+
+            Session::put(
+                'ShoppingCart.EstimatedDeliveryDate',
+                date(
+                    'm/d/Y',
+                    strtotime(
+                        $delivery['date']
+                    )
+                )
             );
         }
 		
