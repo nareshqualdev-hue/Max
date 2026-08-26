@@ -2428,59 +2428,82 @@ is_string($image)
       }
     }
 
-    function keepProtection() {
+  function keepProtection() {
 
-  const checkbox =
-    document.getElementById(
-      'protection'
-    );
-
-  if (checkbox) {
+    const checkbox =
+        document.getElementById('protection');
 
     /*
-     * Restore the checkbox visually.
-     *
-     * Setting .checked programmatically does NOT
-     * trigger the change event automatically.
+     * Keep the checkbox ON.
      */
-    checkbox.checked =
-      true;
-  }
+    if (checkbox) {
+        checkbox.checked = true;
+    }
 
-  /*
-   * Restore the addon card UI.
-   */
-  syncAddonCard(
-    'protection'
-  );
+    /*
+     * Keep existing addon UI behavior.
+     */
+    syncAddonCard('protection');
 
-  /*
-   * IMPORTANT:
-   *
-   * The original OFF click may already have triggered
-   * setShippingInsurance('remove').
-   *
-   * "Keep Protection" therefore MUST explicitly add
-   * Insurance back to the backend/session.
-   *
-   * This restores the actual Insurance amount
-   * (for example $17.31), not just the checkbox UI.
-   */
-  if (
-    window.MaxaromaOnePageCheckout &&
-    typeof
-      window.MaxaromaOnePageCheckout
-        .setShippingInsurance ===
-      'function'
-  ) {
+    /*
+     * =========================================================
+     * KEEP CURRENT INSURANCE AMOUNT
+     * =========================================================
+     *
+     * The checkout already has the latest Insurance amount.
+     *
+     * Example:
+     *     Checkout Insurance = $20.86
+     *
+     * Use that same value for the Keep Protection confirmation
+     * price instead of using the stale Blade-rendered value.
+     */
+    const $checkoutInsurance =
+        $('#checkout-insurance');
 
-    window.MaxaromaOnePageCheckout
-      .setShippingInsurance(
-        'add'
-      );
-  }
+    const $keepProtectionPrice =
+        $('#protect-confirm-keep-price');
 
-  closeProtectConfirm();
+    if (
+        $checkoutInsurance.length &&
+        $keepProtectionPrice.length
+    ) {
+
+        const currentInsurance =
+            $checkoutInsurance.text().trim();
+
+        if (currentInsurance !== '') {
+
+            $keepProtectionPrice.text(
+                currentInsurance
+            );
+        }
+    }
+
+    /*
+     * =========================================================
+     * EXISTING BACKEND FLOW
+     * =========================================================
+     *
+     * Do NOT remove this.
+     *
+     * Keep Protection must restore Insurance in backend/session.
+     */
+    if (
+        window.MaxaromaOnePageCheckout &&
+        typeof window.MaxaromaOnePageCheckout
+            .setShippingInsurance ===
+            'function'
+    ) {
+
+        window.MaxaromaOnePageCheckout
+            .setShippingInsurance('add');
+    }
+
+    /*
+     * Existing modal close behavior.
+     */
+    closeProtectConfirm();
 }
 
     function removeProtection() {
