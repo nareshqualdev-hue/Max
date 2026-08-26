@@ -320,9 +320,21 @@ class ShippingInsuranceService
          * CheckoutTotalsService owns the common subtotal/charges/
          * discount calculation, so do not duplicate that logic here.
          */
+        /*
+         * Legacy parity:
+         *
+         * CartTrait::SetShippingInsuranceCharge() first gets
+         * GetNetTotal(), then subtracts ShoppingCart.Tax once.
+         *
+         * Therefore this common total must NOT exclude Tax here.
+         * calculate() performs the single legacy Tax subtraction
+         * immediately after this call.
+         *
+         * Shipping Insurance itself must be excluded so the
+         * insurance charge is not included in its own calculation.
+         */
         return $this->checkoutTotalsService
             ->getNetTotalExcludingCharges([
-                'Tax',
                 'ShippingInsurance',
             ]);
     }
