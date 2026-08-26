@@ -906,76 +906,106 @@
      */
 
     let signatureCharge =
-        parseFloat(
-            state.signatureCharge ||
-            0
-        );
+    parseFloat(
+        state.signatureCharge ||
+        0
+    );
 
-    let explicitSignatureApplied =
-        null;
+let explicitSignatureApplied =
+    null;
 
-    const signatureResponse =
-        response.shippingSignature ||
-        response.shipping_signature;
+const signatureResponse =
+    response.shippingSignature ||
+    response.shipping_signature;
 
-    if (
-        signatureResponse &&
-        typeof signatureResponse ===
-        'object'
-    ) {
-
-        if (
-            signatureResponse.charge !==
-            undefined
-        ) {
-
-            signatureCharge =
-                parseFloat(
-                    signatureResponse.charge ||
-                    0
-                );
-        }
-
-        if (
-            signatureResponse.applied !==
-            undefined
-        ) {
-
-            explicitSignatureApplied =
-                String(
-                    signatureResponse.applied
-                ).toLowerCase() === 'yes';
-        }
-    }
+if (
+    signatureResponse &&
+    typeof signatureResponse ===
+    'object'
+) {
 
     if (
-        explicitSignatureApplied !==
-        null
-    ) {
-
-        state.signatureApplied =
-            explicitSignatureApplied;
-
-    } else if (
-        state.signatureApplied ===
+        signatureResponse.charge !==
         undefined
     ) {
 
-        const $signature =
-            $('#request-signature');
-
-        state.signatureApplied =
-            $signature.length
-                ? $signature.is(':checked')
-                : false;
+        signatureCharge =
+            parseFloat(
+                signatureResponse.charge ||
+                0
+            );
     }
 
-    state.signatureCharge =
-        signatureCharge;
+    if (
+        signatureResponse.applied !==
+        undefined
+    ) {
 
-    const signatureApplied =
-        state.signatureApplied === true;
+        explicitSignatureApplied =
+            String(
+                signatureResponse.applied
+            ).toLowerCase() === 'yes';
+    }
+}
 
+/*
+ * =====================================================
+ * SHIPPING SIGNATURE - PAGE REFRESH PROTECTION
+ * =====================================================
+ *
+ * restoreCheckoutAddonState() sets:
+ *
+ * signatureApplied = true
+ * signatureRefreshDefault = true
+ *
+ * The first AJAX totals/shipping response after
+ * page refresh must NOT overwrite that ON state
+ * with backend "No".
+ *
+ * Once customer explicitly clicks ON/OFF,
+ * setShippingSignature() clears this flag.
+ */
+
+if (
+    state.signatureRefreshDefault ===
+    true
+) {
+
+    state.signatureApplied =
+        true;
+
+} else if (
+    explicitSignatureApplied !==
+    null
+) {
+
+    /*
+     * Customer has already explicitly interacted
+     * with Signature, therefore backend is now
+     * the source of truth.
+     */
+    state.signatureApplied =
+        explicitSignatureApplied;
+
+} else if (
+    state.signatureApplied ===
+    undefined
+) {
+
+    const $signature =
+        $('#request-signature');
+
+    state.signatureApplied =
+        $signature.length
+            ? $signature.is(':checked')
+            : false;
+}
+
+state.signatureCharge =
+    signatureCharge;
+
+const signatureApplied =
+    state.signatureApplied === true;
     /*
      * =========================================================
      * SUBTOTAL
@@ -5147,7 +5177,13 @@
      */
     const requestedState =
         action === 'add';
+	
+	window.MaxaromaCheckout
+    .totalsState
+    .signatureRefreshDefault =
+    false;
 
+	
     window.MaxaromaCheckout
         .totalsState
         .signatureApplied =
@@ -5386,7 +5422,8 @@
                     null;
             });
 }
- 	function restoreCheckoutAddonState() {
+
+function restoreCheckoutAddonState() {
 
     window.MaxaromaCheckout =
         window.MaxaromaCheckout || {};
@@ -5398,15 +5435,15 @@
         window.MaxaromaCheckout
             .totalsState;
 
-    const checkoutState =
-        window.MaxaromaCheckout.checkout ||
-        {};
-
     /*
      * =====================================================
      * SHIPPING INSURANCE
      * =====================================================
      */
+
+    const checkoutState =
+        window.MaxaromaCheckout.checkout ||
+        {};
 
     let insuranceApplied = null;
 
@@ -5460,99 +5497,24 @@
      * SHIPPING SIGNATURE
      * =====================================================
      *
-     * New Checkout requirement:
-     *
-     * 1. Signature must NOT be automatically enabled.
-     * 2. Do NOT call setShippingSignature('add') here.
-     * 3. If backend explicitly returns an applied state,
-     *    use that state.
-     * 4. A $0 charge can still mean Signature is applied.
-     *
-     * Therefore:
-     *
-     * applied state != charge amount.
-     * =====================================================
-     */
-
-    let signatureApplied = null;
-
-    if (
-        checkoutState.shippingSignature &&
-        typeof checkoutState.shippingSignature ===
-        'object' &&
-        checkoutState.shippingSignature.applied !==
-        undefined
-    ) {
-
-        signatureApplied =
-            isAppliedFlag(
-                checkoutState.shippingSignature.applied
-            );
-
-    } else if (
-        checkoutState.shipping_signature &&
-        typeof checkoutState.shipping_signature ===
-        'object' &&
-        checkoutState.shipping_signature.applied !==
-        undefined
-    ) {
-
-        signatureApplied =
-            isAppliedFlag(
-                checkoutState.shipping_signature.applied
-            );
-
-    } else if (
-        checkoutState.signatureApplied !==
-        undefined
-    ) {
-
-        signatureApplied =
-            isAppliedFlag(
-                checkoutState.signatureApplied
-            );
-
-    } else if (
-        checkoutState.shipping_signature_applied !==
-        undefined
-    ) {
-
-        signatureApplied =
-            isAppliedFlag(
-                checkoutState.shipping_signature_applied
-            );
-    }
-
-    /*
-     * If backend did not provide an explicit Signature
-     * state, keep the existing checkbox/state.
+     * PAGE REFRESH DEFAULT = ON
      *
      * IMPORTANT:
-     * Do NOT use charge > 0 as the fallback because
-     * FREE Signature has charge = 0 but can still be ON.
      *
-     * New checkout initial state is OFF.
+     * We intentionally do NOT read the old backend
+     * Signature applied state here.
+     *
+     * Page refresh always starts Signature as ON.
+     *
+     * We also DO NOT call setShippingSignature('add')
+     * because that would make an unnecessary AJAX request.
      */
 
-    if (signatureApplied === null) {
-
-        if (
-            state.signatureApplied !==
-            undefined
-        ) {
-
-            signatureApplied =
-                state.signatureApplied === true;
-
-        } else {
-
-            signatureApplied =
-                false;
-        }
-    }
-
     state.signatureApplied =
-        signatureApplied;
+        true;
+
+    state.signatureRefreshDefault =
+        true;
 
     const $signature =
         $('#request-signature');
@@ -5561,30 +5523,17 @@
 
         $signature.prop(
             'checked',
-            signatureApplied
+            true
         );
 
         $signature
             .closest('.addon-row')
-            .toggleClass(
-                'active',
-                signatureApplied
+            .addClass(
+                'active'
             );
     }
-
-    /*
-     * IMPORTANT:
-     *
-     * DO NOT call:
-     *
-     * setShippingSignature('add');
-     *
-     * here.
-     *
-     * Signature must only be added when the customer
-     * explicitly enables the checkbox.
-     */
 }
+    
     window.applyGiftCard = function () {
 
         const input =
