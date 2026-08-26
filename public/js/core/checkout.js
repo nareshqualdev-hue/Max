@@ -609,384 +609,476 @@
             );
     }
 
-    function updateTotals(response) {
+  function updateTotals(response) {
 
-        response = response || {};
+    response = response || {};
 
-        window.MaxaromaCheckout =
-            window.MaxaromaCheckout || {};
+    window.MaxaromaCheckout =
+        window.MaxaromaCheckout || {};
 
-        window.MaxaromaCheckout.totalsState =
-            window.MaxaromaCheckout.totalsState || {};
+    window.MaxaromaCheckout.totalsState =
+        window.MaxaromaCheckout.totalsState || {};
 
-        const state =
-            window.MaxaromaCheckout.totalsState;
+    const state =
+        window.MaxaromaCheckout.totalsState;
 
-        const totals =
-            response.totals ||
-            response.Totals ||
-            {};
+    const totals =
+        response.totals ||
+        response.Totals ||
+        {};
 
-        const charges =
-            totals.Charges ||
-            totals.charges ||
-            {};
+    const charges =
+        totals.Charges ||
+        totals.charges ||
+        {};
 
-        const shippingResponse =
-            response.shipping;
+    const shippingResponse =
+        response.shipping;
 
-        const taxResponse =
-            response.tax;
+    const taxResponse =
+        response.tax;
 
-        const insuranceResponse =
-            response.insurance;
+    const insuranceResponse =
+        response.insurance;
 
-        /*
-         * =========================================================
-         * SHIPPING
-         * =========================================================
-         */
+    /*
+     * =========================================================
+     * SHIPPING
+     * =========================================================
+     */
 
-        const shipping =
-            totals.shipping ??
-            totals.Shipping ??
-            totals.shipping_charge ??
-            totals.ShippingCharge ??
-            response.shipping_charge ??
-            response.shippingCharge ??
-            (
-                typeof shippingResponse === 'number'
-                    ? shippingResponse
-                    : (
-                        shippingResponse?.shipping_charge ??
-                        shippingResponse?.charge ??
-                        shippingResponse?.amount ??
-                        shippingResponse?.ShippingCharge ??
-                        0
-                    )
-            );
-
-        /*
-         * =========================================================
-         * TAX
-         * =========================================================
-         */
-
-        const tax =
-            totals.tax ??
-            totals.Tax ??
-            totals.tax_amount ??
-            totals.TaxAmount ??
-            response.tax_amount ??
-            response.taxAmount ??
-            (
-                charges?.Tax?.charge ??
-                charges?.tax?.charge ??
-                (
-                    typeof taxResponse === 'number'
-                        ? taxResponse
-                        : (
-                            taxResponse?.tax ??
-                            taxResponse?.tax_amount ??
-                            taxResponse?.Tax ??
-                            taxResponse?.amount ??
-                            taxResponse?.charge ??
-                            0
-                        )
+    const shipping =
+        totals.shipping ??
+        totals.Shipping ??
+        totals.shipping_charge ??
+        totals.ShippingCharge ??
+        response.shipping_charge ??
+        response.shippingCharge ??
+        (
+            typeof shippingResponse === 'number'
+                ? shippingResponse
+                : (
+                    shippingResponse?.shipping_charge ??
+                    shippingResponse?.charge ??
+                    shippingResponse?.amount ??
+                    shippingResponse?.ShippingCharge ??
+                    0
                 )
-            );
+        );
 
-        /*
-         * =========================================================
-         * SHIPPING INSURANCE
-         * =========================================================
-         *
-         * IMPORTANT:
-         *
-         * Do NOT use insurance charge alone to decide ON/OFF.
-         *
-         * Priority:
-         *
-         * 1. Backend explicit applied state
-         * 2. Current checkbox state
-         * 3. Previously stored JS state
-         * 4. Positive charge fallback only on initial legacy state
-         *
-         * This preserves:
-         *
-         * ON  -> refresh -> ON
-         * OFF -> refresh -> OFF
-         * =========================================================
-         */
+    /*
+     * =========================================================
+     * TAX
+     * =========================================================
+     */
 
-        const insuranceChargeFromTotals =
-            charges?.ShippingInsurance?.charge ??
-            charges?.shipping_insurance?.charge ??
-            totals?.ShippingInsurance?.charge ??
-            totals?.shipping_insurance?.charge;
-
-        const insuranceValue =
-            totals.insurance ??
-            totals.Insurance ??
-            totals.shipping_insurance ??
-            totals.shipping_insurance_charge ??
-            totals.ShippingInsurance?.charge ??
-            insuranceChargeFromTotals ??
-            response.shipping_insurance_charge ??
-            response.shippingInsuranceCharge ??
+    const tax =
+        totals.tax ??
+        totals.Tax ??
+        totals.tax_amount ??
+        totals.TaxAmount ??
+        response.tax_amount ??
+        response.taxAmount ??
+        (
+            charges?.Tax?.charge ??
+            charges?.tax?.charge ??
             (
-                typeof insuranceResponse === 'number'
-                    ? insuranceResponse
+                typeof taxResponse === 'number'
+                    ? taxResponse
                     : (
-                        insuranceResponse?.charge ??
-                        insuranceResponse?.shipping_insurance_charge ??
-                        insuranceResponse?.amount ??
+                        taxResponse?.tax ??
+                        taxResponse?.tax_amount ??
+                        taxResponse?.Tax ??
+                        taxResponse?.amount ??
+                        taxResponse?.charge ??
                         0
                     )
-            );
+            )
+        );
 
-        const insurance =
-            parseFloat(
-                insuranceValue || 0
-            );
+    /*
+     * =========================================================
+     * SHIPPING INSURANCE
+     * =========================================================
+     *
+     * IMPORTANT:
+     *
+     * Insurance amount and Insurance ON/OFF state
+     * are separate values.
+     *
+     * A Signature AJAX response may not contain the
+     * Insurance amount. In that case DO NOT replace the
+     * existing Insurance amount with 0.
+     *
+     * Existing Insurance behavior remains unchanged.
+     * =========================================================
+     */
 
-        /*
-         * Does this response explicitly tell us
-         * whether Insurance is applied?
-         */
-        let explicitInsuranceApplied = null;
+    const insuranceChargeFromTotals =
+        charges?.ShippingInsurance?.charge ??
+        charges?.shipping_insurance?.charge ??
+        totals?.ShippingInsurance?.charge ??
+        totals?.shipping_insurance?.charge;
 
-        if (
-            response.insurance_applied !==
-            undefined
-        ) {
-
-            explicitInsuranceApplied =
-                String(
-                    response.insurance_applied
-                ).toLowerCase() === 'yes';
-
-        } else if (
-            response.insuranceApplied !==
-            undefined
-        ) {
-
-            explicitInsuranceApplied =
-                response.insuranceApplied === true ||
-                String(
-                    response.insuranceApplied
-                ).toLowerCase() === 'yes';
-
-        } else if (
-            response.shippingInsuranceApplied !==
-            undefined
-        ) {
-
-            explicitInsuranceApplied =
-                response.shippingInsuranceApplied === true ||
-                String(
-                    response.shippingInsuranceApplied
-                ).toLowerCase() === 'yes';
-
-        } else if (
+    const hasInsuranceValue =
+        totals.insurance !== undefined ||
+        totals.Insurance !== undefined ||
+        totals.shipping_insurance !== undefined ||
+        totals.shipping_insurance_charge !== undefined ||
+        totals.ShippingInsurance?.charge !== undefined ||
+        insuranceChargeFromTotals !== undefined ||
+        response.shipping_insurance_charge !== undefined ||
+        response.shippingInsuranceCharge !== undefined ||
+        typeof insuranceResponse === 'number' ||
+        (
             insuranceResponse &&
             typeof insuranceResponse === 'object' &&
-            insuranceResponse.applied !==
-            undefined
-        ) {
+            (
+                insuranceResponse.charge !== undefined ||
+                insuranceResponse.shipping_insurance_charge !== undefined ||
+                insuranceResponse.amount !== undefined
+            )
+        );
 
-            explicitInsuranceApplied =
-                String(
-                    insuranceResponse.applied
-                ).toLowerCase() === 'yes';
-        }
+    let insuranceValue =
+        totals.insurance ??
+        totals.Insurance ??
+        totals.shipping_insurance ??
+        totals.shipping_insurance_charge ??
+        totals.ShippingInsurance?.charge ??
+        insuranceChargeFromTotals ??
+        response.shipping_insurance_charge ??
+        response.shippingInsuranceCharge ??
+        (
+            typeof insuranceResponse === 'number'
+                ? insuranceResponse
+                : (
+                    insuranceResponse?.charge ??
+                    insuranceResponse?.shipping_insurance_charge ??
+                    insuranceResponse?.amount
+                )
+        );
+
+    /*
+     * If this response does not contain Insurance,
+     * preserve the last known Insurance amount.
+     *
+     * This is required for:
+     *
+     * Signature ON
+     *     -> updateTotals(signatureResponse)
+     *     -> Insurance must remain $17.31
+     *
+     * Signature OFF
+     *     -> updateTotals(signatureResponse)
+     *     -> Insurance must remain $17.31
+     */
+    if (
+        !hasInsuranceValue &&
+        state.insurance !== undefined &&
+        state.insurance !== null
+    ) {
+
+        insuranceValue =
+            state.insurance;
+    }
+
+    /*
+     * Final Insurance amount.
+     */
+    const insurance =
+        parseFloat(
+            insuranceValue || 0
+        );
+
+    /*
+     * =========================================================
+     * INSURANCE APPLIED STATE
+     * =========================================================
+     */
+
+    let explicitInsuranceApplied =
+        null;
+
+    if (
+        response.insurance_applied !==
+        undefined
+    ) {
+
+        explicitInsuranceApplied =
+            String(
+                response.insurance_applied
+            ).toLowerCase() === 'yes';
+
+    } else if (
+        response.insuranceApplied !==
+        undefined
+    ) {
+
+        explicitInsuranceApplied =
+            response.insuranceApplied === true ||
+            String(
+                response.insuranceApplied
+            ).toLowerCase() === 'yes';
+
+    } else if (
+        response.shippingInsuranceApplied !==
+        undefined
+    ) {
+
+        explicitInsuranceApplied =
+            response.shippingInsuranceApplied === true ||
+            String(
+                response.shippingInsuranceApplied
+            ).toLowerCase() === 'yes';
+
+    } else if (
+        insuranceResponse &&
+        typeof insuranceResponse === 'object' &&
+        insuranceResponse.applied !==
+        undefined
+    ) {
+
+        explicitInsuranceApplied =
+            String(
+                insuranceResponse.applied
+            ).toLowerCase() === 'yes';
+    }
+
+    /*
+     * Backend is source of truth when it explicitly
+     * provides Insurance applied state.
+     */
+    if (
+        explicitInsuranceApplied !==
+        null
+    ) {
+
+        state.insuranceApplied =
+            explicitInsuranceApplied;
+
+    } else if (
+        state.insuranceApplied ===
+        undefined
+    ) {
 
         /*
-         * ---------------------------------------------------------
-         * Determine Insurance ON/OFF state.
-         * ---------------------------------------------------------
+         * No explicit backend state.
+         *
+         * Use current checkbox state.
          */
+        const $protection =
+            $('#protection');
 
-        if (
-            explicitInsuranceApplied !== null
-        ) {
+        if ($protection.length) {
+
+            state.insuranceApplied =
+                $protection.is(':checked');
+
+        } else {
 
             /*
-             * Backend is the source of truth.
+             * Final legacy fallback only when no UI
+             * state exists.
              */
             state.insuranceApplied =
-                explicitInsuranceApplied;
+                insurance > 0;
+        }
+    }
 
-        } else if (
-            state.insuranceApplied ===
+    const insuranceApplied =
+        state.insuranceApplied === true;
+
+    /*
+     * Keep last known Insurance amount.
+     *
+     * IMPORTANT:
+     * This is what allows a Signature response that does
+     * not contain Insurance to preserve $17.31.
+     */
+    state.insurance =
+        insurance;
+
+    /*
+     * =========================================================
+     * SHIPPING SIGNATURE
+     * =========================================================
+     */
+
+    let signatureCharge =
+        parseFloat(
+            state.signatureCharge ||
+            0
+        );
+
+    let explicitSignatureApplied =
+        null;
+
+    const signatureResponse =
+        response.shippingSignature ||
+        response.shipping_signature;
+
+    if (
+        signatureResponse &&
+        typeof signatureResponse ===
+        'object'
+    ) {
+
+        if (
+            signatureResponse.charge !==
             undefined
         ) {
 
-            /*
-             * No backend state yet.
-             *
-             * Use the actual checkbox state already rendered
-             * by Blade.
-             *
-             * This is the important fix for:
-             *
-             * ON -> refresh -> OFF
-             */
-            const $protection =
-                $('#protection');
-
-            if ($protection.length) {
-
-                state.insuranceApplied =
-                    $protection.is(':checked');
-
-            } else {
-
-                /*
-                 * Final legacy fallback only when there is
-                 * absolutely no UI state available.
-                 */
-                state.insuranceApplied =
-                    insurance > 0;
-            }
-        }
-
-        const insuranceApplied =
-            state.insuranceApplied === true;
-
-        /*
-         * Keep last insurance amount.
-         */
-        state.insurance =
-            insurance;
-
-        /*
-         * =========================================================
-         * SHIPPING SIGNATURE
-         * =========================================================
-         */
-
-        let signatureCharge =
-            parseFloat(
-                state.signatureCharge ||
-                0
-            );
-
-        let explicitSignatureApplied =
-            null;
-
-        const signatureResponse =
-            response.shippingSignature ||
-            response.shipping_signature;
-
-        if (
-            signatureResponse &&
-            typeof signatureResponse === 'object'
-        ) {
-
-            if (
-                signatureResponse.charge !==
-                undefined
-            ) {
-
-                signatureCharge =
-                    parseFloat(
-                        signatureResponse.charge ||
-                        0
-                    );
-            }
-
-            if (
-                signatureResponse.applied !==
-                undefined
-            ) {
-
-                explicitSignatureApplied =
-                    String(
-                        signatureResponse.applied
-                    ).toLowerCase() === 'yes';
-            }
-        }
-
-        if (
-            explicitSignatureApplied !== null
-        ) {
-
-            state.signatureApplied =
-                explicitSignatureApplied;
-
-        } else if (
-            state.signatureApplied ===
-            undefined
-        ) {
-
-            const $signature =
-                $('#request-signature');
-
-            state.signatureApplied =
-                $signature.length
-                    ? $signature.is(':checked')
-                    : signatureCharge > 0;
-        }
-
-        state.signatureCharge =
-            signatureCharge;
-
-        const signatureApplied =
-            state.signatureApplied === true;
-
-        /*
-         * =========================================================
-         * SUBTOTAL
-         * =========================================================
-         */
-
-        const subtotal =
-            parseFloat(
-                totals.SubTotal ??
-                totals.subTotal ??
-                totals.subtotal ??
-                0
-            );
-
-        $('#summary-subtotal-value')
-            .text(
-                formatMoney(subtotal)
-            )
-            .attr(
-                'data-value',
-                subtotal
-            );
-
-        $('#checkout-subtotal')
-            .text(
-                formatMoney(subtotal)
-            )
-            .attr(
-                'data-value',
-                subtotal
-            );
-
-        /*
-         * =========================================================
-         * DISCOUNTS
-         * =========================================================
-         */
-
-        const discounts =
-            totals.Discounts ||
-            totals.discounts ||
-            {};
-
-        $('.discount-row').each(function () {
-
-            const $row =
-                $(this);
-
-            const discountKey =
-                $row.attr(
-                    'data-discount-key'
+            signatureCharge =
+                parseFloat(
+                    signatureResponse.charge ||
+                    0
                 );
+        }
+
+        if (
+            signatureResponse.applied !==
+            undefined
+        ) {
+
+            explicitSignatureApplied =
+                String(
+                    signatureResponse.applied
+                ).toLowerCase() === 'yes';
+        }
+    }
+
+    if (
+        explicitSignatureApplied !==
+        null
+    ) {
+
+        state.signatureApplied =
+            explicitSignatureApplied;
+
+    } else if (
+        state.signatureApplied ===
+        undefined
+    ) {
+
+        const $signature =
+            $('#request-signature');
+
+        state.signatureApplied =
+            $signature.length
+                ? $signature.is(':checked')
+                : false;
+    }
+
+    state.signatureCharge =
+        signatureCharge;
+
+    const signatureApplied =
+        state.signatureApplied === true;
+
+    /*
+     * =========================================================
+     * SUBTOTAL
+     * =========================================================
+     */
+
+    const subtotal =
+        parseFloat(
+            totals.SubTotal ??
+            totals.subTotal ??
+            totals.subtotal ??
+            0
+        );
+
+    $('#summary-subtotal-value')
+        .text(
+            formatMoney(subtotal)
+        )
+        .attr(
+            'data-value',
+            subtotal
+        );
+
+    $('#checkout-subtotal')
+        .text(
+            formatMoney(subtotal)
+        )
+        .attr(
+            'data-value',
+            subtotal
+        );
+
+    /*
+     * =========================================================
+     * DISCOUNTS
+     * =========================================================
+     */
+
+    const discounts =
+        totals.Discounts ||
+        totals.discounts ||
+        {};
+
+    $('.discount-row').each(function () {
+
+        const $row =
+            $(this);
+
+        const discountKey =
+            $row.attr(
+                'data-discount-key'
+            );
+
+        const discount =
+            discounts[discountKey];
+
+        const amount =
+            parseFloat(
+                discount?.discount ??
+                0
+            );
+
+        if (
+            discount &&
+            amount > 0
+        ) {
+
+            $row
+                .removeAttr('hidden')
+                .find('.summary-row-label')
+                .text(
+                    discount.label ||
+                    discountKey
+                );
+
+            $row
+                .find('.discount-value')
+                .text(
+                    '-' +
+                    formatMoney(amount)
+                );
+
+        } else {
+
+            $row.attr(
+                'hidden',
+                true
+            );
+        }
+    });
+
+    /*
+     * Dynamic discount rows.
+     */
+    const $summaryTotals =
+        $('.summary-totals');
+
+    const $totalRow =
+        $('#summary-total-value')
+            .closest('.summary-row');
+
+    Object.keys(discounts)
+        .forEach(function (discountKey) {
 
             const discount =
                 discounts[discountKey];
@@ -998,300 +1090,275 @@
                 );
 
             if (
-                discount &&
-                amount > 0
+                !discount ||
+                amount <= 0
             ) {
-
-                $row
-                    .removeAttr('hidden')
-                    .find('.summary-row-label')
-                    .text(
-                        discount.label ||
-                        discountKey
-                    );
-
-                $row
-                    .find('.discount-value')
-                    .text(
-                        '-' +
-                        formatMoney(amount)
-                    );
-
-            } else {
-
-                $row.attr(
-                    'hidden',
-                    true
-                );
+                return;
             }
-        });
 
-        /*
-         * Dynamic discount rows.
-         */
-        const $summaryTotals =
-            $('.summary-totals');
+            let $row =
+                $summaryTotals.find(
+                    '.discount-row[data-discount-key="' +
+                    discountKey +
+                    '"]'
+                );
 
-        const $totalRow =
-            $('#summary-total-value')
-                .closest('.summary-row');
+            if (!$row.length) {
 
-        Object.keys(discounts)
-            .forEach(function (discountKey) {
-
-                const discount =
-                    discounts[discountKey];
-
-                const amount =
-                    parseFloat(
-                        discount?.discount ??
-                        0
-                    );
-
-                if (
-                    !discount ||
-                    amount <= 0
-                ) {
-                    return;
-                }
-
-                let $row =
-                    $summaryTotals.find(
-                        '.discount-row[data-discount-key="' +
-                        discountKey +
-                        '"]'
-                    );
-
-                if (!$row.length) {
-
-                    $row = $(
-                        '<div class="summary-row discount-row">' +
+                $row = $(
+                    '<div class="summary-row discount-row">' +
                         '<span class="summary-row-label"></span>' +
                         '<span class="summary-row-value discount-value"></span>' +
-                        '</div>'
-                    );
+                    '</div>'
+                );
 
-                    $row.attr(
-                        'data-discount-key',
-                        discountKey
-                    );
+                $row.attr(
+                    'data-discount-key',
+                    discountKey
+                );
 
-                    $row.insertBefore(
-                        $totalRow
-                    );
-                }
-
-                $row
-                    .removeAttr('hidden')
-                    .find('.summary-row-label')
-                    .text(
-                        discount.label ||
-                        discountKey
-                    );
-
-                $row
-                    .find('.discount-value')
-                    .text(
-                        '-' +
-                        formatMoney(amount)
-                    );
-            });
-
-        /*
-         * =========================================================
-         * SHIPPING
-         * =========================================================
-         */
-
-        const $shippingValue =
-            $('#summary-shipping-value');
-
-        if ($shippingValue.length) {
-
-            if (
-                parseFloat(shipping || 0) <= 0
-            ) {
-
-                $shippingValue
-                    .text('Free')
-                    .css(
-                        'color',
-                        'var(--color-text-success)'
-                    );
-
-            } else {
-
-                $shippingValue
-                    .text(
-                        formatMoney(shipping)
-                    )
-                    .css(
-                        'color',
-                        ''
-                    );
+                $row.insertBefore(
+                    $totalRow
+                );
             }
-        }
 
-        $('#checkout-shipping')
-            .text(
-                formatMoney(shipping)
-            )
-            .attr(
-                'data-value',
-                shipping
-            );
+            $row
+                .removeAttr('hidden')
+                .find('.summary-row-label')
+                .text(
+                    discount.label ||
+                    discountKey
+                );
 
-        /*
-         * =========================================================
-         * TAX
-         * =========================================================
-         */
+            $row
+                .find('.discount-value')
+                .text(
+                    '-' +
+                    formatMoney(amount)
+                );
+        });
 
-        $('#summary-tax-value')
-            .text(
-                formatMoney(tax)
-            );
+    /*
+     * =========================================================
+     * SHIPPING
+     * =========================================================
+     */
 
-        $('#checkout-tax')
-            .text(
-                formatMoney(tax)
-            )
-            .attr(
-                'data-value',
-                tax
-            );
+    const $shippingValue =
+        $('#summary-shipping-value');
 
-        /*
-         * =========================================================
-         * PROTECT MY ORDER
-         * =========================================================
-         */
+    if ($shippingValue.length) {
 
-        const $protection =
-            $('#protection');
+        if (
+            parseFloat(shipping || 0) <= 0
+        ) {
 
-        if ($protection.length) {
+            $shippingValue
+                .text('Free')
+                .css(
+                    'color',
+                    'var(--color-text-success)'
+                );
 
-            $protection.prop(
-                'checked',
-                insuranceApplied
-            );
+        } else {
 
-            $protection
-                .closest('.addon-row')
-                .toggleClass(
-                    'active',
-                    insuranceApplied
+            $shippingValue
+                .text(
+                    formatMoney(shipping)
+                )
+                .css(
+                    'color',
+                    ''
                 );
         }
+    }
 
-        /*
-         * Addon price.
-         */
+    $('#checkout-shipping')
+        .text(
+            formatMoney(shipping)
+        )
+        .attr(
+            'data-value',
+            shipping
+        );
+
+    /*
+     * =========================================================
+     * TAX
+     * =========================================================
+     */
+
+    $('#summary-tax-value')
+        .text(
+            formatMoney(tax)
+        );
+
+    $('#checkout-tax')
+        .text(
+            formatMoney(tax)
+        )
+        .attr(
+            'data-value',
+            tax
+        );
+
+    /*
+     * =========================================================
+     * PROTECT MY ORDER
+     * =========================================================
+     */
+
+    const $protection =
+        $('#protection');
+
+    if ($protection.length) {
+
+        $protection.prop(
+            'checked',
+            insuranceApplied
+        );
+
+        $protection
+            .closest('.addon-row')
+            .toggleClass(
+                'active',
+                insuranceApplied
+            );
+    }
+
+    /*
+     * Addon price.
+     */
+
+    if (insuranceApplied) {
+
+        $('#protection-addon-price')
+            .text(
+                '+' +
+                formatMoney(insurance)
+            );
+
+        $('#protect-confirm-keep-price')
+            .text(
+                formatMoney(insurance)
+            );
+
+    } else {
+
+        $('#protection-addon-price')
+            .text(
+                '+$0.00'
+            );
+
+        $('#protect-confirm-keep-price')
+            .text(
+                '$0.00'
+            );
+    }
+
+    /*
+     * Summary protection row.
+     */
+
+    const $protectionRow =
+        $('#protection-row');
+
+    if ($protectionRow.length) {
 
         if (insuranceApplied) {
 
-            $('#protection-addon-price')
-                .text(
-                    '+' +
-                    formatMoney(insurance)
-                );
-
-            $('#protect-confirm-keep-price')
+            $protectionRow
+                .removeAttr('hidden')
+                .find('.summary-row-value')
                 .text(
                     formatMoney(insurance)
                 );
 
         } else {
 
-            $('#protection-addon-price')
-                .text(
-                    '+$0.00'
-                );
-
-            $('#protect-confirm-keep-price')
-                .text(
-                    '$0.00'
-                );
+            $protectionRow.attr(
+                'hidden',
+                true
+            );
         }
+    }
 
-        /*
-         * Summary protection row.
-         */
+    /*
+     * Existing checkout insurance element.
+     */
 
-        const $protectionRow =
-            $('#protection-row');
-
-        if ($protectionRow.length) {
-
-            if (insuranceApplied) {
-
-                $protectionRow
-                    .removeAttr('hidden')
-                    .find('.summary-row-value')
-                    .text(
-                        formatMoney(insurance)
-                    );
-
-            } else {
-
-                $protectionRow.attr(
-                    'hidden',
-                    true
-                );
-            }
-        }
-
-        /*
-         * Existing checkout insurance element.
-         */
-
-        $('#checkout-insurance')
-            .text(
-                formatMoney(
-                    insuranceApplied
-                        ? insurance
-                        : 0
-                )
-            )
-            .attr(
-                'data-value',
+    $('#checkout-insurance')
+        .text(
+            formatMoney(
                 insuranceApplied
                     ? insurance
                     : 0
-            );
+            )
+        )
+        .attr(
+            'data-value',
+            insuranceApplied
+                ? insurance
+                : 0
+        );
 
-        /*
-         * =========================================================
-         * SHIPPING SIGNATURE
-         * =========================================================
-         */
+    /*
+     * =========================================================
+     * SHIPPING SIGNATURE
+     * =========================================================
+     */
 
-        const $signature =
-            $('#request-signature');
+    const $signature =
+        $('#request-signature');
 
-        if ($signature.length) {
+    if ($signature.length) {
 
-            $signature.prop(
-                'checked',
+        $signature.prop(
+            'checked',
+            signatureApplied
+        );
+
+        $signature
+            .closest('.addon-row')
+            .toggleClass(
+                'active',
                 signatureApplied
             );
+    }
 
-            $signature
-                .closest('.addon-row')
-                .toggleClass(
-                    'active',
-                    signatureApplied
-                );
-        }
+    if (signatureApplied) {
+
+        $('#signature-addon-price')
+            .text(
+                signatureCharge > 0
+                    ? '+' +
+                      formatMoney(
+                          signatureCharge
+                      )
+                    : 'Free'
+            );
+
+    } else {
+
+        $('#signature-addon-price')
+            .text(
+                'Free'
+            );
+    }
+
+    const $signatureRow =
+        $('#signature-row');
+
+    if ($signatureRow.length) {
 
         if (signatureApplied) {
 
-            $('#signature-addon-price')
+            $signatureRow
+                .removeAttr('hidden')
+                .find('.summary-row-value')
                 .text(
                     signatureCharge > 0
-                        ? '+' +
-                        formatMoney(
+                        ? formatMoney(
                             signatureCharge
                         )
                         : 'Free'
@@ -1299,223 +1366,201 @@
 
         } else {
 
-            $('#signature-addon-price')
-                .text(
-                    'Free'
-                );
-        }
-
-        const $signatureRow =
-            $('#signature-row');
-
-        if ($signatureRow.length) {
-
-            if (signatureApplied) {
-
-                $signatureRow
-                    .removeAttr('hidden')
-                    .find('.summary-row-value')
-                    .text(
-                        signatureCharge > 0
-                            ? formatMoney(
-                                signatureCharge
-                            )
-                            : 'Free'
-                    );
-
-            } else {
-
-                $signatureRow.attr(
-                    'hidden',
-                    true
-                );
-            }
-        }
-
-        /*
-         * =========================================================
-         * GIFT WRAP
-         * =========================================================
-         */
-
-        const giftWrap =
-            parseFloat(
-                charges.GiftWrappingCharge?.charge ??
-                charges.GiftWrapping?.charge ??
-                response.giftWrapping?.charge ??
-                0
+            $signatureRow.attr(
+                'hidden',
+                true
             );
-
-        const $giftWrapRow =
-            $('#gift-wrap-row');
-
-        if ($giftWrapRow.length) {
-
-            if (giftWrap > 0) {
-
-                $giftWrapRow
-                    .removeAttr('hidden')
-                    .find('.summary-row-value')
-                    .text(
-                        formatMoney(giftWrap)
-                    );
-
-            } else {
-
-                $giftWrapRow.attr(
-                    'hidden',
-                    true
-                );
-            }
         }
+    }
 
-        /*
-         * =========================================================
-         * FINAL TOTAL
-         * =========================================================
-         */
+    /*
+     * =========================================================
+     * GIFT WRAP
+     * =========================================================
+     */
 
-        const netTotal =
-            totals.NetTotal ??
-            totals.netTotal ??
-            totals.net_total ??
-            totals.TotalAmount ??
-            totals.totalAmount ??
-            totals.Total ??
-            totals.total ??
-            totals.GrandTotal ??
-            totals.grandTotal ??
-            response.NetTotal ??
-            response.netTotal ??
-            response.GrandTotal ??
-            response.grandTotal;
-
-        if (
-            netTotal !== undefined &&
-            netTotal !== null
-        ) {
-
-            const numericTotal =
-                parseFloat(
-                    netTotal
-                );
-
-            const formattedTotal =
-                formatMoney(
-                    numericTotal
-                );
-
-            $('#summary-total-value')
-                .text(
-                    formattedTotal
-                )
-                .attr(
-                    'data-value',
-                    numericTotal
-                );
-
-            $('#review-summary-total-value')
-                .text(
-                    formattedTotal
-                );
-
-            $('#checkout-grand-total')
-                .text(
-                    formattedTotal
-                )
-                .attr(
-                    'data-value',
-                    numericTotal
-                );
-
-            $('#place-order-btn-text')
-                .text(
-                    'Place Order · ' +
-                    formattedTotal
-                );
-
-            $('#place-order-btn')
-                .attr(
-                    'aria-label',
-                    'Place order for ' +
-                    formattedTotal
-                );
-
-            $('#mobile-summary-amount')
-                .text(
-                    formattedTotal
-                );
-
-            $('#mobile-footer-amount')
-                .text(
-                    formattedTotal
-                );
-        }
-
-        /*
-         * =========================================================
-         * SAVE RESPONSE
-         * =========================================================
-         */
-        restoreGiftCertificateState(response);
-        window.MaxaromaCheckout.checkout =
-            response;
-
-        /*
-         * =========================================================
-         * NOTIFY CHECKOUT
-         * =========================================================
-         */
-
-        document.dispatchEvent(
-            new CustomEvent(
-                'maxaroma:checkout-totals-updated',
-                {
-                    detail: {
-
-                        response:
-                            response,
-
-                        totals:
-                            totals,
-
-                        subtotal:
-                            subtotal,
-
-                        shipping:
-                            shipping,
-
-                        tax:
-                            tax,
-
-                        insurance:
-                            insurance,
-
-                        insuranceApplied:
-                            insuranceApplied,
-
-                        signatureCharge:
-                            signatureCharge,
-
-                        signatureApplied:
-                            signatureApplied,
-
-                        giftWrap:
-                            giftWrap,
-
-                        netTotal:
-                            netTotal !== undefined &&
-                                netTotal !== null
-                                ? parseFloat(
-                                    netTotal
-                                )
-                                : null
-                    }
-                }
-            )
+    const giftWrap =
+        parseFloat(
+            charges.GiftWrappingCharge?.charge ??
+            charges.GiftWrapping?.charge ??
+            response.giftWrapping?.charge ??
+            0
         );
 
+    const $giftWrapRow =
+        $('#gift-wrap-row');
+
+    if ($giftWrapRow.length) {
+
+        if (giftWrap > 0) {
+
+            $giftWrapRow
+                .removeAttr('hidden')
+                .find('.summary-row-value')
+                .text(
+                    formatMoney(giftWrap)
+                );
+
+        } else {
+
+            $giftWrapRow.attr(
+                'hidden',
+                true
+            );
+        }
     }
+
+    /*
+     * =========================================================
+     * FINAL TOTAL
+     * =========================================================
+     */
+
+    const netTotal =
+        totals.NetTotal ??
+        totals.netTotal ??
+        totals.net_total ??
+        totals.TotalAmount ??
+        totals.totalAmount ??
+        totals.Total ??
+        totals.total ??
+        totals.GrandTotal ??
+        totals.grandTotal ??
+        response.NetTotal ??
+        response.netTotal ??
+        response.GrandTotal ??
+        response.grandTotal;
+
+    if (
+        netTotal !== undefined &&
+        netTotal !== null
+    ) {
+
+        const numericTotal =
+            parseFloat(
+                netTotal
+            );
+
+        const formattedTotal =
+            formatMoney(
+                numericTotal
+            );
+
+        $('#summary-total-value')
+            .text(
+                formattedTotal
+            )
+            .attr(
+                'data-value',
+                numericTotal
+            );
+
+        $('#review-summary-total-value')
+            .text(
+                formattedTotal
+            );
+
+        $('#checkout-grand-total')
+            .text(
+                formattedTotal
+            )
+            .attr(
+                'data-value',
+                numericTotal
+            );
+
+        $('#place-order-btn-text')
+            .text(
+                'Place Order · ' +
+                formattedTotal
+            );
+
+        $('#place-order-btn')
+            .attr(
+                'aria-label',
+                'Place order for ' +
+                formattedTotal
+            );
+
+        $('#mobile-summary-amount')
+            .text(
+                formattedTotal
+            );
+
+        $('#mobile-footer-amount')
+            .text(
+                formattedTotal
+            );
+    }
+
+    /*
+     * =========================================================
+     * SAVE RESPONSE
+     * =========================================================
+     */
+
+    restoreGiftCertificateState(
+        response
+    );
+
+    window.MaxaromaCheckout.checkout =
+        response;
+
+    /*
+     * =========================================================
+     * NOTIFY CHECKOUT
+     * =========================================================
+     */
+
+    document.dispatchEvent(
+        new CustomEvent(
+            'maxaroma:checkout-totals-updated',
+            {
+                detail: {
+
+                    response:
+                        response,
+
+                    totals:
+                        totals,
+
+                    subtotal:
+                        subtotal,
+
+                    shipping:
+                        shipping,
+
+                    tax:
+                        tax,
+
+                    insurance:
+                        insurance,
+
+                    insuranceApplied:
+                        insuranceApplied,
+
+                    signatureCharge:
+                        signatureCharge,
+
+                    signatureApplied:
+                        signatureApplied,
+
+                    giftWrap:
+                        giftWrap,
+
+                    netTotal:
+                        netTotal !== undefined &&
+                        netTotal !== null
+                            ? parseFloat(
+                                netTotal
+                            )
+                            : null
+                }
+            }
+        )
+    );
+}
+  
     function saveShippingAddress(callback) {
         /*
          * Phase 1 intentionally does not invent a new address endpoint.
@@ -5059,161 +5104,109 @@
             setShippingSignature(action);
         }
     );
-    function setShippingSignature(action) {
+ 
+	function setShippingSignature(action) {
 
-        action =
-            action === 'remove'
-                ? 'remove'
-                : 'add';
+    action =
+        action === 'remove'
+            ? 'remove'
+            : 'add';
 
-        if (!urls.shippingSignature) {
+    if (!urls.shippingSignature) {
 
-            showMessage(
-                '#shipping-method-messages',
-                'Shipping signature URL is not configured.',
-                'error'
+        showMessage(
+            '#shipping-method-messages',
+            'Shipping signature URL is not configured.',
+            'error'
+        );
+
+        return;
+    }
+
+    if (shippingSignatureRequest) {
+        shippingSignatureRequest.abort();
+    }
+
+    const $checkbox =
+        $('#request-signature');
+
+    window.MaxaromaCheckout =
+        window.MaxaromaCheckout || {};
+
+    window.MaxaromaCheckout.totalsState =
+        window.MaxaromaCheckout.totalsState || {};
+
+    /*
+     * =====================================================
+     * USER EXPLICIT ACTION
+     * =====================================================
+     *
+     * The customer explicitly clicked the checkbox.
+     *
+     * Keep the UI responsive immediately.
+     */
+    const requestedState =
+        action === 'add';
+
+    window.MaxaromaCheckout
+        .totalsState
+        .signatureApplied =
+        requestedState;
+
+    if ($checkbox.length) {
+
+        $checkbox.prop(
+            'checked',
+            requestedState
+        );
+
+        $checkbox
+            .closest('.addon-row')
+            .toggleClass(
+                'active',
+                requestedState
             );
+    }
 
-            return;
-        }
+    shippingSignatureRequest =
+        $.ajax({
 
-        if (shippingSignatureRequest) {
-            shippingSignatureRequest.abort();
-        }
+            type: 'POST',
 
-        const $checkbox =
-            $('#request-signature');
+            url:
+                urls.shippingSignature,
 
-        window.MaxaromaCheckout =
-            window.MaxaromaCheckout || {};
+            headers: {
+                'X-CSRF-TOKEN':
+                    csrfToken
+            },
 
-        window.MaxaromaCheckout.totalsState =
-            window.MaxaromaCheckout.totalsState || {};
+            dataType: 'json',
 
-        /*
-         * Remember explicit user selection immediately.
-         */
-        window.MaxaromaCheckout
-            .totalsState
-            .signatureApplied =
-            action === 'add';
+            data: {
+                action: action
+            }
 
-        /*
-         * Update checkbox immediately.
-         */
-        if ($checkbox.length) {
+        })
+            .done(function (response) {
 
-            $checkbox.prop(
-                'checked',
-                action === 'add'
-            );
+                /*
+                 * =================================================
+                 * BACKEND ERROR
+                 * =================================================
+                 */
 
-            $checkbox
-                .closest('.addon-row')
-                .toggleClass(
-                    'active',
-                    action === 'add'
-                );
-        }
-
-        shippingSignatureRequest =
-            $.ajax({
-
-                type: 'POST',
-
-                url:
-                    urls.shippingSignature,
-
-                headers: {
-                    'X-CSRF-TOKEN':
-                        csrfToken
-                },
-
-                dataType: 'json',
-
-                data: {
-                    action: action
-                }
-
-            })
-                .done(function (response) {
-
-                    if (
-                        response.status &&
-                        response.status !== 'success'
-                    ) {
-
-                        const previousState =
-                            action !== 'add';
-
-                        window.MaxaromaCheckout
-                            .totalsState
-                            .signatureApplied =
-                            previousState;
-
-                        if ($checkbox.length) {
-
-                            $checkbox.prop(
-                                'checked',
-                                previousState
-                            );
-
-                            $checkbox
-                                .closest('.addon-row')
-                                .toggleClass(
-                                    'active',
-                                    previousState
-                                );
-                        }
-
-                        showMessage(
-                            '#shipping-method-messages',
-                            response.message ||
-                            'Unable to update shipping signature.',
-                            'error'
-                        );
-
-                        return;
-                    }
+                if (
+                    response.status &&
+                    response.status !== 'success'
+                ) {
 
                     /*
-                     * Backend is source of truth.
+                     * Restore the state before this
+                     * explicit user action.
                      */
-                    if (
-                        response.shippingSignature &&
-                        response.shippingSignature.applied !==
-                        undefined
-                    ) {
-
-                        window.MaxaromaCheckout
-                            .totalsState
-                            .signatureApplied =
-                            String(
-                                response.shippingSignature.applied
-                            ).toLowerCase() === 'yes';
-
-                    } else if (
-                        response.applied !== undefined
-                    ) {
-
-                        window.MaxaromaCheckout
-                            .totalsState
-                            .signatureApplied =
-                            String(
-                                response.applied
-                            ).toLowerCase() === 'yes';
-                    }
-
-                    updateTotals(response);
-                })
-                .fail(function (xhr, status) {
-
-                    if (status === 'abort') {
-                        return;
-                    }
-
                     const previousState =
-                        action !== 'add';
+                        !requestedState;
 
                     window.MaxaromaCheckout
                         .totalsState
@@ -5235,145 +5228,363 @@
                             );
                     }
 
-                    const response =
-                        xhr.responseJSON || {};
-
                     showMessage(
                         '#shipping-method-messages',
                         response.message ||
                         'Unable to update shipping signature.',
                         'error'
                     );
-                })
-                .always(function () {
 
-                    shippingSignatureRequest =
-                        null;
-                });
+                    return;
+                }
+
+                /*
+                 * =================================================
+                 * BACKEND IS SOURCE OF TRUTH
+                 * =================================================
+                 *
+                 * IMPORTANT:
+                 *
+                 * Do NOT determine applied state from charge.
+                 *
+                 * Example:
+                 *
+                 * applied = Yes
+                 * charge  = 0
+                 *
+                 * This is a valid FREE Signature.
+                 */
+                let appliedState =
+                    null;
+
+                const signatureResponse =
+                    response.shippingSignature ||
+                    response.shipping_signature ||
+                    response.ShippingSignature ||
+                    null;
+
+                if (
+                    signatureResponse &&
+                    typeof signatureResponse ===
+                    'object' &&
+                    signatureResponse.applied !==
+                    undefined
+                ) {
+
+                    appliedState =
+                        isAppliedFlag(
+                            signatureResponse.applied
+                        );
+
+                } else if (
+                    response.applied !==
+                    undefined
+                ) {
+
+                    appliedState =
+                        isAppliedFlag(
+                            response.applied
+                        );
+                }
+
+                /*
+                 * If backend did not return explicit state,
+                 * keep the state requested by the user.
+                 *
+                 * Do NOT use charge > 0 here.
+                 */
+                if (appliedState === null) {
+
+                    appliedState =
+                        requestedState;
+                }
+
+                window.MaxaromaCheckout
+                    .totalsState
+                    .signatureApplied =
+                    appliedState;
+
+                /*
+                 * Keep checkbox synchronized.
+                 */
+                if ($checkbox.length) {
+
+                    $checkbox.prop(
+                        'checked',
+                        appliedState
+                    );
+
+                    $checkbox
+                        .closest('.addon-row')
+                        .toggleClass(
+                            'active',
+                            appliedState
+                        );
+                }
+
+                /*
+                 * Backend already returned recalculated
+                 * totals. updateTotals() will preserve the
+                 * explicit applied state and will show:
+                 *
+                 * charge = 0
+                 * applied = Yes
+                 *
+                 * as "Free" + ON.
+                 */
+                updateTotals(response);
+            })
+            .fail(function (xhr, status) {
+
+                if (status === 'abort') {
+                    return;
+                }
+
+                /*
+                 * Request failed.
+                 *
+                 * Restore the opposite of the requested
+                 * state because the backend did not confirm
+                 * the user's action.
+                 */
+                const previousState =
+                    !requestedState;
+
+                window.MaxaromaCheckout
+                    .totalsState
+                    .signatureApplied =
+                    previousState;
+
+                if ($checkbox.length) {
+
+                    $checkbox.prop(
+                        'checked',
+                        previousState
+                    );
+
+                    $checkbox
+                        .closest('.addon-row')
+                        .toggleClass(
+                            'active',
+                            previousState
+                        );
+                }
+
+                const response =
+                    xhr.responseJSON || {};
+
+                showMessage(
+                    '#shipping-method-messages',
+                    response.message ||
+                    'Unable to update shipping signature.',
+                    'error'
+                );
+            })
+            .always(function () {
+
+                shippingSignatureRequest =
+                    null;
+            });
+}
+ 	function restoreCheckoutAddonState() {
+
+    window.MaxaromaCheckout =
+        window.MaxaromaCheckout || {};
+
+    window.MaxaromaCheckout.totalsState =
+        window.MaxaromaCheckout.totalsState || {};
+
+    const state =
+        window.MaxaromaCheckout
+            .totalsState;
+
+    const checkoutState =
+        window.MaxaromaCheckout.checkout ||
+        {};
+
+    /*
+     * =====================================================
+     * SHIPPING INSURANCE
+     * =====================================================
+     */
+
+    let insuranceApplied = null;
+
+    if (
+        checkoutState.insurance_applied !==
+        undefined
+    ) {
+
+        insuranceApplied =
+            isAppliedFlag(
+                checkoutState.insurance_applied
+            );
+
+    } else if (
+        checkoutState.insuranceApplied !==
+        undefined
+    ) {
+
+        insuranceApplied =
+            isAppliedFlag(
+                checkoutState.insuranceApplied
+            );
     }
-    function restoreCheckoutAddonState() {
 
-        window.MaxaromaCheckout =
-            window.MaxaromaCheckout || {};
+    if (insuranceApplied !== null) {
 
-        window.MaxaromaCheckout.totalsState =
-            window.MaxaromaCheckout.totalsState || {};
+        state.insuranceApplied =
+            insuranceApplied;
 
-        const state =
-            window.MaxaromaCheckout
-                .totalsState;
+        const $protection =
+            $('#protection');
 
-        const checkoutState =
-            window.MaxaromaCheckout.checkout ||
-            {};
+        if ($protection.length) {
 
-        /*
-         * =====================================================
-         * SHIPPING INSURANCE
-         * =====================================================
-         */
+            $protection.prop(
+                'checked',
+                insuranceApplied
+            );
 
-        let insuranceApplied = null;
-
-        if (
-            checkoutState.insurance_applied !==
-            undefined
-        ) {
-
-            insuranceApplied =
-                String(
-                    checkoutState.insurance_applied
-                ).toLowerCase() === 'yes';
-
-        } else if (
-            checkoutState.insuranceApplied !==
-            undefined
-        ) {
-
-            insuranceApplied =
-                String(
-                    checkoutState.insuranceApplied
-                ).toLowerCase() === 'yes';
-        }
-
-        if (insuranceApplied !== null) {
-
-            state.insuranceApplied =
-                insuranceApplied;
-
-            const $protection =
-                $('#protection');
-
-            if ($protection.length) {
-
-                $protection.prop(
-                    'checked',
+            $protection
+                .closest('.addon-row')
+                .toggleClass(
+                    'active',
                     insuranceApplied
                 );
-
-                $protection
-                    .closest('.addon-row')
-                    .toggleClass(
-                        'active',
-                        insuranceApplied
-                    );
-            }
-        }
-
-        /*
-         * =====================================================
-         * SHIPPING SIGNATURE
-         * =====================================================
-         *
-         * Requirement:
-         *
-         * Refresh પછી Signature હંમેશા ON.
-         *
-         * User current page પર OFF કરી શકે છે,
-         * પરંતુ refresh પછી ફરીથી ON થશે.
-         *
-         * Important:
-         * માત્ર checkbox ON કરવાથી charge પાછો નહીં આવે.
-         * તેથી backendમાં પણ "add" action મોકલીએ છીએ.
-         * =====================================================
-         */
-
-		state.signatureApplied = false;
-
-		const $signature =
-			$('#request-signature');
-
-		if ($signature.length) {
-
-			$signature.prop(
-				'checked',
-				false
-			);
-
-			$signature
-				.closest('.addon-row')
-				.removeClass(
-					'active'
-				);
-		}
-
-        /*
-         * Re-apply Signature on refresh.
-         *
-         * This restores the actual backend charge,
-         * e.g. +$3.00, when the Signature is eligible.
-         */
-        if (
-            typeof setShippingSignature ===
-            'function'
-        ) {
-
-            setShippingSignature(
-                'add'
-            );
         }
     }
 
+    /*
+     * =====================================================
+     * SHIPPING SIGNATURE
+     * =====================================================
+     *
+     * New Checkout requirement:
+     *
+     * 1. Signature must NOT be automatically enabled.
+     * 2. Do NOT call setShippingSignature('add') here.
+     * 3. If backend explicitly returns an applied state,
+     *    use that state.
+     * 4. A $0 charge can still mean Signature is applied.
+     *
+     * Therefore:
+     *
+     * applied state != charge amount.
+     * =====================================================
+     */
+
+    let signatureApplied = null;
+
+    if (
+        checkoutState.shippingSignature &&
+        typeof checkoutState.shippingSignature ===
+        'object' &&
+        checkoutState.shippingSignature.applied !==
+        undefined
+    ) {
+
+        signatureApplied =
+            isAppliedFlag(
+                checkoutState.shippingSignature.applied
+            );
+
+    } else if (
+        checkoutState.shipping_signature &&
+        typeof checkoutState.shipping_signature ===
+        'object' &&
+        checkoutState.shipping_signature.applied !==
+        undefined
+    ) {
+
+        signatureApplied =
+            isAppliedFlag(
+                checkoutState.shipping_signature.applied
+            );
+
+    } else if (
+        checkoutState.signatureApplied !==
+        undefined
+    ) {
+
+        signatureApplied =
+            isAppliedFlag(
+                checkoutState.signatureApplied
+            );
+
+    } else if (
+        checkoutState.shipping_signature_applied !==
+        undefined
+    ) {
+
+        signatureApplied =
+            isAppliedFlag(
+                checkoutState.shipping_signature_applied
+            );
+    }
+
+    /*
+     * If backend did not provide an explicit Signature
+     * state, keep the existing checkbox/state.
+     *
+     * IMPORTANT:
+     * Do NOT use charge > 0 as the fallback because
+     * FREE Signature has charge = 0 but can still be ON.
+     *
+     * New checkout initial state is OFF.
+     */
+
+    if (signatureApplied === null) {
+
+        if (
+            state.signatureApplied !==
+            undefined
+        ) {
+
+            signatureApplied =
+                state.signatureApplied === true;
+
+        } else {
+
+            signatureApplied =
+                false;
+        }
+    }
+
+    state.signatureApplied =
+        signatureApplied;
+
+    const $signature =
+        $('#request-signature');
+
+    if ($signature.length) {
+
+        $signature.prop(
+            'checked',
+            signatureApplied
+        );
+
+        $signature
+            .closest('.addon-row')
+            .toggleClass(
+                'active',
+                signatureApplied
+            );
+    }
+
+    /*
+     * IMPORTANT:
+     *
+     * DO NOT call:
+     *
+     * setShippingSignature('add');
+     *
+     * here.
+     *
+     * Signature must only be added when the customer
+     * explicitly enables the checkbox.
+     */
+}
     window.applyGiftCard = function () {
 
         const input =
