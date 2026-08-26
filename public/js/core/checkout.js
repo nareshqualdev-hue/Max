@@ -1293,10 +1293,11 @@ const signatureApplied =
                 formatMoney(insurance)
             );
 
-        $('#protect-confirm-keep-price')
-            .text(
-                formatMoney(insurance)
-            );
+			$('#protect-confirm-modal .protect-confirm-keep')
+		.text(
+			'Keep Protection · ' +
+			formatMoney(insurance)
+		);
 
     } else {
 
@@ -6876,4 +6877,3 @@ function restoreCheckoutAddonState() {
 /* =========================================================
    CHECKOUT LOGIN
    ========================================================= */
-
