@@ -11,89 +11,117 @@ class ShippingSignatureService
     ) {
     }
 
-    public function calculate(string $action = 'add'): float
-    {
-        $action = strtolower(trim($action));
+	public function calculate(string $action = 'add'): float
+{
+    $action = strtolower(trim($action));
 
-        if (!in_array($action, ['add', 'remove'], true)) {
-            throw new \InvalidArgumentException(
-                'Invalid shipping signature action.'
-            );
-        }
-
-        if ($action === 'remove') {
-            $this->remove();
-            return 0.0;
-        }
-
-        if (!$this->isEligibleCustomer()) {
-            $this->remove();
-            return 0.0;
-        }
-
-        $shippingMethodId = (int) Session::get(
-            'ShoppingCart.Shipping.ShippingMethodID',
-            0
+    if (!in_array($action, ['add', 'remove'], true)) {
+        throw new \InvalidArgumentException(
+            'Invalid shipping signature action.'
         );
+    }
 
-        // Existing store-pickup behavior clears signature.
-        if ($shippingMethodId === 46) {
-            $this->remove();
-            return 0.0;
-        }
-
-        $charge = $this->getConfiguredCharge();
-
-        if ($charge <= 0) {
-            $this->remove();
-            return 0.0;
-        }
-
-        /*
-         * ---------------------------------------------------------
-         * LEGACY TRUTH MODE RULE
-         * ---------------------------------------------------------
-         *
-         * Old checkout:
-         *
-         * InsureAmount =
-         * NetTotal
-         * - Shipping Insurance
-         * - Shipping Signature
-         *
-         * If InsureAmount <= 200, Shipping Signature is FREE.
-         * If InsureAmount > 200, Shipping Signature is removed.
-         */
-        $eligibleAmount =
-            $this->getSignatureEligibleAmount();
-
-        if ($eligibleAmount <= 200) {
-            Session::put(
-                'ShoppingCart.ShippingSignature',
-                0
-            );
-
-            addLog('SetShippingSignature', [
-                'charge' => 0,
-                'eligible_amount' =>
-                    NumberFormat($eligibleAmount),
-                'reason' => 'free_signature_under_200',
-            ]);
-
-            return 0.0;
-        }
-
+    if ($action === 'remove') {
         $this->remove();
-
-        addLog('RemoveShippingSignature', [
-            'reason' => 'eligible_amount_over_200',
-            'eligible_amount' =>
-                NumberFormat($eligibleAmount),
-        ]);
 
         return 0.0;
     }
 
+    if (!$this->isEligibleCustomer()) {
+        $this->remove();
+
+        return 0.0;
+    }
+
+    $shippingMethodId = (int) Session::get(
+        'ShoppingCart.Shipping.ShippingMethodID',
+        0
+    );
+
+    /*
+     * Existing store-pickup behavior.
+     */
+    if ($shippingMethodId === 46) {
+        $this->remove();
+
+        return 0.0;
+    }
+
+    /*
+     * Use the existing configured Signature charge.
+     *
+     * Normal customer:
+     *     Settings.SHIPPING_SIGNATURE
+     *
+     * Dropshipper:
+     *     Settings.DROPSHIPPER_SHIPPING_SIGNATURE
+     */
+    $charge =
+        $this->getConfiguredCharge();
+
+    if ($charge <= 0) {
+        $this->remove();
+
+        return 0.0;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * LEGACY TRUTH MODE
+     * ---------------------------------------------------------
+     *
+     * Old checkout behavior:
+     *
+     * InsureAmount =
+     *     NetTotal
+     *     - Shipping Insurance
+     *     - Shipping Signature
+     *
+     * If InsureAmount <= $200:
+     *     Signature uses the configured charge.
+     *
+     * If InsureAmount > $200:
+     *     Signature is removed.
+     */
+    $eligibleAmount =
+        $this->getSignatureEligibleAmount();
+
+    if ($eligibleAmount <= 200) {
+
+        Session::put(
+            'ShoppingCart.ShippingSignature',
+            $charge
+        );
+
+        addLog('SetShippingSignature', [
+            'charge' =>
+                NumberFormat($charge),
+
+            'eligible_amount' =>
+                NumberFormat($eligibleAmount),
+
+            'reason' =>
+                'signature_charge_under_or_equal_200',
+        ]);
+
+        return (float) $charge;
+    }
+
+    /*
+     * Above $200 the old checkout removes Signature.
+     */
+    $this->remove();
+
+    addLog('RemoveShippingSignature', [
+        'reason' =>
+            'eligible_amount_over_200',
+
+        'eligible_amount' =>
+            NumberFormat($eligibleAmount),
+    ]);
+
+    return 0.0;
+}
     public function remove(): void
     {
         Session::forget(
