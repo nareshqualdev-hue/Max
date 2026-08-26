@@ -23,7 +23,6 @@ class CheckoutService
     ) {
     }
 
-
     /**
      * Prepare the initial One Page Checkout page.
      *
@@ -207,7 +206,8 @@ class CheckoutService
             ],
 
             'JSFILES' => [
-                'checkout.js'
+                'checkout.js',
+                //'checkout-new.js'
             ],
 
             'Countries' => $countries,
@@ -311,7 +311,6 @@ class CheckoutService
         $cartAttributes =
             $this->cartAttributeService
                 ->getAttributes();
-
 
         /*
          * ---------------------------------------------------------
@@ -435,7 +434,6 @@ class CheckoutService
 
         return $result;
     }
-
 
     /**
      * Resolve the Free Gift UI state for One Page Checkout.
@@ -1107,7 +1105,7 @@ public function refreshAfterShippingMethod(
     array $address,
     array $paymentContext = []
 ): array {
-	
+
     addLog(
         'CheckoutRefreshAfterShippingStart',
         [
@@ -1424,7 +1422,7 @@ public function refreshAfterShippingMethod(
 
     return $result;
 }
-   
+
     /**
      * Return the currently applied Gift Certificate state.
      *
@@ -1490,7 +1488,6 @@ protected function resolveOrderTotal(
             0
         );
 }
-
 
     /**
      * Calculate tax from current checkout address.
@@ -1731,5 +1728,5 @@ public function getAvailableShippingMethods(
                 []
             ),
     ];
-}    
+}
 }
