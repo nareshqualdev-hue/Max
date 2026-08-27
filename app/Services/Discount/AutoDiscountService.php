@@ -21,6 +21,13 @@ class AutoDiscountService
      */
     public function apply(): void
     {
+		
+		    if (
+        config('Settings.AUTODISCOUNTFLAG') !== 'Yes'
+			) {
+				return;
+			}
+
         $autoDiscount = 0;
         $newSubTotal = 0;
         $discountCouponFlag = '';
