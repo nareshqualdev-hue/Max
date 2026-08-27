@@ -1721,10 +1721,12 @@ protected function resolveOrderTotal(
         return $this->checkoutTotalsService
             ->getNetTotal();
     }
+
 public function getAvailableShippingMethods(
     array $address,
     array $flags = []
 ): array {
+
     $country = trim(
         $address['country'] ?? ''
     );
@@ -1754,50 +1756,119 @@ public function getAvailableShippingMethods(
     );
 
     /*
-     * Cart attributes are the default shipping flags.
-     * Request flags override them.
+     * Cart attributes are the source of truth for
+     * cart-dependent shipping flags.
      */
     $cartAttributes =
         $this->cartAttributeService
             ->getAttributes();
 
-    $flags = array_merge(
-        [
-            'IsCosmo' =>
-                $cartAttributes['IsCosmo'] ?? 'No',
+    /*
+     * IMPORTANT:
+     *
+     * Do NOT allow request/frontend values to override
+     * cart-dependent shipping flags.
+     *
+     * This is required for Max2Day logic.
+     *
+     * Example:
+     *
+     * CartAttributeService:
+     *     IsMaxaromaTwoDelivery = Yes
+     *     ISMaxTwoItem          = Yes
+     *     ISMax2dayVal          = No
+     *
+     * Frontend may still send:
+     *     IsMaxaromaTwoDelivery = No
+     *
+     * But the frontend value must NOT overwrite the
+     * actual cart attribute.
+     */
+    $flags = [
 
-            'IsNandansons' =>
-                $cartAttributes['IsNandansons'] ?? 'No',
+        'IsCosmo' =>
+            $cartAttributes['IsCosmo'] ?? 'No',
 
-            'IsPerfumePW' =>
-                $cartAttributes['IsPerfumePW'] ?? 'No',
+        'IsNandansons' =>
+            $cartAttributes['IsNandansons'] ?? 'No',
 
-            'IsPCA' =>
-                $cartAttributes['IsPCA'] ?? 'No',
+        'IsPerfumePW' =>
+            $cartAttributes['IsPerfumePW'] ?? 'No',
 
-            'IsND' =>
-                $cartAttributes['IsND'] ?? 'No',
+        'IsPCA' =>
+            $cartAttributes['IsPCA'] ?? 'No',
 
-            'IsVenderItem' =>
-                $cartAttributes['IsVenderItem'] ?? 'No',
+        'IsND' =>
+            $cartAttributes['IsND'] ?? 'No',
 
-            'IsMaxaromaTwoDelivery' =>
-                $cartAttributes['IsMaxaromaTwoDelivery'] ?? 'No',
+        'IsVenderItem' =>
+            $cartAttributes['IsVenderItem'] ?? 'No',
 
-            'ISMaxTwoItem' =>
-                $cartAttributes['ISMaxTwoItem'] ?? 'No',
+        /*
+         * -----------------------------------------------------
+         * Max2Day
+         * -----------------------------------------------------
+         *
+         * These MUST come from CartAttributeService.
+         *
+         * Do NOT merge request/frontend values here.
+         */
+        'IsMaxaromaTwoDelivery' =>
+            $cartAttributes[
+                'IsMaxaromaTwoDelivery'
+            ] ?? 'No',
 
-            'ISMax2dayVal' =>
-                $cartAttributes['ISMax2dayVal'] ?? 'No',
+        'ISMaxTwoItem' =>
+            $cartAttributes[
+                'ISMaxTwoItem'
+            ] ?? 'No',
 
-            'onlyGCPurchased' =>
-                $cartAttributes['onlyGCPurchased'] ?? 0,
-        ],
-        $flags
-    );
+        'ISMax2dayVal' =>
+            $cartAttributes[
+                'ISMax2dayVal'
+            ] ?? 'No',
+
+        /*
+         * Cart-level value.
+         */
+        'onlyGCPurchased' =>
+            $cartAttributes[
+                'onlyGCPurchased'
+            ] ?? 0,
+    ];
 
     /*
-     * ShippingService owns all shipping-method business logic.
+     * Preserve any non-cart-dependent request flags.
+     *
+     * Currently the controller sends only:
+     *
+     *     onlyGCPurchased
+     *     selectedShippingMethodId
+     *
+     * Do NOT merge the complete request $flags because that
+     * would overwrite the cart-derived Max2Day/vendor values.
+     */
+    if (
+        isset(
+            $flags['selectedShippingMethodId']
+        )
+    ) {
+        $flags['selectedShippingMethodId'] =
+            (int) $flags[
+                'selectedShippingMethodId'
+            ];
+    }
+
+    /*
+     * Keep request onlyGCPurchased out of the
+     * cart-derived source of truth.
+     *
+     * CartAttributeService already provides the actual value.
+     */
+
+    /*
+     * ShippingService owns all shipping-method
+     * business logic.
      */
     $shippingMethods =
         $this->shippingService
