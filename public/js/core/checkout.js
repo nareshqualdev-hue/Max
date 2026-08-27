@@ -880,7 +880,31 @@
                 insurance > 0;
         }
     }
+	
+	const selectedShippingMethodId =
+    parseInt(
+        response.selectedShippingMethodId ??
+        response.selected_shipping_method_id ??
+        window.MaxaromaCheckout.selectedShippingMethodId ??
+        checkout.selectedShippingMethodId ??
+        0,
+        10
+    );
 
+const isPickupShippingMethod =
+    selectedShippingMethodId === 46;
+
+if (isPickupShippingMethod) {
+
+    /*
+     * Insurance must be OFF for Pickup.
+     */
+    state.insuranceApplied = false;
+    state.insurance = 0;
+
+    currentInsuranceValue = 0;
+}
+	
     const insuranceApplied =
         state.insuranceApplied === true;
 
@@ -1397,20 +1421,50 @@
     const $protection =
         $('#protection');
 
-    if ($protection.length) {
+   if ($protection.length) {
+
+    const $protectionRow =
+        $protection.closest('.addon-row');
+
+    /*
+     * Old checkout:
+     *
+     * Shipping Method 46 = Pickup
+     * Insurance is hidden.
+     *
+     * Signature is NOT affected.
+     */
+    if (isPickupShippingMethod) {
+
+        $protection.prop(
+            'checked',
+            false
+        );
+
+        $protectionRow
+            .removeClass('active')
+            .hide();
+
+    } else {
+
+        /*
+         * For every other shipping method,
+         * preserve the existing Insurance behavior.
+         */
+        $protectionRow.show();
 
         $protection.prop(
             'checked',
             insuranceApplied
         );
 
-        $protection
-            .closest('.addon-row')
+        $protectionRow
             .toggleClass(
                 'active',
                 insuranceApplied
             );
     }
+}
 
     if (insuranceApplied) {
 
