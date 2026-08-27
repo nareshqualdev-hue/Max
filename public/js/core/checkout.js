@@ -1989,130 +1989,167 @@ if (isPickupShippingMethod) {
         }, 350);
     }
 
-    function setShippingMethod(shippingMethodId) {
-        const address = getShippingAddress();
+ 
+	function setShippingMethod(shippingMethodId) {
+    const address = getShippingAddress();
 
-        if (!shippingMethodId || !addressReady(address)) {
-            return;
-        }
-
-        if (!urls.setShippingMethod) {
-            showMessage(
-                '#shipping-method-messages',
-                'Shipping method URL is not configured.',
-                'error'
-            );
-
-            return;
-        }
-
-        if (shippingMethodRequest) {
-            shippingMethodRequest.abort();
-        }
-
-        showLoader(true);
-        showMessage('#shipping-method-messages', '');
-
-        shippingMethodRequest = $.ajax({
-            type: 'POST',
-            url: urls.setShippingMethod,
-            headers: {
-                'X-CSRF-TOKEN': csrfToken
-            },
-            dataType: 'json',
-            data: {
-                ShipMethodID: shippingMethodId,
-
-                country: address.country,
-                state: address.state,
-                zip: address.zip,
-                city: address.city,
-
-                IsCosmo: getShippingFlags().IsCosmo,
-                IsNandansons: getShippingFlags().IsNandansons,
-                IsPerfumePW: getShippingFlags().IsPerfumePW,
-                IsPCA: getShippingFlags().IsPCA,
-                IsND: getShippingFlags().IsND,
-                IsVenderItem: getShippingFlags().IsVenderItem,
-                IsMaxaromaTwoDelivery:
-                    getShippingFlags().IsMaxaromaTwoDelivery,
-                ISMaxTwoItem:
-                    getShippingFlags().ISMaxTwoItem,
-                ISMax2dayVal:
-                    getShippingFlags().ISMax2dayVal,
-                onlyGCPurchased:
-                    getShippingFlags().onlyGCPurchased,
-
-                EstDate:
-                    $('#section-delivery')
-                        .find('input[name="shipping"]:checked')
-                        .data('est-date') || '',
-
-                action:
-                    checkout.action || '',
-
-                isPayPalSubTotal:
-                    checkout.isPayPalSubTotal || 0,
-
-                shipping_charge_paypal_product_page:
-                    checkout.shippingChargePayPalProductPage || 0
-            }
-        })
-            .done(function (response) {
-                if (
-                    response.status &&
-                    response.status !== 'success'
-                ) {
-                    showMessage(
-                        '#shipping-method-messages',
-                        response.message ||
-                        'Unable to set shipping method.',
-                        'error'
-                    );
-
-                    return;
-                }
-
-                checkout.selectedShippingMethodId =
-                    parseInt(shippingMethodId, 10);
-
-                updateTotals(response);
-
-                if (response.message) {
-                    showMessage(
-                        '#shipping-method-messages',
-                        response.message,
-                        'success'
-                    );
-                }
-            })
-            .fail(function (xhr, status) {
-                if (status === 'abort') {
-                    return;
-                }
-
-                let message =
-                    'Unable to update shipping method. Please try again.';
-
-                if (
-                    xhr.responseJSON &&
-                    xhr.responseJSON.message
-                ) {
-                    message = xhr.responseJSON.message;
-                }
-
-                showMessage(
-                    '#shipping-method-messages',
-                    message,
-                    'error'
-                );
-            })
-            .always(function () {
-                shippingMethodRequest = null;
-                showLoader(false);
-            });
+    if (!shippingMethodId || !addressReady(address)) {
+        return;
     }
 
+    if (!urls.setShippingMethod) {
+        showMessage(
+            '#shipping-method-messages',
+            'Shipping method URL is not configured.',
+            'error'
+        );
+
+        return;
+    }
+
+    if (shippingMethodRequest) {
+        shippingMethodRequest.abort();
+    }
+
+    showLoader(true);
+    showMessage('#shipping-method-messages', '');
+
+    shippingMethodRequest = $.ajax({
+        type: 'POST',
+        url: urls.setShippingMethod,
+        headers: {
+            'X-CSRF-TOKEN': csrfToken
+        },
+        dataType: 'json',
+        data: {
+            ShipMethodID: shippingMethodId,
+
+            country: address.country,
+            state: address.state,
+            zip: address.zip,
+            city: address.city,
+
+            IsCosmo: getShippingFlags().IsCosmo,
+            IsNandansons: getShippingFlags().IsNandansons,
+            IsPerfumePW: getShippingFlags().IsPerfumePW,
+            IsPCA: getShippingFlags().IsPCA,
+            IsND: getShippingFlags().IsND,
+            IsVenderItem: getShippingFlags().IsVenderItem,
+            IsMaxaromaTwoDelivery:
+                getShippingFlags().IsMaxaromaTwoDelivery,
+            ISMaxTwoItem:
+                getShippingFlags().ISMaxTwoItem,
+            ISMax2dayVal:
+                getShippingFlags().ISMax2dayVal,
+            onlyGCPurchased:
+                getShippingFlags().onlyGCPurchased,
+
+            EstDate:
+                $('#section-delivery')
+                    .find('input[name="shipping"]:checked')
+                    .data('est-date') || '',
+
+            action:
+                checkout.action || '',
+
+            isPayPalSubTotal:
+                checkout.isPayPalSubTotal || 0,
+
+            shipping_charge_paypal_product_page:
+                checkout.shippingChargePayPalProductPage || 0
+        }
+    })
+        .done(function (response) {
+            if (
+                response.status &&
+                response.status !== 'success'
+            ) {
+                showMessage(
+                    '#shipping-method-messages',
+                    response.message ||
+                    'Unable to set shipping method.',
+                    'error'
+                );
+
+                return;
+            }
+
+            checkout.selectedShippingMethodId =
+                parseInt(shippingMethodId, 10);
+
+            /*
+             * Keep existing totals / insurance / signature flow.
+             */
+            updateTotals(response);
+
+            /*
+             * =====================================================
+             * OLD CHECKOUT STORE PICKUP POPUP
+             * =====================================================
+             *
+             * Shipping Method ID 46 = Store Pickup.
+             *
+             * Old checkout shows the existing
+             * #ShippingPickupMethod modal.
+             *
+             * Do NOT touch Signature here.
+             * Insurance handling remains inside updateTotals().
+             */
+            if (parseInt(shippingMethodId, 10) === 46) {
+
+                const $pickupModal =
+                    $('#ShippingPickupMethod');
+
+                const $pickupText =
+                    $('#PickupTextValue');
+
+                if ($pickupModal.length) {
+
+                    if ($pickupText.length) {
+                        $pickupText.html(
+                            'You have Selected The Order to be Picked up From Address: 31-17 38th Ave, Long Island City NY 11101.'
+                        );
+                    }
+
+                    $pickupModal.modal('show');
+                }
+            }
+
+            if (response.message) {
+                showMessage(
+                    '#shipping-method-messages',
+                    response.message,
+                    'success'
+                );
+            }
+        })
+        .fail(function (xhr, status) {
+            if (status === 'abort') {
+                return;
+            }
+
+            let message =
+                'Unable to update shipping method. Please try again.';
+
+            if (
+                xhr.responseJSON &&
+                xhr.responseJSON.message
+            ) {
+                message = xhr.responseJSON.message;
+            }
+
+            showMessage(
+                '#shipping-method-messages',
+                message,
+                'error'
+            );
+        })
+        .always(function () {
+            shippingMethodRequest = null;
+            showLoader(false);
+        });
+}
+ 
     function copyBillingToShipping() {
         const fields = [
             'first_name',
