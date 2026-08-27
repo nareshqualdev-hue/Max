@@ -348,6 +348,50 @@
 
         return '$' + number.toFixed(2);
     }
+    
+    function isAppliedFlag(value) {
+
+    if (
+        value === true ||
+        value === 1 ||
+        value === '1'
+    ) {
+        return true;
+    }
+
+    if (
+        value === false ||
+        value === 0 ||
+        value === '0'
+    ) {
+        return false;
+    }
+
+    const normalized =
+        String(value || '')
+            .trim()
+            .toLowerCase();
+
+    if (
+        normalized === 'yes' ||
+        normalized === 'true' ||
+        normalized === 'on' ||
+        normalized === 'applied'
+    ) {
+        return true;
+    }
+
+    if (
+        normalized === 'no' ||
+        normalized === 'false' ||
+        normalized === 'off' ||
+        normalized === 'removed'
+    ) {
+        return false;
+    }
+
+    return null;
+}
 
     function getMethodId(method) {
         return parseInt(
@@ -609,7 +653,8 @@
             );
     }
 
-  function updateTotals(response) {
+
+	function updateTotals(response) {
 
     response = response || {};
 
@@ -700,18 +745,6 @@
      * =========================================================
      * SHIPPING INSURANCE
      * =========================================================
-     *
-     * IMPORTANT:
-     *
-     * Insurance amount and Insurance ON/OFF state
-     * are separate values.
-     *
-     * A Signature AJAX response may not contain the
-     * Insurance amount. In that case DO NOT replace the
-     * existing Insurance amount with 0.
-     *
-     * Existing Insurance behavior remains unchanged.
-     * =========================================================
      */
 
     const insuranceChargeFromTotals =
@@ -720,80 +753,48 @@
         totals?.ShippingInsurance?.charge ??
         totals?.shipping_insurance?.charge;
 
-    const hasInsuranceValue =
-        totals.insurance !== undefined ||
-        totals.Insurance !== undefined ||
-        totals.shipping_insurance !== undefined ||
-        totals.shipping_insurance_charge !== undefined ||
-        totals.ShippingInsurance?.charge !== undefined ||
-        insuranceChargeFromTotals !== undefined ||
-        response.shipping_insurance_charge !== undefined ||
-        response.shippingInsuranceCharge !== undefined ||
-        typeof insuranceResponse === 'number' ||
+    let insuranceValue =
+        totals.insurance ??
+        totals.Insurance ??
+        totals.shipping_insurance ??
+        totals.shipping_insurance_charge ??
+        totals.ShippingInsurance?.charge ??
+        insuranceChargeFromTotals ??
+        response.shipping_insurance_charge ??
+        response.shippingInsuranceCharge ??
         (
-            insuranceResponse &&
-            typeof insuranceResponse === 'object' &&
-            (
-                insuranceResponse.charge !== undefined ||
-                insuranceResponse.shipping_insurance_charge !== undefined ||
-                insuranceResponse.amount !== undefined
-            )
+            typeof insuranceResponse === 'number'
+                ? insuranceResponse
+                : (
+                    insuranceResponse?.charge ??
+                    insuranceResponse?.shipping_insurance_charge ??
+                    insuranceResponse?.amount ??
+                    null
+                )
         );
 
-    let insuranceValue =
-    totals.insurance ??
-    totals.Insurance ??
-    totals.shipping_insurance ??
-    totals.shipping_insurance_charge ??
-    totals.ShippingInsurance?.charge ??
-    insuranceChargeFromTotals ??
-    response.shipping_insurance_charge ??
-    response.shippingInsuranceCharge ??
-    (
-        typeof insuranceResponse === 'number'
-            ? insuranceResponse
-            : (
-                insuranceResponse?.charge ??
-                insuranceResponse?.shipping_insurance_charge ??
-                insuranceResponse?.amount ??
-                null
-            )
-    );
+    /*
+     * Preserve last valid Insurance amount when this response
+     * does not contain Insurance.
+     */
+    if (
+        (
+            insuranceValue === null ||
+            insuranceValue === undefined ||
+            insuranceValue === ''
+        ) &&
+        state.insurance !== undefined &&
+        state.insurance !== null
+    ) {
 
+        insuranceValue =
+            state.insurance;
+    }
 
-/*
- * Current AJAX response may not contain Insurance.
- *
- * In that case preserve the existing Insurance amount.
- *
- * Example:
- *
- * Keep Protection ON
- * -> Insurance = 17.31
- *
- * Signature ON/OFF
- * -> response has no Insurance
- * -> keep 17.31
- */
-if (
-    (
-        insuranceValue === null ||
-        insuranceValue === undefined ||
-        insuranceValue === ''
-    ) &&
-    state.insurance !== undefined &&
-    state.insurance !== null
-) {
-
-    insuranceValue =
-        state.insurance;
-}
-
-
-let insurance =
-    parseFloat(
-        insuranceValue || 0
-    );
+    let insurance =
+        parseFloat(
+            insuranceValue || 0
+        );
 
     /*
      * =========================================================
@@ -810,9 +811,9 @@ let insurance =
     ) {
 
         explicitInsuranceApplied =
-            String(
+            isAppliedFlag(
                 response.insurance_applied
-            ).toLowerCase() === 'yes';
+            );
 
     } else if (
         response.insuranceApplied !==
@@ -820,10 +821,9 @@ let insurance =
     ) {
 
         explicitInsuranceApplied =
-            response.insuranceApplied === true ||
-            String(
+            isAppliedFlag(
                 response.insuranceApplied
-            ).toLowerCase() === 'yes';
+            );
 
     } else if (
         response.shippingInsuranceApplied !==
@@ -831,27 +831,27 @@ let insurance =
     ) {
 
         explicitInsuranceApplied =
-            response.shippingInsuranceApplied === true ||
-            String(
+            isAppliedFlag(
                 response.shippingInsuranceApplied
-            ).toLowerCase() === 'yes';
+            );
 
     } else if (
         insuranceResponse &&
-        typeof insuranceResponse === 'object' &&
+        typeof insuranceResponse ===
+        'object' &&
         insuranceResponse.applied !==
         undefined
     ) {
 
         explicitInsuranceApplied =
-            String(
+            isAppliedFlag(
                 insuranceResponse.applied
-            ).toLowerCase() === 'yes';
+            );
     }
 
     /*
      * Backend is source of truth when it explicitly
-     * provides Insurance applied state.
+     * provides Insurance state.
      */
     if (
         explicitInsuranceApplied !==
@@ -866,11 +866,6 @@ let insurance =
         undefined
     ) {
 
-        /*
-         * No explicit backend state.
-         *
-         * Use current checkbox state.
-         */
         const $protection =
             $('#protection');
 
@@ -881,10 +876,6 @@ let insurance =
 
         } else {
 
-            /*
-             * Final legacy fallback only when no UI
-             * state exists.
-             */
             state.insuranceApplied =
                 insurance > 0;
         }
@@ -894,17 +885,7 @@ let insurance =
         state.insuranceApplied === true;
 
     /*
-     * =========================================================
-     * PRESERVE ACTIVE INSURANCE AMOUNT
-     * =========================================================
-     *
-     * Keep Protection is ON, but the AJAX response can return
-     * an Insurance amount of 0.
-     *
-     * If a valid Insurance amount already exists, preserve it.
-     *
-     * When Protection is explicitly OFF, this condition does
-     * not run, so the normal zero value is preserved.
+     * Preserve active Insurance amount.
      */
     if (
         insuranceApplied === true &&
@@ -920,9 +901,6 @@ let insurance =
             );
     }
 
-    /*
-     * Keep last known Insurance amount.
-     */
     state.insurance =
         insurance;
 
@@ -930,81 +908,195 @@ let insurance =
      * =========================================================
      * SHIPPING SIGNATURE
      * =========================================================
+     *
+     * Signature must stay completely independent from
+     * Shipping Insurance.
+     *
+     * Example:
+     *
+     * Insurance OFF
+     * Signature ON
+     * Signature = $3.00
+     *
+     * Insurance response must NOT make Signature Free.
      */
 
     let signatureCharge =
-    parseFloat(
-        state.signatureCharge ||
-        0
-    );
+        parseFloat(
+            state.signatureCharge ||
+            0
+        );
 
-let explicitSignatureApplied =
-    null;
+    const previousSignatureCharge =
+        signatureCharge;
 
-const signatureResponse =
-    response.shippingSignature ||
-    response.shipping_signature;
+    let explicitSignatureApplied =
+        null;
 
-if (
-    signatureResponse &&
-    typeof signatureResponse ===
-    'object'
-) {
+    let signatureChargeFromResponse =
+        null;
+
+    const signatureResponse =
+        response.shippingSignature ||
+        response.shipping_signature ||
+        response.ShippingSignature ||
+        null;
+
+    /*
+     * ---------------------------------------------------------
+     * Dedicated Signature response
+     * ---------------------------------------------------------
+     */
 
     if (
-        signatureResponse.charge !==
-        undefined
+        signatureResponse &&
+        typeof signatureResponse ===
+        'object'
+    ) {
+
+        if (
+            signatureResponse.charge !==
+            undefined &&
+            signatureResponse.charge !==
+            null
+        ) {
+
+            const responseSignatureCharge =
+                parseFloat(
+                    signatureResponse.charge
+                ) || 0;
+
+            /*
+             * A generic totals refresh can temporarily return
+             * Signature charge = 0 while Signature is still ON.
+             *
+             * Preserve the last valid charge in that situation.
+             *
+             * Explicit Signature ON/OFF requests update
+             * state.signatureCharge themselves, so an intentional
+             * OFF remains $0.
+             */
+            if (
+                responseSignatureCharge <= 0 &&
+                state.signatureApplied === true &&
+                previousSignatureCharge > 0
+            ) {
+
+                signatureChargeFromResponse =
+                    previousSignatureCharge;
+
+            } else {
+
+                signatureChargeFromResponse =
+                    responseSignatureCharge;
+            }
+        }
+
+        if (
+            signatureResponse.applied !==
+            undefined
+        ) {
+
+            explicitSignatureApplied =
+                isAppliedFlag(
+                    signatureResponse.applied
+                );
+        }
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Signature charge from totals.Charges
+     * ---------------------------------------------------------
+     *
+     * Some totals responses expose the Signature amount here.
+     */
+
+    if (
+        signatureChargeFromResponse ===
+        null &&
+        charges?.ShippingSignature?.charge !==
+        undefined &&
+        charges?.ShippingSignature?.charge !==
+        null
+    ) {
+
+        const totalsSignatureCharge =
+            parseFloat(
+                charges
+                    .ShippingSignature
+                    .charge
+            );
+
+        if (
+            !Number.isNaN(
+                totalsSignatureCharge
+            )
+        ) {
+
+            signatureChargeFromResponse =
+                totalsSignatureCharge;
+        }
+    }
+
+    /*
+     * Lowercase compatibility.
+     */
+
+    if (
+        signatureChargeFromResponse ===
+        null &&
+        charges?.shipping_signature?.charge !==
+        undefined &&
+        charges?.shipping_signature?.charge !==
+        null
+    ) {
+
+        const totalsSignatureCharge =
+            parseFloat(
+                charges
+                    .shipping_signature
+                    .charge
+            );
+
+        if (
+            !Number.isNaN(
+                totalsSignatureCharge
+            )
+        ) {
+
+            signatureChargeFromResponse =
+                totalsSignatureCharge;
+        }
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Use backend Signature charge only when supplied.
+     * Otherwise preserve the previous valid charge.
+     * ---------------------------------------------------------
+     */
+
+    if (
+        signatureChargeFromResponse !==
+        null
     ) {
 
         signatureCharge =
-            parseFloat(
-                signatureResponse.charge ||
-                0
-            );
+            signatureChargeFromResponse;
     }
 
-    if (
-        signatureResponse.applied !==
-        undefined
-    ) {
-
-        explicitSignatureApplied =
-            String(
-                signatureResponse.applied
-            ).toLowerCase() === 'yes';
-    }
-}
-
-/*
- * =====================================================
- * SHIPPING SIGNATURE - PAGE REFRESH PROTECTION
- * =====================================================
- *
- * restoreCheckoutAddonState() sets:
- *
- * signatureApplied = true
- * signatureRefreshDefault = true
- *
- * The first AJAX totals/shipping response after
- * page refresh must NOT overwrite that ON state
- * with backend "No".
- *
- * Once customer explicitly clicks ON/OFF,
- * setShippingSignature() clears this flag.
- */
-
-if (
-    state.signatureRefreshDefault ===
-    true
-) {
-
-    state.signatureApplied =
-        true;
-
-} else if (
-    state.signatureApplied ===
-    undefined
-) {
+    /*
+     * ---------------------------------------------------------
+     * Signature applied state
+     * ---------------------------------------------------------
+     *
+     * IMPORTANT:
+     *
+     * Never use generic response.applied here.
+     *
+     * Insurance and Signature have separate states.
+     */
 
     if (
         explicitSignatureApplied !==
@@ -1014,7 +1106,10 @@ if (
         state.signatureApplied =
             explicitSignatureApplied;
 
-    } else {
+    } else if (
+        state.signatureApplied ===
+        undefined
+    ) {
 
         const $signature =
             $('#request-signature');
@@ -1024,13 +1119,39 @@ if (
                 ? $signature.is(':checked')
                 : false;
     }
-}
 
-state.signatureCharge =
-    signatureCharge;
+    /*
+     * ---------------------------------------------------------
+     * Page refresh protection
+     * ---------------------------------------------------------
+     */
 
-const signatureApplied =
-    state.signatureApplied === true;
+    if (
+        state.signatureRefreshDefault ===
+        true
+    ) {
+
+        state.signatureApplied =
+            true;
+    }
+
+    const signatureApplied =
+        state.signatureApplied === true;
+
+    /*
+     * Signature OFF must always be $0.
+     */
+    if (
+        signatureApplied !== true
+    ) {
+
+        signatureCharge =
+            0;
+    }
+
+    state.signatureCharge =
+        signatureCharge;
+
     /*
      * =========================================================
      * SUBTOTAL
@@ -1125,6 +1246,7 @@ const signatureApplied =
     /*
      * Dynamic discount rows.
      */
+
     const $summaryTotals =
         $('.summary-totals');
 
@@ -1281,10 +1403,6 @@ const signatureApplied =
             );
     }
 
-    /*
-     * Addon price.
-     */
-
     if (insuranceApplied) {
 
         $('#protection-addon-price')
@@ -1293,11 +1411,10 @@ const signatureApplied =
                 formatMoney(insurance)
             );
 
-			$('#protect-confirm-modal .protect-confirm-keep')
-		.text(
-			'Keep Protection · ' +
-			formatMoney(insurance)
-		);
+        $('#protect-confirm-keep-price')
+            .text(
+                formatMoney(insurance)
+            );
 
     } else {
 
@@ -1360,7 +1477,7 @@ const signatureApplied =
 
     /*
      * =========================================================
-     * SHIPPING SIGNATURE
+     * SHIPPING SIGNATURE UI
      * =========================================================
      */
 
@@ -1566,7 +1683,48 @@ const signatureApplied =
      * =========================================================
      * NOTIFY CHECKOUT
      * =========================================================
+     *
+     * The new checkout Blade listens to this event to update
+     * the Signature confirmation modal.
+     *
+     * Normalize the event response with the current Signature
+     * state/charge so a generic Insurance/Shipping refresh cannot
+     * change:
+     *
+     *     Keep Signature · $3.00
+     *
+     * into:
+     *
+     *     Keep Signature · Free
      */
+
+    const checkoutEventResponse =
+        $.extend(
+            true,
+            {},
+            response
+        );
+
+    if (
+        signatureApplied === true
+    ) {
+
+        checkoutEventResponse.shippingSignature =
+            $.extend(
+                true,
+                {},
+                checkoutEventResponse.shippingSignature ||
+                checkoutEventResponse.shipping_signature ||
+                checkoutEventResponse.ShippingSignature ||
+                {}
+            );
+
+        checkoutEventResponse.shippingSignature.charge =
+            signatureCharge;
+
+        checkoutEventResponse.shippingSignature.applied =
+            'Yes';
+    }
 
     document.dispatchEvent(
         new CustomEvent(
@@ -1575,7 +1733,7 @@ const signatureApplied =
                 detail: {
 
                     response:
-                        response,
+                        checkoutEventResponse,
 
                     totals:
                         totals,
@@ -1616,8 +1774,8 @@ const signatureApplied =
         )
     );
 }
-  
-    function saveShippingAddress(callback) {
+
+  function saveShippingAddress(callback) {
         /*
          * Phase 1 intentionally does not invent a new address endpoint.
          *
@@ -5530,7 +5688,7 @@ const signatureApplied =
         }
     );
  
-	function setShippingSignature(action) {
+function setShippingSignature(action) {
 
     action =
         action === 'remove'
@@ -5561,28 +5719,44 @@ const signatureApplied =
     window.MaxaromaCheckout.totalsState =
         window.MaxaromaCheckout.totalsState || {};
 
-    /*
-     * =====================================================
-     * USER EXPLICIT ACTION
-     * =====================================================
-     *
-     * The customer explicitly clicked the checkbox.
-     *
-     * Keep the UI responsive immediately.
-     */
     const requestedState =
         action === 'add';
-	
-	window.MaxaromaCheckout
-    .totalsState
-    .signatureRefreshDefault =
-    false;
 
-	
+    /*
+     * Explicit user action.
+     *
+     * Do not allow the old page-refresh default
+     * state to override this action.
+     */
+    window.MaxaromaCheckout
+        .totalsState
+        .signatureRefreshDefault =
+        false;
+
     window.MaxaromaCheckout
         .totalsState
         .signatureApplied =
         requestedState;
+
+    /*
+     * IMPORTANT:
+     *
+     * When customer explicitly turns Signature OFF,
+     * clear the previous Signature charge immediately.
+     *
+     * This prevents:
+     *
+     *     OFF + $3.00
+     *
+     * from being displayed from stale frontend state.
+     */
+    if (!requestedState) {
+
+        window.MaxaromaCheckout
+            .totalsState
+            .signatureCharge =
+            0;
+    }
 
     if ($checkbox.length) {
 
@@ -5644,6 +5818,39 @@ const signatureApplied =
                         .signatureApplied =
                         previousState;
 
+                    /*
+                     * Restore previous charge when
+                     * the request fails.
+                     */
+                    if (previousState) {
+
+                        const signatureResponse =
+                            response.shippingSignature ||
+                            response.shipping_signature ||
+                            response.ShippingSignature ||
+                            null;
+
+                        if (
+                            signatureResponse &&
+                            signatureResponse.charge !==
+                            undefined
+                        ) {
+
+                            window.MaxaromaCheckout
+                                .totalsState
+                                .signatureCharge =
+                                parseFloat(
+                                    signatureResponse.charge
+                                ) || 0;
+                        }
+                    } else {
+
+                        window.MaxaromaCheckout
+                            .totalsState
+                            .signatureCharge =
+                            0;
+                    }
+
                     if ($checkbox.length) {
 
                         $checkbox.prop(
@@ -5671,20 +5878,10 @@ const signatureApplied =
 
                 /*
                  * =================================================
-                 * BACKEND IS SOURCE OF TRUTH
+                 * BACKEND SIGNATURE STATE
                  * =================================================
-                 *
-                 * IMPORTANT:
-                 *
-                 * Do NOT determine applied state from charge.
-                 *
-                 * Example:
-                 *
-                 * applied = Yes
-                 * charge  = 0
-                 *
-                 * This is a valid FREE Signature.
                  */
+
                 let appliedState =
                     null;
 
@@ -5694,18 +5891,41 @@ const signatureApplied =
                     response.ShippingSignature ||
                     null;
 
+                /*
+                 * Get current Signature charge from backend.
+                 */
+                let backendSignatureCharge =
+                    null;
+
                 if (
                     signatureResponse &&
                     typeof signatureResponse ===
-                    'object' &&
-                    signatureResponse.applied !==
-                    undefined
+                    'object'
                 ) {
 
-                    appliedState =
-                        isAppliedFlag(
-                            signatureResponse.applied
-                        );
+                    if (
+                        signatureResponse.charge !==
+                        undefined &&
+                        signatureResponse.charge !==
+                        null
+                    ) {
+
+                        backendSignatureCharge =
+                            parseFloat(
+                                signatureResponse.charge
+                            ) || 0;
+                    }
+
+                    if (
+                        signatureResponse.applied !==
+                        undefined
+                    ) {
+
+                        appliedState =
+                            isAppliedFlag(
+                                signatureResponse.applied
+                            );
+                    }
 
                 } else if (
                     response.applied !==
@@ -5719,10 +5939,9 @@ const signatureApplied =
                 }
 
                 /*
-                 * If backend did not return explicit state,
-                 * keep the state requested by the user.
-                 *
-                 * Do NOT use charge > 0 here.
+                 * If backend did not return explicit
+                 * applied state, use the state requested
+                 * by the customer.
                  */
                 if (appliedState === null) {
 
@@ -5730,10 +5949,51 @@ const signatureApplied =
                         requestedState;
                 }
 
+                /*
+                 * Explicit OFF always means:
+                 *
+                 * applied = false
+                 * charge  = 0
+                 */
+                if (!requestedState) {
+
+                    appliedState =
+                        false;
+
+                    backendSignatureCharge =
+                        0;
+                }
+
+                /*
+                 * Explicit ON:
+                 *
+                 * Backend charge is the source of truth.
+                 */
                 window.MaxaromaCheckout
                     .totalsState
                     .signatureApplied =
                     appliedState;
+
+                if (
+                    appliedState === true &&
+                    backendSignatureCharge !==
+                    null
+                ) {
+
+                    window.MaxaromaCheckout
+                        .totalsState
+                        .signatureCharge =
+                        backendSignatureCharge;
+
+                } else if (
+                    appliedState === false
+                ) {
+
+                    window.MaxaromaCheckout
+                        .totalsState
+                        .signatureCharge =
+                        0;
+                }
 
                 /*
                  * Keep checkbox synchronized.
@@ -5755,13 +6015,7 @@ const signatureApplied =
 
                 /*
                  * Backend already returned recalculated
-                 * totals. updateTotals() will preserve the
-                 * explicit applied state and will show:
-                 *
-                 * charge = 0
-                 * applied = Yes
-                 *
-                 * as "Free" + ON.
+                 * totals.
                  */
                 updateTotals(response);
             })
@@ -5785,6 +6039,17 @@ const signatureApplied =
                     .totalsState
                     .signatureApplied =
                     previousState;
+
+                /*
+                 * Restore charge consistently with state.
+                 */
+                if (!previousState) {
+
+                    window.MaxaromaCheckout
+                        .totalsState
+                        .signatureCharge =
+                        0;
+                }
 
                 if ($checkbox.length) {
 
@@ -5817,6 +6082,7 @@ const signatureApplied =
                     null;
             });
 }
+
 
 function restoreCheckoutAddonState() {
 

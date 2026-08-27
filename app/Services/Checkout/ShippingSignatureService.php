@@ -11,6 +11,7 @@ class ShippingSignatureService
     ) {
     }
 
+
 	public function calculate(string $action = 'add'): float
 {
     $action = strtolower(trim($action));
@@ -21,45 +22,61 @@ class ShippingSignatureService
         );
     }
 
+    /*
+     * ---------------------------------------------------------
+     * Explicit user REMOVE
+     * ---------------------------------------------------------
+     */
     if ($action === 'remove') {
+
         $this->remove();
 
         return 0.0;
     }
 
+    /*
+     * ---------------------------------------------------------
+     * Customer eligibility
+     * ---------------------------------------------------------
+     *
+     * Keep existing customer eligibility rules.
+     */
     if (!$this->isEligibleCustomer()) {
+
         $this->remove();
 
         return 0.0;
     }
 
+    /*
+     * ---------------------------------------------------------
+     * Store pickup
+     * ---------------------------------------------------------
+     *
+     * Existing pickup behavior remains unchanged.
+     */
     $shippingMethodId = (int) Session::get(
         'ShoppingCart.Shipping.ShippingMethodID',
         0
     );
 
-    /*
-     * Existing store-pickup behavior.
-     */
     if ($shippingMethodId === 46) {
+
         $this->remove();
 
         return 0.0;
     }
 
     /*
-     * Use the existing configured Signature charge.
-     *
-     * Normal customer:
-     *     Settings.SHIPPING_SIGNATURE
-     *
-     * Dropshipper:
-     *     Settings.DROPSHIPPER_SHIPPING_SIGNATURE
+     * ---------------------------------------------------------
+     * Current configured Shipping Signature charge
+     * ---------------------------------------------------------
      */
     $charge =
         $this->getConfiguredCharge();
 
     if ($charge <= 0) {
+
         $this->remove();
 
         return 0.0;
@@ -67,60 +84,38 @@ class ShippingSignatureService
 
     /*
      * ---------------------------------------------------------
-     * LEGACY TRUTH MODE
+     * Apply configured Signature charge
      * ---------------------------------------------------------
      *
-     * Old checkout behavior:
+     * IMPORTANT:
      *
-     * InsureAmount =
-     *     NetTotal
-     *     - Shipping Insurance
-     *     - Shipping Signature
+     * Shipping Signature is a selectable checkout add-on.
      *
-     * If InsureAmount <= $200:
-     *     Signature uses the configured charge.
+     * When customer explicitly adds it, keep the configured
+     * charge in session.
      *
-     * If InsureAmount > $200:
-     *     Signature is removed.
+     * Do not recalculate/remove it from the order amount here.
      */
-    $eligibleAmount =
-        $this->getSignatureEligibleAmount();
+    Session::put(
+        'ShoppingCart.ShippingSignature',
+        $charge
+    );
 
-    if ($eligibleAmount <= 200) {
-
-        Session::put(
-            'ShoppingCart.ShippingSignature',
-            $charge
-        );
-
-        addLog('SetShippingSignature', [
+    addLog(
+        'SetShippingSignature',
+        [
             'charge' =>
                 NumberFormat($charge),
 
-            'eligible_amount' =>
-                NumberFormat($eligibleAmount),
+            'shipping_method_id' =>
+                $shippingMethodId,
 
             'reason' =>
-                'signature_charge_under_or_equal_200',
-        ]);
+                'configured_shipping_signature_charge',
+        ]
+    );
 
-        return (float) $charge;
-    }
-
-    /*
-     * Above $200 the old checkout removes Signature.
-     */
-    $this->remove();
-
-    addLog('RemoveShippingSignature', [
-        'reason' =>
-            'eligible_amount_over_200',
-
-        'eligible_amount' =>
-            NumberFormat($eligibleAmount),
-    ]);
-
-    return 0.0;
+    return (float) $charge;
 }
     public function remove(): void
     {
@@ -137,92 +132,92 @@ class ShippingSignatureService
      * Only clears an already-applied signature if it is no longer valid.
      * It never turns signature on by itself.
      */
+
 	public function sync(): float
 {
     /*
-     * Signature was not selected.
+     * Signature is currently OFF.
      *
      * Do not automatically enable it.
      */
-    if (!Session::has('ShoppingCart.ShippingSignature')) {
-        return 0.0;
-    }
-
-    if (!$this->isEligibleCustomer()) {
-        $this->remove();
-
-        return 0.0;
-    }
-
-    /*
-     * Existing store-pickup behavior.
-     */
     if (
-        (int) Session::get(
-            'ShoppingCart.Shipping.ShippingMethodID',
-            0
-        ) === 46
+        !Session::has(
+            'ShoppingCart.ShippingSignature'
+        )
     ) {
+        return 0.0;
+    }
+
+    /*
+     * Existing customer eligibility.
+     */
+    if (!$this->isEligibleCustomer()) {
+
         $this->remove();
 
         return 0.0;
     }
 
     /*
-     * Use the same configured charge as the old checkout.
+     * Existing store pickup behavior.
+     *
+     * Keep this rule untouched.
+     */
+    $shippingMethodId = (int) Session::get(
+        'ShoppingCart.Shipping.ShippingMethodID',
+        0
+    );
+
+    if ($shippingMethodId === 46) {
+
+        $this->remove();
+
+        return 0.0;
+    }
+
+    /*
+     * Current configured Signature charge.
      */
     $charge =
         $this->getConfiguredCharge();
 
     if ($charge <= 0) {
+
         $this->remove();
 
         return 0.0;
     }
 
     /*
-     * Legacy Truth Mode:
+     * Signature was already selected by the customer.
      *
-     * <= $200  => keep/apply configured Signature charge
-     * >  $200  => remove Signature
+     * Shipping method refresh must preserve it.
+     *
+     * Do NOT re-run the $200 eligibility rule here.
      */
-    $eligibleAmount =
-        $this->getSignatureEligibleAmount();
+    Session::put(
+        'ShoppingCart.ShippingSignature',
+        $charge
+    );
 
-    if ($eligibleAmount <= 200) {
-
-        Session::put(
-            'ShoppingCart.ShippingSignature',
-            $charge
-        );
-
-        addLog('SetShippingSignature', [
+    addLog(
+        'SyncShippingSignature',
+        [
             'charge' =>
                 NumberFormat($charge),
 
-            'eligible_amount' =>
-                NumberFormat($eligibleAmount),
+            'shipping_method_id' =>
+                $shippingMethodId,
 
             'reason' =>
-                'signature_charge_under_or_equal_200',
-        ]);
+                'existing_signature_preserved',
+        ]
+    );
 
-        return (float) $charge;
-    }
-
-    $this->remove();
-
-    addLog('RemoveShippingSignature', [
-        'reason' =>
-            'eligible_amount_over_200',
-
-        'eligible_amount' =>
-            NumberFormat($eligibleAmount),
-    ]);
-
-    return 0.0;
+    return (float) $charge;
 }
-    public function getConfiguredCharge(): float
+
+  public function getConfiguredCharge(): float
     {
         if (Session::get('is_dropshipper') === 'Yes') {
             return (float) config(

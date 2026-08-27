@@ -2647,105 +2647,344 @@ is_string($image)
      * remains responsible for the AJAX request and backend totals; this listener
      * only maps that response onto the three existing summary surfaces.
      */
-    document.addEventListener('maxaroma:checkout-totals-updated', function(event) {
-      const detail = event.detail || {};
-      const response = detail.response || {};
-      const totals = detail.totals || {};
+ document.addEventListener(
+    'maxaroma:checkout-totals-updated',
+    function (event) {
 
-      const signature =
-        response.shippingSignature ||
-        response.shipping_signature || {};
+        const detail =
+            event.detail || {};
 
-      const charge = parseFloat(
-        signature.charge ??
-        signature.shipping_signature_charge ??
-        signature.amount ??
-        detail.signatureCharge ??
-        0
-      );
+        const response =
+            detail.response || {};
 
-      const applied =
-        String(signature.applied || '').toLowerCase() === 'yes' ||
-        detail.signatureApplied === true;
+        const totals =
+            detail.totals || {};
 
-      const signatureText = charge > 0 ? '$' + charge.toFixed(2) : 'Free';
+        const signature =
+            response.shippingSignature ||
+            response.shipping_signature ||
+            response.ShippingSignature ||
+            {};
 
-      ['signature-row', 'msum-signature-row', 'review-signature-row'].forEach(function(id) {
-        const row = document.getElementById(id);
-        if (!row) return;
+        /*
+         * =========================================================
+         * SIGNATURE CHARGE
+         * =========================================================
+         *
+         * Priority:
+         *
+         * 1. Current checkout state
+         * 2. Event detail
+         * 3. Dedicated Signature response
+         *
+         * Do not let an unrelated totals refresh replace an
+         * already selected $3 Signature with Free.
+         */
 
-        row.hidden = !applied;
+        const checkoutState =
+            window.MaxaromaCheckout?.totalsState ||
+            {};
 
-        if (applied) {
-          const value = row.querySelector('.summary-row-value, span:last-child');
-          if (value) value.textContent = signatureText;
+        let charge =
+            parseFloat(
+                checkoutState.signatureCharge ??
+                detail.signatureCharge ??
+                signature.charge ??
+                signature.shipping_signature_charge ??
+                signature.amount ??
+                0
+            );
+
+        if (
+            Number.isNaN(charge)
+        ) {
+
+            charge = 0;
         }
-      });
 
-      const addonPrice = document.getElementById('signature-addon-price');
-      if (addonPrice) {
-        addonPrice.textContent = charge > 0 ? '+' + signatureText : 'Free';
-      }
+        /*
+         * =========================================================
+         * SIGNATURE APPLIED
+         * =========================================================
+         */
 
-      const confirmPrice = document.getElementById('signature-confirm-keep-price');
-      if (confirmPrice) {
-        confirmPrice.textContent = charge > 0 ? signatureText : 'Free';
-      }
+        const applied =
+            checkoutState.signatureApplied === true ||
+            detail.signatureApplied === true ||
+            String(
+                signature.applied || ''
+            ).toLowerCase() === 'yes';
 
-      const checkbox = document.getElementById('request-signature');
-      if (checkbox) {
-        checkbox.checked = applied;
-        syncAddonCard('request-signature');
-      }
+        const signatureText =
+            charge > 0
+                ? '$' + charge.toFixed(2)
+                : 'Free';
 
-      const subtotal = parseFloat(totals.SubTotal ?? 0);
-      const discount = parseFloat(totals.TotalDiscount ?? 0);
-      const shipping = parseFloat(detail.shipping ?? 0);
-      const tax = parseFloat(detail.tax ?? 0);
-      const netTotal = detail.netTotal != null ?
-        parseFloat(detail.netTotal) :
-        parseFloat(totals.NetTotal ?? 0);
+        /*
+         * =========================================================
+         * SUMMARY ROWS
+         * =========================================================
+         */
 
-      const subtotalEl = document.getElementById('summary-subtotal-value');
-      if (subtotalEl && !Number.isNaN(subtotal)) {
-        subtotalEl.textContent = '$' + subtotal.toFixed(2);
-      }
+        [
+            'signature-row',
+            'msum-signature-row',
+            'review-signature-row'
+        ].forEach(function (id) {
 
-      const savingsEl = document.getElementById('summary-savings-value');
-      if (savingsEl && !Number.isNaN(discount)) {
-        savingsEl.textContent = '−$' + discount.toFixed(2);
-      }
+            const row =
+                document.getElementById(id);
 
-      const shippingEl = document.getElementById('summary-shipping-value');
-      if (shippingEl) {
-        shippingEl.textContent = shipping > 0 ? '$' + shipping.toFixed(2) : 'Free';
-      }
+            if (!row) {
+                return;
+            }
 
-      const taxEl = document.getElementById('summary-tax-value');
-      if (taxEl && !Number.isNaN(tax)) {
-        taxEl.textContent = '$' + tax.toFixed(2);
-      }
+            row.hidden =
+                !applied;
 
-      const mobileShipping = document.getElementById('msum-shipping-value');
-      if (mobileShipping) {
-        mobileShipping.textContent = shipping > 0 ? '$' + shipping.toFixed(2) : 'Free';
-      }
+            if (applied) {
 
-      const mobileTax = document.getElementById('msum-tax-value');
-      if (mobileTax && !Number.isNaN(tax)) {
-        mobileTax.textContent = '$' + tax.toFixed(2);
-      }
+                const value =
+                    row.querySelector(
+                        '.summary-row-value, span:last-child'
+                    );
 
-      const mobileDiscount = document.getElementById('msum-discount-value');
-      if (mobileDiscount && !Number.isNaN(discount)) {
-        mobileDiscount.textContent = '−$' + discount.toFixed(2);
-      }
+                if (value) {
 
-      const total = '$' + (Number.isNaN(netTotal) ? 0 : netTotal).toFixed(2);
-      const mobileTotal = document.getElementById('mobile-summary-total');
-      if (mobileTotal) mobileTotal.textContent = total;
-    });
+                    value.textContent =
+                        signatureText;
+                }
+            }
+        });
 
+        /*
+         * =========================================================
+         * ADDON PRICE
+         * =========================================================
+         */
+
+        const addonPrice =
+            document.getElementById(
+                'signature-addon-price'
+            );
+
+        if (addonPrice) {
+
+            addonPrice.textContent =
+                applied && charge > 0
+                    ? '+' + signatureText
+                    : 'Free';
+        }
+
+        /*
+         * =========================================================
+         * CONFIRMATION MODAL
+         * =========================================================
+         *
+         * IMPORTANT:
+         *
+         * Once the Remove Signature modal is OPEN, do NOT allow
+         * a background checkout-totals event to overwrite its
+         * current Keep Signature price.
+         *
+         * This is the actual fix for:
+         *
+         *     Keep Signature · $3.00
+         *              ↓
+         *     Keep Signature · Free
+         */
+
+        const confirmModal =
+            document.getElementById(
+                'signature-confirm-modal'
+            );
+
+        const confirmPrice =
+            document.getElementById(
+                'signature-confirm-keep-price'
+            );
+
+        const modalIsOpen =
+            confirmModal &&
+            !confirmModal.hidden;
+
+        if (
+            confirmPrice &&
+            !modalIsOpen
+        ) {
+
+            confirmPrice.textContent =
+                applied && charge > 0
+                    ? signatureText
+                    : 'Free';
+        }
+
+        /*
+         * =========================================================
+         * CHECKBOX
+         * =========================================================
+         *
+         * Do not change the checkbox while the confirmation
+         * modal is open.
+         */
+
+        const checkbox =
+            document.getElementById(
+                'request-signature'
+            );
+
+        if (
+            checkbox &&
+            !modalIsOpen
+        ) {
+
+            checkbox.checked =
+                applied;
+
+            syncAddonCard(
+                'request-signature'
+            );
+        }
+
+        /*
+         * =========================================================
+         * OTHER TOTALS
+         * =========================================================
+         */
+
+        const subtotal =
+            parseFloat(
+                totals.SubTotal ?? 0
+            );
+
+        const discount =
+            parseFloat(
+                totals.TotalDiscount ?? 0
+            );
+
+        const shipping =
+            parseFloat(
+                detail.shipping ?? 0
+            );
+
+        const tax =
+            parseFloat(
+                detail.tax ?? 0
+            );
+
+        const netTotal =
+            detail.netTotal != null
+                ? parseFloat(
+                    detail.netTotal
+                )
+                : parseFloat(
+                    totals.NetTotal ?? 0
+                );
+
+        const subtotalEl =
+            document.getElementById(
+                'summary-subtotal-value'
+            );
+
+        if (
+            subtotalEl &&
+            !Number.isNaN(subtotal)
+        ) {
+
+            subtotalEl.textContent =
+                '$' +
+                subtotal.toFixed(2);
+        }
+
+        const savingsEl =
+            document.getElementById(
+                'summary-savings-value'
+            );
+
+        if (
+            savingsEl &&
+            !Number.isNaN(discount)
+        ) {
+
+            savingsEl.textContent =
+                '−$' +
+                discount.toFixed(2);
+        }
+
+        const shippingEl =
+            document.getElementById(
+                'summary-shipping-value'
+            );
+
+        if (shippingEl) {
+
+            shippingEl.textContent =
+                shipping > 0
+                    ? '$' +
+                      shipping.toFixed(2)
+                    : 'Free';
+        }
+
+        const taxEl =
+            document.getElementById(
+                'summary-tax-value'
+            );
+
+        if (
+            taxEl &&
+            !Number.isNaN(tax)
+        ) {
+
+            taxEl.textContent =
+                '$' +
+                tax.toFixed(2);
+        }
+
+        const mobileShipping =
+            document.getElementById(
+                'msum-shipping-value'
+            );
+
+        if (mobileShipping) {
+
+            mobileShipping.textContent =
+                shipping > 0
+                    ? '$' +
+                      shipping.toFixed(2)
+                    : 'Free';
+        }
+
+        const mobileTax =
+            document.getElementById(
+                'msum-tax-value'
+            );
+
+        if (
+            mobileTax &&
+            !Number.isNaN(tax)
+        ) {
+
+            mobileTax.textContent =
+                '$' +
+                tax.toFixed(2);
+        }
+
+        const mobileDiscount =
+            document.getElementById(
+                'msum-discount-value'
+            );
+
+        if (
+            mobileDiscount &&
+            !Number.isNaN(discount)
+        ) {
+
+            mobileDiscount.textContent =
+                '−$' +
+                discount.toFixed(2);
+        }
+    }
+);
     // ── Address autocomplete intentionally disabled ───────────────
     // No verified Places/Address Suggestion API is part of the current checkout
     // contract. The shipping address fields themselves are already dynamic and
