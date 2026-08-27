@@ -17,6 +17,7 @@ class CartAttributeService
      * Payment methods, coupons, credit limits and OrderType
      * are handled by their respective services.
      */
+
 	public function getAttributes(): array
 {
     $attrs = [];
@@ -280,96 +281,79 @@ class CartAttributeService
              * Maxaroma Two Delivery
              * -------------------------------------------------
              *
-             * OLD ShippingMethods() logic:
+             * IMPORTANT:
              *
-             * if WebsiteStock == "In":
+             * This follows the OLD ShippingMethods /
+             * SetCartAttributes behavior.
              *
-             *     $IsMaxaromaTwoDelivery =
-             *         $ProductRs->maxtwodaydelivery;
+             * Old logic uses the cart item's
+             * IsMaxaromaTwoDelivery value.
              *
-             *     $ISMaxTwoItem =
-             *         maxtwodaydelivery == "Yes"
-             *             ? "Yes"
-             *             : "No";
+             * Eligible item:
+             *   IsMaxaromaTwoDelivery = Yes
+             *   ISMaxTwoItem = Yes
              *
-             *     $ISMax2dayVal = $ISMaxTwoItem;
+             * Non-eligible item:
+             *   ISMax2day = No
              *
-             * Keep the same behavior here.
+             * IMPORTANT:
+             *
+             * Do NOT set ISMax2day = Yes for an eligible item.
+             *
+             * This is required for mixed carts such as:
+             *
+             *   $248  -> non Max2Day
+             *   $985  -> Max2Day
+             *
+             * In the OLD checkout:
+             *
+             *   IsMaxaromaTwoDelivery = Yes
+             *   ISMaxTwoItem = Yes
+             *   ISMax2dayVal = No
+             *
+             * which triggers the existing Max2Day upgrade logic.
              */
             if (
                 isset(
-                    $shopItem['WebsiteStock']
+                    $shopItem[
+                        'IsMaxaromaTwoDelivery'
+                    ]
                 )
                 &&
-                $shopItem['WebsiteStock'] === 'In'
+                $shopItem[
+                    'IsMaxaromaTwoDelivery'
+                ] === 'Yes'
+                &&
+                $shopItem[
+                    'IsMaxaromaTwoDelivery'
+                ] !== ''
             ) {
 
+                /*
+                 * Exact old behavior.
+                 */
                 $isMaxaromaTwoDelivery =
-                    $shopItem[
-                        'maxtwodaydelivery'
-                    ]
-                    ?? 'No';
+                    'Yes';
 
                 $isMaxTwoItem =
-                    (
-                        isset(
-                            $shopItem[
-                                'maxtwodaydelivery'
-                            ]
-                        )
-                        &&
-                        $shopItem[
-                            'maxtwodaydelivery'
-                        ] !== ''
-                        &&
-                        $shopItem[
-                            'maxtwodaydelivery'
-                        ] === 'Yes'
-                    )
-                        ? 'Yes'
-                        : 'No';
+                    'Yes';
 
-                $isMax2day =
-                    $isMaxTwoItem;
+                /*
+                 * DO NOT set:
+                 *
+                 * $isMax2day = 'Yes';
+                 *
+                 * Old checkout does not do that here.
+                 */
             }
             else {
 
                 /*
-                 * Preserve existing cart structure when
-                 * WebsiteStock / maxtwodaydelivery are not
-                 * available on the cart item.
-                 *
-                 * This avoids breaking existing checkout
-                 * cart data.
+                 * Exact old behavior for a
+                 * non-Max2Day item.
                  */
-                if (
-                    isset(
-                        $shopItem[
-                            'IsMaxaromaTwoDelivery'
-                        ]
-                    )
-                    &&
-                    $shopItem[
-                        'IsMaxaromaTwoDelivery'
-                    ] !== ''
-                ) {
-                    $isMaxaromaTwoDelivery =
-                        $shopItem[
-                            'IsMaxaromaTwoDelivery'
-                        ];
-
-                    $isMaxTwoItem =
-                        (
-                            $shopItem[
-                                'IsMaxaromaTwoDelivery'
-                            ] === 'Yes'
-                        )
-                            ? 'Yes'
-                            : 'No';
-
-                    $isMax2day =
-                        $isMaxTwoItem;
-                }
+                $isMax2day =
+                    'No';
             }
 
             /*
@@ -377,10 +361,10 @@ class CartAttributeService
              * Deal product
              * -------------------------------------------------
              *
-             * OLD ShippingMethods():
+             * Old behavior:
              *
-             * if IsDealProducts == "Yes"
-             *     $IsMaxaromaTwoDelivery = "No";
+             * Deal product cannot qualify for
+             * Max2Day delivery.
              */
             if (
                 isset(
@@ -465,7 +449,7 @@ class CartAttributeService
 
     return $attrs;
 }
-    /**
+   /**
      * Check whether the cart item is a vendor item.
      */
     protected function isVendorItem(
