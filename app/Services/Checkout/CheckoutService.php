@@ -668,6 +668,7 @@ class CheckoutService
  * Existing legacy Shipping Signature business rules remain
  * inside ShippingSignatureService.
  */
+
 public function setShippingSignature(
     string $action = 'add'
 ): array {
@@ -725,7 +726,46 @@ public function setShippingSignature(
             $charge =
                 $this->shippingSignatureService
                     ->calculate($action);
+        }
 
+        /*
+         * ---------------------------------------------------------
+         * Recalculate Shipping Insurance
+         * ---------------------------------------------------------
+         *
+         * Shipping Insurance depends on the current checkout
+         * amount, and the current Shipping Signature charge is
+         * part of that calculation.
+         *
+         * IMPORTANT:
+         *
+         * persistPreference = false
+         *
+         * This means:
+         * - Signature ON/OFF does NOT change Insurance ON/OFF.
+         * - If Insurance is ON, its amount is recalculated.
+         * - If Insurance is OFF, it remains OFF.
+         *
+         * This is the same recalculation behavior used when
+         * Shipping Method changes, without creating another
+         * frontend AJAX request.
+         */
+        if (
+            ($attributes['onlyGCPurchased'] ?? 0) != 1
+        ) {
+
+            $insurance =
+                $this->shippingInsuranceService
+                    ->calculate(
+                        'add',
+                        0,
+                        'No',
+                        false
+                    );
+
+        } else {
+
+            $insurance = 0.0;
         }
 
         /*
@@ -743,12 +783,12 @@ public function setShippingSignature(
                     )
                 );
 
-	   $applied =
-			Session::has(
-				'ShoppingCart.ShippingSignature'
-			)
-				? 'Yes'
-				: 'No';
+        $applied =
+            Session::has(
+                'ShoppingCart.ShippingSignature'
+            )
+                ? 'Yes'
+                : 'No';
 
         $finalCharge =
             (float) Session::get(
@@ -756,12 +796,26 @@ public function setShippingSignature(
                 0
             );
 
+        $finalInsurance =
+            (float) Session::get(
+                'shipping_insurance_charge',
+                0
+            );
+
         addLog(
             'CheckoutShippingSignatureEnd',
             [
-                'action' => $action,
-                'charge' => $finalCharge,
-                'applied' => $applied,
+                'action' =>
+                    $action,
+
+                'charge' =>
+                    $finalCharge,
+
+                'applied' =>
+                    $applied,
+
+                'shipping_insurance' =>
+                    $finalInsurance,
             ]
         );
 
@@ -769,8 +823,16 @@ public function setShippingSignature(
             'status' => 'success',
 
             'shippingSignature' => [
-                'charge' => $finalCharge,
-                'applied' => $applied,
+                'charge' =>
+                    $finalCharge,
+
+                'applied' =>
+                    $applied,
+            ],
+
+            'shippingInsurance' => [
+                'charge' =>
+                    $finalInsurance,
             ],
 
             'totals' =>
@@ -790,9 +852,12 @@ public function setShippingSignature(
         addLog(
             'CheckoutShippingSignatureError',
             [
-                'action' => $action,
+                'action' =>
+                    $action,
+
                 'message' =>
                     $e->getMessage(),
+
                 'trace' =>
                     $e->getTraceAsString(),
             ]
@@ -805,7 +870,7 @@ public function setShippingSignature(
         ];
     }
 }
-    /**
+  /**
      * Set or remove gift wrapping for One Page Checkout.
      *
      * The configured gift wrapping charge and existing cart
