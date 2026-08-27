@@ -12,7 +12,7 @@ class ShippingSignatureService
     }
 
 
-   public function calculate(string $action = 'add'): float
+	public function calculate(string $action = 'add'): float
 {
     $action = strtolower(trim($action));
 
@@ -24,11 +24,13 @@ class ShippingSignatureService
 
     /*
      * ---------------------------------------------------------
-     * Explicit user REMOVE
+     * REMOVE
      * ---------------------------------------------------------
+     *
+     * Explicit user action:
+     * remove Signature.
      */
     if ($action === 'remove') {
-
         $this->remove();
 
         return 0.0;
@@ -36,13 +38,10 @@ class ShippingSignatureService
 
     /*
      * ---------------------------------------------------------
-     * Customer eligibility
+     * CUSTOMER ELIGIBILITY
      * ---------------------------------------------------------
-     *
-     * Keep existing customer eligibility rules.
      */
     if (!$this->isEligibleCustomer()) {
-
         $this->remove();
 
         return 0.0;
@@ -50,84 +49,65 @@ class ShippingSignatureService
 
     /*
      * ---------------------------------------------------------
-     * Store pickup
-     * ---------------------------------------------------------
-     *
-     * Existing pickup behavior remains unchanged.
-     */
-    $shippingMethodId = (int) Session::get(
-        'ShoppingCart.Shipping.ShippingMethodID',
-        0
-    );
-
-    if ($shippingMethodId === 46) {
-
-        $this->remove();
-
-        return 0.0;
-    }
-
-    /*
-     * ---------------------------------------------------------
-     * Current configured Shipping Signature charge
-     * ---------------------------------------------------------
-     */
-    $charge =
-        $this->getConfiguredCharge();
-
-    if ($charge <= 0) {
-
-        $this->remove();
-
-        return 0.0;
-    }
-
-    /*
-     * ---------------------------------------------------------
-     * $200+ = FREE Shipping Signature
+     * SHIPPING METHOD
      * ---------------------------------------------------------
      *
      * IMPORTANT:
      *
-     * Do not call getSignatureEligibleAmount() here because
-     * that method calls getTotals(), which calls calculate().
+     * Shipping Method 46 = Store Pickup.
      *
-     * Therefore calculate the same legacy eligible amount
-     * without including Shipping Signature / Insurance.
+     * Old checkout behavior:
+     *
+     *     46 -> Insurance is hidden/removed
+     *     46 -> Signature is NOT removed
+     *
+     * Therefore DO NOT remove Signature here based on
+     * ShippingMethodID == 46.
+     *
+     * Insurance has its own independent logic.
+     * ---------------------------------------------------------
+     */
+
+    $charge = $this->getConfiguredCharge();
+
+    if ($charge <= 0) {
+        $this->remove();
+
+        return 0.0;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * SIGNATURE ELIGIBILITY
+     * ---------------------------------------------------------
+     *
+     * Preserve the existing > $200 rule.
+     *
+     * When the eligible amount is >= $200,
+     * Signature is FREE.
+     *
+     * Do NOT remove Signature.
      */
     $eligibleAmount =
-        $this->checkoutTotalsService
-            ->getNetTotalExcludingCharges([
-                'ShippingInsurance',
-                'ShippingSignature',
-            ]);
+        $this->getSignatureEligibleAmount();
 
     if ($eligibleAmount >= 200) {
 
-        /*
-         * Signature remains applied, but charge is FREE.
-         */
         Session::put(
             'ShoppingCart.ShippingSignature',
-            0
+            '0.00'
         );
 
         addLog(
             'SetShippingSignature',
             [
-                'charge' =>
-                    0,
-
+                'charge' => '0.00',
                 'eligible_amount' =>
                     NumberFormat(
                         $eligibleAmount
                     ),
-
-                'shipping_method_id' =>
-                    $shippingMethodId,
-
                 'reason' =>
-                    'signature_free_200_plus',
+                    'eligible_amount_greater_than_or_equal_200',
             ]
         );
 
@@ -136,14 +116,12 @@ class ShippingSignatureService
 
     /*
      * ---------------------------------------------------------
-     * Below $200
+     * NORMAL PAID SIGNATURE
      * ---------------------------------------------------------
-     *
-     * Apply the configured Signature charge.
      */
     Session::put(
         'ShoppingCart.ShippingSignature',
-        $charge
+        NumberFormat($charge)
     );
 
     addLog(
@@ -154,20 +132,13 @@ class ShippingSignatureService
 
             'eligible_amount' =>
                 NumberFormat(
-                    $eligibleAmount
+                    $this->getSignatureEligibleAmount()
                 ),
-
-            'shipping_method_id' =>
-                $shippingMethodId,
-
-            'reason' =>
-                'configured_shipping_signature_charge',
         ]
     );
 
-    return (float) $charge;
-}		
-
+    return (float) NumberFormat($charge);
+}
    public function remove(): void
     {
         Session::forget(
