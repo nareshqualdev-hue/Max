@@ -1078,13 +1078,22 @@
      */
 
     if (
-        signatureChargeFromResponse !==
-        null
-    ) {
+    signatureChargeFromResponse !==
+    null
+) {
 
-        signatureCharge =
-            signatureChargeFromResponse;
-    }
+    signatureCharge =
+        parseFloat(
+            signatureChargeFromResponse
+        ) || 0;
+
+} else if (
+    state.signatureApplied !== true
+) {
+
+    signatureCharge =
+        0;
+}
 
     /*
      * ---------------------------------------------------------

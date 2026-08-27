@@ -12,7 +12,7 @@ class ShippingSignatureService
     }
 
 
-	public function calculate(string $action = 'add'): float
+   public function calculate(string $action = 'add'): float
 {
     $action = strtolower(trim($action));
 
@@ -84,17 +84,62 @@ class ShippingSignatureService
 
     /*
      * ---------------------------------------------------------
-     * Apply configured Signature charge
+     * $200+ = FREE Shipping Signature
      * ---------------------------------------------------------
      *
      * IMPORTANT:
      *
-     * Shipping Signature is a selectable checkout add-on.
+     * Do not call getSignatureEligibleAmount() here because
+     * that method calls getTotals(), which calls calculate().
      *
-     * When customer explicitly adds it, keep the configured
-     * charge in session.
+     * Therefore calculate the same legacy eligible amount
+     * without including Shipping Signature / Insurance.
+     */
+    $eligibleAmount =
+        $this->checkoutTotalsService
+            ->getNetTotalExcludingCharges([
+                'ShippingInsurance',
+                'ShippingSignature',
+            ]);
+
+    if ($eligibleAmount >= 200) {
+
+        /*
+         * Signature remains applied, but charge is FREE.
+         */
+        Session::put(
+            'ShoppingCart.ShippingSignature',
+            0
+        );
+
+        addLog(
+            'SetShippingSignature',
+            [
+                'charge' =>
+                    0,
+
+                'eligible_amount' =>
+                    NumberFormat(
+                        $eligibleAmount
+                    ),
+
+                'shipping_method_id' =>
+                    $shippingMethodId,
+
+                'reason' =>
+                    'signature_free_200_plus',
+            ]
+        );
+
+        return 0.0;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Below $200
+     * ---------------------------------------------------------
      *
-     * Do not recalculate/remove it from the order amount here.
+     * Apply the configured Signature charge.
      */
     Session::put(
         'ShoppingCart.ShippingSignature',
@@ -107,6 +152,11 @@ class ShippingSignatureService
             'charge' =>
                 NumberFormat($charge),
 
+            'eligible_amount' =>
+                NumberFormat(
+                    $eligibleAmount
+                ),
+
             'shipping_method_id' =>
                 $shippingMethodId,
 
@@ -116,8 +166,9 @@ class ShippingSignatureService
     );
 
     return (float) $charge;
-}
-    public function remove(): void
+}		
+
+   public function remove(): void
     {
         Session::forget(
             'ShoppingCart.ShippingSignature'
@@ -133,7 +184,7 @@ class ShippingSignatureService
      * It never turns signature on by itself.
      */
 
-	public function sync(): float
+  public function sync(): float
 {
     /*
      * Signature is currently OFF.
@@ -160,8 +211,6 @@ class ShippingSignatureService
 
     /*
      * Existing store pickup behavior.
-     *
-     * Keep this rule untouched.
      */
     $shippingMethodId = (int) Session::get(
         'ShoppingCart.Shipping.ShippingMethodID',
@@ -189,11 +238,59 @@ class ShippingSignatureService
     }
 
     /*
-     * Signature was already selected by the customer.
+     * ---------------------------------------------------------
+     * Check $200+ eligibility.
+     * ---------------------------------------------------------
      *
-     * Shipping method refresh must preserve it.
+     * sync() can safely use getSignatureEligibleAmount()
+     * because sync() itself is not called by getTotals().
+     */
+    $eligibleAmount =
+        $this->getSignatureEligibleAmount();
+
+    /*
+     * ---------------------------------------------------------
+     * $200 or more = FREE Signature
+     * ---------------------------------------------------------
      *
-     * Do NOT re-run the $200 eligibility rule here.
+     * Keep Signature applied, but make the charge $0.
+     */
+    if ($eligibleAmount >= 200) {
+
+        Session::put(
+            'ShoppingCart.ShippingSignature',
+            0
+        );
+
+        addLog(
+            'SyncShippingSignature',
+            [
+                'charge' =>
+                    0,
+
+                'eligible_amount' =>
+                    NumberFormat(
+                        $eligibleAmount
+                    ),
+
+                'shipping_method_id' =>
+                    $shippingMethodId,
+
+                'reason' =>
+                    'signature_free_200_plus',
+            ]
+        );
+
+        return 0.0;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Below $200
+     * ---------------------------------------------------------
+     *
+     * Signature was already selected by customer,
+     * therefore preserve the configured charge.
      */
     Session::put(
         'ShoppingCart.ShippingSignature',
@@ -206,17 +303,21 @@ class ShippingSignatureService
             'charge' =>
                 NumberFormat($charge),
 
+            'eligible_amount' =>
+                NumberFormat(
+                    $eligibleAmount
+                ),
+
             'shipping_method_id' =>
                 $shippingMethodId,
 
             'reason' =>
-                'existing_signature_preserved',
+                'existing_signature_preserved_below_200',
         ]
     );
 
     return (float) $charge;
-}
-
+}	
   public function getConfiguredCharge(): float
     {
         if (Session::get('is_dropshipper') === 'Yes') {
