@@ -358,11 +358,32 @@ class CheckoutService
          * ---------------------------------------------------------
          */
         if (
-            ($cartAttributes['onlyGCPurchased'] ?? 0) != 1
-        ) {
-            $this->shippingInsuranceService
-                ->calculate('add');
-        }
+    ($cartAttributes['onlyGCPurchased'] ?? 0) != 1
+) {
+    $this->shippingInsuranceService
+        ->calculate('add');
+
+    /*
+     * ---------------------------------------------------------
+     * Shipping Signature
+     * ---------------------------------------------------------
+     *
+     * New checkout requirement:
+     *
+     * Page refresh => Signature ON again.
+     *
+     * Do not only change the frontend checkbox.
+     * Re-apply the real configured Signature charge in
+     * session so CheckoutTotalsService returns the same
+     * charge to Blade/frontend.
+     *
+     * ShippingSignatureService remains the source of truth
+     * for customer eligibility, pickup method and configured
+     * charge.
+     */
+    $this->shippingSignatureService
+        ->calculate('add');
+}
 
         /*
          * ---------------------------------------------------------
