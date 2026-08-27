@@ -1893,7 +1893,16 @@ is_string($image)
     <h2 class="protect-confirm-title" id="protect-confirm-title">Remove Protect My Order?</h2>
     <p class="protect-confirm-body" id="protect-confirm-body">Without this protection, you're responsible for replacing your order if it's lost, stolen, or damaged in transit.</p>
     <div class="protect-confirm-actions">
-      <button type="button" class="btn btn-primary protect-confirm-keep" onclick="keepProtection()">Keep Protection · {{ $money($checkoutInsurance) }}</button>
+      <button
+		type="button"
+		class="btn btn-primary protect-confirm-keep"
+		onclick="keepProtection()"
+	>
+		Keep Protection ·
+		<span id="protect-confirm-keep-price">
+			{{ $money($checkoutInsurance) }}
+		</span>
+	</button>
       <button type="button" class="protect-confirm-remove" onclick="removeProtection()">No thanks, remove it</button>
     </div>
   </div>
@@ -2428,7 +2437,7 @@ is_string($image)
       }
     }
 
-  function keepProtection() {
+function keepProtection() {
 
     const checkbox =
         document.getElementById('protection');
@@ -2437,6 +2446,7 @@ is_string($image)
      * Keep the checkbox ON.
      */
     if (checkbox) {
+
         checkbox.checked = true;
     }
 
@@ -2450,13 +2460,10 @@ is_string($image)
      * KEEP CURRENT INSURANCE AMOUNT
      * =========================================================
      *
-     * The checkout already has the latest Insurance amount.
+     * Always use the latest Insurance amount currently shown
+     * in checkout.
      *
-     * Example:
-     *     Checkout Insurance = $20.86
-     *
-     * Use that same value for the Keep Protection confirmation
-     * price instead of using the stale Blade-rendered value.
+     * Do NOT use the old Blade-rendered modal value.
      */
     const $checkoutInsurance =
         $('#checkout-insurance');
@@ -2470,9 +2477,13 @@ is_string($image)
     ) {
 
         const currentInsurance =
-            $checkoutInsurance.text().trim();
+            $checkoutInsurance
+                .text()
+                .trim();
 
-        if (currentInsurance !== '') {
+        if (
+            currentInsurance !== ''
+        ) {
 
             $keepProtectionPrice.text(
                 currentInsurance
@@ -2485,9 +2496,8 @@ is_string($image)
      * EXISTING BACKEND FLOW
      * =========================================================
      *
-     * Do NOT remove this.
-     *
-     * Keep Protection must restore Insurance in backend/session.
+     * Keep Protection must restore Insurance
+     * in backend/session.
      */
     if (
         window.MaxaromaOnePageCheckout &&
