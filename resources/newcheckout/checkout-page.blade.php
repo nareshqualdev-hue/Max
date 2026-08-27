@@ -2389,38 +2389,165 @@ is_string($image)
     }
 
     function handleProtectionToggle(checkbox) {
-      if (checkbox.checked) {
+
+    /*
+     * =========================================================
+     * PROTECTION ON
+     * =========================================================
+     */
+    if (checkbox.checked) {
+
         if (
-          window.MaxaromaOnePageCheckout &&
-          typeof window.MaxaromaOnePageCheckout.setShippingInsurance === 'function'
+            window.MaxaromaOnePageCheckout &&
+            typeof window.MaxaromaOnePageCheckout
+                .setShippingInsurance === 'function'
         ) {
-          window.MaxaromaOnePageCheckout.setShippingInsurance('add');
+
+            window.MaxaromaOnePageCheckout
+                .setShippingInsurance('add');
         }
+
         syncAddonCard('protection');
+
         return;
-      }
-
-      const overlay = document.getElementById('protect-confirm-overlay');
-      const modal = document.getElementById('protect-confirm-modal');
-
-      if (!overlay || !modal) {
-        checkbox.checked = true;
-        return;
-      }
-
-      _protectConfirmLastFocus = checkbox;
-      overlay.hidden = false;
-      modal.hidden = false;
-      document.body.style.overflow = 'hidden';
-
-      setTimeout(() => {
-        const button = modal.querySelector('.protect-confirm-keep');
-        if (button) button.focus();
-      }, 50);
-
-      document.addEventListener('keydown', _protectConfirmKeydown);
     }
 
+    /*
+     * =========================================================
+     * PROTECTION OFF REQUEST
+     * =========================================================
+     *
+     * OFF is NOT confirmed yet.
+     *
+     * Keep Protection ON until the customer explicitly chooses
+     * "No thanks, remove it".
+     *
+     * This prevents the normal totals flow from immediately
+     * clearing Insurance and changing the popup price to $0.00.
+     */
+
+    const overlay =
+        document.getElementById(
+            'protect-confirm-overlay'
+        );
+
+    const modal =
+        document.getElementById(
+            'protect-confirm-modal'
+        );
+
+    if (!overlay || !modal) {
+
+        /*
+         * Confirmation modal is unavailable.
+         * Keep Protection ON safely.
+         */
+        checkbox.checked = true;
+
+        syncAddonCard('protection');
+
+        return;
+    }
+
+    /*
+     * =========================================================
+     * PRESERVE CURRENT INSURANCE AMOUNT
+     * =========================================================
+     *
+     * Read the amount BEFORE opening the confirmation.
+     *
+     * Example:
+     *
+     *     Insurance = $3.59
+     *
+     * Popup must show:
+     *
+     *     KEEP PROTECTION · $3.59
+     */
+
+    const $checkoutInsurance =
+        $('#checkout-insurance');
+
+    const $keepProtectionPrice =
+        $('#protect-confirm-keep-price');
+
+    if (
+        $checkoutInsurance.length &&
+        $keepProtectionPrice.length
+    ) {
+
+        const currentInsurance =
+            $checkoutInsurance
+                .text()
+                .trim();
+
+        if (
+            currentInsurance !== ''
+        ) {
+
+            $keepProtectionPrice.text(
+                currentInsurance
+            );
+        }
+    }
+
+    /*
+     * =========================================================
+     * KEEP PROTECTION ON WHILE CONFIRMATION IS OPEN
+     * =========================================================
+     *
+     * The actual remove action is handled only by:
+     *
+     *     removeProtection()
+     *
+     * after the customer clicks:
+     *
+     *     "No thanks, remove it"
+     */
+
+    checkbox.checked = true;
+
+    syncAddonCard('protection');
+
+    /*
+     * Preserve focus for modal close.
+     */
+    _protectConfirmLastFocus =
+        checkbox;
+
+    /*
+     * Open confirmation modal.
+     */
+    overlay.hidden =
+        false;
+
+    modal.hidden =
+        false;
+
+    document.body.style.overflow =
+        'hidden';
+
+    /*
+     * Focus Keep Protection button.
+     */
+    setTimeout(() => {
+
+        const button =
+            modal.querySelector(
+                '.protect-confirm-keep'
+            );
+
+        if (button) {
+            button.focus();
+        }
+
+    }, 50);
+
+    document.addEventListener(
+        'keydown',
+        _protectConfirmKeydown
+    );
+}
     function closeProtectConfirm() {
       const overlay = document.getElementById('protect-confirm-overlay');
       const modal = document.getElementById('protect-confirm-modal');
