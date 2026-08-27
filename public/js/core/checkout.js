@@ -1852,6 +1852,8 @@
                 state: address.state,
                 zip: address.zip,
                 city: address.city,
+                address1: address.address1,
+				address2: address.address2,
                 flags: getShippingFlags(),
                 IsCosmo: getShippingFlags().IsCosmo,
                 IsNandansons: getShippingFlags().IsNandansons,
@@ -2090,22 +2092,13 @@
 
     $(document).on(
         'input change',
-        '#shipping_country, #shipping_state, #shipping_zip, #shipping_city',
+        '#shipping_country, #shipping_state, #shipping_zip, #shipping_city, #shipping_address1, #shipping_address2',
         function () {
             queueShippingMethodsLoad();
         }
     );
 
-    $(document).on(
-        'change',
-        '#shipping_first_name, #shipping_last_name, #shipping_address1, #shipping_address2',
-        function () {
-            /*
-             * Names do not normally change shipping availability,
-             * so do not trigger an API call here.
-             */
-        }
-    );
+    
 
     $(document).on(
         'change',
