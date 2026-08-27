@@ -2546,38 +2546,137 @@ is_string($image)
       }
     }
 
-    function handleSignatureToggle(checkbox) {
-      if (checkbox.checked) {
+	function handleSignatureToggle(checkbox) {
+
+    /*
+     * =========================================================
+     * SIGNATURE ON
+     * =========================================================
+     */
+
+    if (checkbox.checked) {
+
         if (
-          window.MaxaromaOnePageCheckout &&
-          typeof window.MaxaromaOnePageCheckout.setShippingSignature === 'function'
+            window.MaxaromaOnePageCheckout &&
+            typeof window.MaxaromaOnePageCheckout
+                .setShippingSignature ===
+                'function'
         ) {
-          window.MaxaromaOnePageCheckout.setShippingSignature('add');
+
+            window.MaxaromaOnePageCheckout
+                .setShippingSignature('add');
         }
-        syncAddonCard('request-signature');
+
+        syncAddonCard(
+            'request-signature'
+        );
+
         return;
-      }
-
-      const overlay = document.getElementById('signature-confirm-overlay');
-      const modal = document.getElementById('signature-confirm-modal');
-
-      if (!overlay || !modal) {
-        checkbox.checked = true;
-        return;
-      }
-
-      _signatureConfirmLastFocus = checkbox;
-      overlay.hidden = false;
-      modal.hidden = false;
-      document.body.style.overflow = 'hidden';
-
-      setTimeout(() => {
-        const button = modal.querySelector('.protect-confirm-keep');
-        if (button) button.focus();
-      }, 50);
-
-      document.addEventListener('keydown', _signatureConfirmKeydown);
     }
+
+    /*
+     * =========================================================
+     * SIGNATURE OFF REQUEST
+     * =========================================================
+     *
+     * IMPORTANT:
+     *
+     * OFF is NOT confirmed yet.
+     *
+     * Customer has only clicked the toggle.
+     * The actual removal happens only after:
+     *
+     *     "No thanks, remove it"
+     *
+     * Therefore keep the real checkbox/state ON while the
+     * confirmation modal is open.
+     */
+
+    const overlay =
+        document.getElementById(
+            'signature-confirm-overlay'
+        );
+
+    const modal =
+        document.getElementById(
+            'signature-confirm-modal'
+        );
+
+    if (
+        !overlay ||
+        !modal
+    ) {
+
+        /*
+         * If confirmation UI is unavailable,
+         * fail safely and keep Signature ON.
+         */
+        checkbox.checked = true;
+
+        syncAddonCard(
+            'request-signature'
+        );
+
+        return;
+    }
+
+    /*
+     * Restore ON immediately.
+     */
+    checkbox.checked = true;
+
+    syncAddonCard(
+        'request-signature'
+    );
+
+    /*
+     * Preserve the current Signature state/charge.
+     */
+    const state =
+        window.MaxaromaCheckout?.totalsState;
+
+    if (state) {
+
+        state.signatureApplied =
+            true;
+    }
+
+    /*
+     * Open confirmation modal.
+     */
+    _signatureConfirmLastFocus =
+        checkbox;
+
+    overlay.hidden =
+        false;
+
+    modal.hidden =
+        false;
+
+    document.body.style.overflow =
+        'hidden';
+
+    /*
+     * Focus Keep Signature.
+     */
+    setTimeout(function () {
+
+        const button =
+            modal.querySelector(
+                '.protect-confirm-keep'
+            );
+
+        if (button) {
+            button.focus();
+        }
+
+    }, 50);
+
+    document.addEventListener(
+        'keydown',
+        _signatureConfirmKeydown
+    );
+}
 
     function closeSignatureConfirm() {
       const overlay = document.getElementById('signature-confirm-overlay');
