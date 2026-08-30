@@ -861,7 +861,28 @@ public function setShippingSignature(
         }
 
         /*
+         * ---------------------------------------------------------
+         * Recalculate Tax
+         * ---------------------------------------------------------
+         *
+         * Signature ON/OFF changes the taxable checkout amount.
+         * Recalculate Tax after Signature and Insurance are updated.
+         *
+         * Existing Tax calculation logic remains unchanged.
+         */
+        if (
+            ($attributes['onlyGCPurchased'] ?? 0) != 1
+        ) {
+
+            $this->calculateTax(
+                $attributes
+            );
+        }
+
+        /*
+         * ---------------------------------------------------------
          * Recalculate final totals.
+         * ---------------------------------------------------------
          */
         $totals =
             $this->checkoutTotalsService
@@ -961,8 +982,7 @@ public function setShippingSignature(
                 'Unable to update shipping signature.',
         ];
     }
-}
-  /**
+}  /**
      * Set or remove gift wrapping for One Page Checkout.
      *
      * The configured gift wrapping charge and existing cart
@@ -1131,6 +1151,7 @@ public function setShippingSignature(
  * Existing ShippingInsuranceService remains the source
  * of truth for the legacy insurance calculation.
  */
+
 public function setShippingInsurance(
     string $action = 'add'
 ): array {
@@ -1191,7 +1212,28 @@ public function setShippingInsurance(
             );
 
         /*
+         * ---------------------------------------------------------
+         * Recalculate Tax
+         * ---------------------------------------------------------
+         *
+         * Insurance ON/OFF changes the taxable checkout amount.
+         *
+         * Calculate Tax after the Insurance value has been
+         * updated so TaxService uses the current Insurance state.
+         */
+        if (
+            ($cartAttributes['onlyGCPurchased'] ?? 0) != 1
+        ) {
+
+            $this->calculateTax(
+                $cartAttributes
+            );
+        }
+
+        /*
+         * ---------------------------------------------------------
          * Recalculate final checkout totals.
+         * ---------------------------------------------------------
          */
         $totals =
             $this->checkoutTotalsService
@@ -1245,8 +1287,10 @@ public function setShippingInsurance(
             'CheckoutShippingInsuranceError',
             [
                 'action' => $action,
+
                 'message' =>
                     $e->getMessage(),
+
                 'trace' =>
                     $e->getTraceAsString(),
             ]
@@ -1254,12 +1298,13 @@ public function setShippingInsurance(
 
         return [
             'status' => 'error',
+
             'message' =>
                 'Unable to update shipping insurance.',
         ];
     }
 }
-    /**
+   /**
      * Refresh checkout after shipping method selection.
      *
      * This is the One Page Checkout flow:
@@ -1388,7 +1433,6 @@ public function refreshAfterShippingMethod(
      * ShippingService owns shipping business rules.
      * ---------------------------------------------------------
      */
-
     $shippingFlags = [
         'IsCosmo' =>
             $context['IsCosmo'] ?? 'No',
@@ -1449,7 +1493,22 @@ public function refreshAfterShippingMethod(
 
     /*
      * ---------------------------------------------------------
-     * 4. Gift Certificate only cart.
+     * 4. Shipping method successfully changed.
+     *
+     * Reset previously applied Shipping Signature.
+     * Customer can manually enable it again.
+     *
+     * Existing Shipping Signature business logic remains
+     * unchanged.
+     * ---------------------------------------------------------
+     */
+    Session::forget(
+        'ShoppingCart.ShippingSignature'
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * 5. Gift Certificate only cart.
      *
      * No shipping/tax/insurance.
      * ---------------------------------------------------------
@@ -1484,23 +1543,9 @@ public function refreshAfterShippingMethod(
 
         /*
          * -----------------------------------------------------
-         * 5. Request Signature validation.
+         * 6. Request Signature validation.
          *
-         * IMPORTANT:
-         *
-         * Sync Signature BEFORE Insurance and Tax.
-         *
-         * This makes sure that when:
-         *
-         * Standard Shipping
-         *      -> Store Pickup
-         *      -> Standard Shipping
-         *
-         * the Signature session value is in the correct state
-         * before Insurance/Tax are recalculated.
-         *
-         * Existing Signature business rules remain inside
-         * ShippingSignatureService.
+         * Existing logic retained.
          * -----------------------------------------------------
          */
         $this->shippingSignatureService
@@ -1508,13 +1553,9 @@ public function refreshAfterShippingMethod(
 
         /*
          * -----------------------------------------------------
-         * 6. Shipping Insurance.
+         * 7. Shipping Insurance.
          *
-         * Calculate after Signature sync so Insurance uses
-         * the current checkout state.
-         *
-         * Existing ShippingInsuranceService remains the
-         * source of truth.
+         * EXISTING LOGIC - DO NOT CHANGE.
          * -----------------------------------------------------
          */
         $insurance =
@@ -1525,12 +1566,9 @@ public function refreshAfterShippingMethod(
 
         /*
          * -----------------------------------------------------
-         * 7. Tax.
+         * 8. Tax.
          *
-         * Calculate LAST, after Shipping + Signature +
-         * Insurance have their current session values.
-         *
-         * TaxService remains completely unchanged.
+         * EXISTING LOGIC - DO NOT CHANGE.
          * -----------------------------------------------------
          */
         $taxResult =
@@ -1548,7 +1586,7 @@ public function refreshAfterShippingMethod(
 
     /*
      * ---------------------------------------------------------
-     * 8. Final totals.
+     * 9. Final totals.
      *
      * Totals service is the final source of truth.
      * ---------------------------------------------------------
@@ -1559,7 +1597,7 @@ public function refreshAfterShippingMethod(
 
     /*
      * ---------------------------------------------------------
-     * 9. Payment availability.
+     * 10. Payment availability.
      * ---------------------------------------------------------
      */
     $paymentAvailability =
@@ -1572,7 +1610,7 @@ public function refreshAfterShippingMethod(
 
     /*
      * ---------------------------------------------------------
-     * 10. Response.
+     * 11. Response.
      * ---------------------------------------------------------
      */
     $result = [
@@ -1636,7 +1674,8 @@ public function refreshAfterShippingMethod(
 
     return $result;
 }
-    /**
+
+   /**
      * Return the currently applied Gift Certificate state.
      *
      * GiftCertificateService stores the applied code/value in

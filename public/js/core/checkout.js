@@ -2063,7 +2063,7 @@ if (isPickupShippingMethod) {
     }
 
  
-	function setShippingMethod(shippingMethodId) {
+function setShippingMethod(shippingMethodId) {
     const address = getShippingAddress();
 
     if (!shippingMethodId || !addressReady(address)) {
@@ -2108,12 +2108,16 @@ if (isPickupShippingMethod) {
             IsPCA: getShippingFlags().IsPCA,
             IsND: getShippingFlags().IsND,
             IsVenderItem: getShippingFlags().IsVenderItem,
+
             IsMaxaromaTwoDelivery:
                 getShippingFlags().IsMaxaromaTwoDelivery,
+
             ISMaxTwoItem:
                 getShippingFlags().ISMaxTwoItem,
+
             ISMax2dayVal:
                 getShippingFlags().ISMax2dayVal,
+
             onlyGCPurchased:
                 getShippingFlags().onlyGCPurchased,
 
@@ -2133,6 +2137,7 @@ if (isPickupShippingMethod) {
         }
     })
         .done(function (response) {
+
             if (
                 response.status &&
                 response.status !== 'success'
@@ -2148,27 +2153,79 @@ if (isPickupShippingMethod) {
             }
 
             checkout.selectedShippingMethodId =
-                parseInt(shippingMethodId, 10);
+                parseInt(
+                    shippingMethodId,
+                    10
+                );
 
             /*
-             * Keep existing totals / insurance / signature flow.
+             * -------------------------------------------------
+             * Shipping method changed.
+             *
+             * Automatically turn Request Signature OFF.
+             *
+             * Do NOT trigger the checkbox change event.
+             * Customer can manually enable Signature again.
+             * -------------------------------------------------
+             */
+            window.MaxaromaCheckout =
+                window.MaxaromaCheckout || {};
+
+            window.MaxaromaCheckout.totalsState =
+                window.MaxaromaCheckout.totalsState || {};
+
+            window.MaxaromaCheckout
+                .totalsState
+                .signatureRefreshDefault =
+                false;
+
+            window.MaxaromaCheckout
+                .totalsState
+                .signatureApplied =
+                false;
+
+            window.MaxaromaCheckout
+                .totalsState
+                .signatureCharge =
+                0;
+
+            const $signature =
+                $('#request-signature');
+
+            if ($signature.length) {
+
+                $signature.prop(
+                    'checked',
+                    false
+                );
+
+                $signature
+                    .closest('.addon-row')
+                    .removeClass(
+                        'active'
+                    );
+            }
+
+            /*
+             * Keep existing totals / insurance / tax flow.
              */
             updateTotals(response);
 
             /*
-             * =====================================================
+             * =================================================
              * OLD CHECKOUT STORE PICKUP POPUP
-             * =====================================================
+             * =================================================
              *
              * Shipping Method ID 46 = Store Pickup.
              *
-             * Old checkout shows the existing
-             * #ShippingPickupMethod modal.
-             *
-             * Do NOT touch Signature here.
-             * Insurance handling remains inside updateTotals().
+             * Existing popup behavior remains unchanged.
              */
-            if (parseInt(shippingMethodId, 10) === 46) {
+            if (
+                parseInt(
+                    shippingMethodId,
+                    10
+                ) === 46
+            ) {
 
                 const $pickupModal =
                     $('#ShippingPickupMethod');
@@ -2184,7 +2241,9 @@ if (isPickupShippingMethod) {
                         );
                     }
 
-                    $pickupModal.modal('show');
+                    $pickupModal.modal(
+                        'show'
+                    );
                 }
             }
 
@@ -2197,6 +2256,7 @@ if (isPickupShippingMethod) {
             }
         })
         .fail(function (xhr, status) {
+
             if (status === 'abort') {
                 return;
             }
@@ -2208,7 +2268,8 @@ if (isPickupShippingMethod) {
                 xhr.responseJSON &&
                 xhr.responseJSON.message
             ) {
-                message = xhr.responseJSON.message;
+                message =
+                    xhr.responseJSON.message;
             }
 
             showMessage(
@@ -2222,7 +2283,6 @@ if (isPickupShippingMethod) {
             showLoader(false);
         });
 }
- 
     function copyBillingToShipping() {
         const fields = [
             'first_name',
@@ -5889,10 +5949,10 @@ function setShippingSignature(action) {
         action === 'add';
 
     /*
-     * Explicit user action.
+     * Explicit customer action.
      *
-     * Do not allow the old page-refresh default
-     * state to override this action.
+     * Do not allow the page-refresh default state
+     * to override the customer's current action.
      */
     window.MaxaromaCheckout
         .totalsState
@@ -5905,16 +5965,8 @@ function setShippingSignature(action) {
         requestedState;
 
     /*
-     * IMPORTANT:
-     *
-     * When customer explicitly turns Signature OFF,
-     * clear the previous Signature charge immediately.
-     *
-     * This prevents:
-     *
-     *     OFF + $3.00
-     *
-     * from being displayed from stale frontend state.
+     * When Signature is explicitly removed,
+     * clear the previous frontend Signature charge.
      */
     if (!requestedState) {
 
@@ -5966,16 +6018,11 @@ function setShippingSignature(action) {
                  * BACKEND ERROR
                  * =================================================
                  */
-
                 if (
                     response.status &&
                     response.status !== 'success'
                 ) {
 
-                    /*
-                     * Restore the state before this
-                     * explicit user action.
-                     */
                     const previousState =
                         !requestedState;
 
@@ -5984,32 +6031,7 @@ function setShippingSignature(action) {
                         .signatureApplied =
                         previousState;
 
-                    /*
-                     * Restore previous charge when
-                     * the request fails.
-                     */
-                    if (previousState) {
-
-                        const signatureResponse =
-                            response.shippingSignature ||
-                            response.shipping_signature ||
-                            response.ShippingSignature ||
-                            null;
-
-                        if (
-                            signatureResponse &&
-                            signatureResponse.charge !==
-                            undefined
-                        ) {
-
-                            window.MaxaromaCheckout
-                                .totalsState
-                                .signatureCharge =
-                                parseFloat(
-                                    signatureResponse.charge
-                                ) || 0;
-                        }
-                    } else {
+                    if (!previousState) {
 
                         window.MaxaromaCheckout
                             .totalsState
@@ -6044,10 +6066,9 @@ function setShippingSignature(action) {
 
                 /*
                  * =================================================
-                 * BACKEND SIGNATURE STATE
+                 * BACKEND SIGNATURE RESPONSE
                  * =================================================
                  */
-
                 let appliedState =
                     null;
 
@@ -6057,16 +6078,12 @@ function setShippingSignature(action) {
                     response.ShippingSignature ||
                     null;
 
-                /*
-                 * Get current Signature charge from backend.
-                 */
                 let backendSignatureCharge =
                     null;
 
                 if (
                     signatureResponse &&
-                    typeof signatureResponse ===
-                    'object'
+                    typeof signatureResponse === 'object'
                 ) {
 
                     if (
@@ -6105,9 +6122,8 @@ function setShippingSignature(action) {
                 }
 
                 /*
-                 * If backend did not return explicit
-                 * applied state, use the state requested
-                 * by the customer.
+                 * If backend did not return explicit state,
+                 * preserve the customer's requested state.
                  */
                 if (appliedState === null) {
 
@@ -6118,8 +6134,8 @@ function setShippingSignature(action) {
                 /*
                  * Explicit OFF always means:
                  *
-                 * applied = false
-                 * charge  = 0
+                 * Signature = OFF
+                 * Charge    = $0.00
                  */
                 if (!requestedState) {
 
@@ -6131,9 +6147,7 @@ function setShippingSignature(action) {
                 }
 
                 /*
-                 * Explicit ON:
-                 *
-                 * Backend charge is the source of truth.
+                 * Save backend Signature state.
                  */
                 window.MaxaromaCheckout
                     .totalsState
@@ -6180,8 +6194,22 @@ function setShippingSignature(action) {
                 }
 
                 /*
-                 * Backend already returned recalculated
-                 * totals.
+                 * IMPORTANT:
+                 *
+                 * Backend setShippingSignature() has already done:
+                 *
+                 * Signature
+                 *      ↓
+                 * Insurance
+                 *      ↓
+                 * Tax
+                 *      ↓
+                 * Totals
+                 *
+                 * So updateTotals() only updates the frontend
+                 * with those fresh backend values.
+                 *
+                 * Do NOT make another Tax AJAX request here.
                  */
                 updateTotals(response);
             })
@@ -6191,13 +6219,6 @@ function setShippingSignature(action) {
                     return;
                 }
 
-                /*
-                 * Request failed.
-                 *
-                 * Restore the opposite of the requested
-                 * state because the backend did not confirm
-                 * the user's action.
-                 */
                 const previousState =
                     !requestedState;
 
@@ -6206,9 +6227,6 @@ function setShippingSignature(action) {
                     .signatureApplied =
                     previousState;
 
-                /*
-                 * Restore charge consistently with state.
-                 */
                 if (!previousState) {
 
                     window.MaxaromaCheckout
@@ -6232,12 +6250,12 @@ function setShippingSignature(action) {
                         );
                 }
 
-                const response =
+                const errorResponse =
                     xhr.responseJSON || {};
 
                 showMessage(
                     '#shipping-method-messages',
-                    response.message ||
+                    errorResponse.message ||
                     'Unable to update shipping signature.',
                     'error'
                 );
@@ -6248,7 +6266,6 @@ function setShippingSignature(action) {
                     null;
             });
 }
-
 
 function restoreCheckoutAddonState() {
 
