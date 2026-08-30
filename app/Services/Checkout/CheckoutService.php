@@ -670,20 +670,33 @@ class CheckoutService
                 /*
                  * Gift Certificate changes the checkout amount.
                  *
-                 * Recalculate Protect My Order FIRST so TaxService
-                 * sees the current insurance charge. This prevents
-                 * TaxService from using the pre-Gift-Certificate
-                 * insurance amount during the same request.
+                 * Re-run Shipping Signature FIRST so the current
+                 * Signature charge is available before Insurance
+                 * calculates its amount.
+                 *
+                 * This matches the normal checkout refresh flow,
+                 * where the currently applied Signature is part of
+                 * the amount used by Shipping Insurance.
+                 *
+                 * ShippingSignatureService remains the single
+                 * source of truth. No Signature business rules are
+                 * duplicated here.
+                 */
+                $this->shippingSignatureService
+                    ->calculate('add');
+
+                /*
+                 * Recalculate Protect My Order after Signature.
                  *
                  * Existing ShippingInsuranceService remains the
-                 * single source of truth for the insurance calculation.
+                 * single source of truth for Insurance calculation.
                  */
                 $this->shippingInsuranceService
                     ->calculate('add');
 
                 /*
-                 * Now calculate tax using the fully refreshed
-                 * checkout state.
+                 * Now calculate Tax using the fully refreshed
+                 * Signature + Insurance state.
                  *
                  * Existing TaxService/business rules are unchanged.
                  */
@@ -693,8 +706,8 @@ class CheckoutService
             }
 
             /*
-             * Recalculate final totals after Protect My Order and
-             * Tax have both been refreshed.
+             * Recalculate final totals after Protect My Order,
+             * Shipping Signature and Tax have been refreshed.
              */
             $totals =
                 $this->checkoutTotalsService

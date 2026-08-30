@@ -6383,7 +6383,41 @@ function restoreCheckoutAddonState() {
                 if (field) {
                     field.style.display = 'none';
                 }
+							/*
+			 * =====================================================
+			 * SAVE GIFT CERTIFICATE STATE
+			 * =====================================================
+			 *
+			 * Generic Shipping / Insurance / Signature totals
+			 * responses must not remove this UI.
+			 */
+			window.MaxaromaCheckout =
+				window.MaxaromaCheckout || {};
 
+			window.MaxaromaCheckout.totalsState =
+				window.MaxaromaCheckout.totalsState || {};
+
+			window.MaxaromaCheckout.totalsState.giftCertificate =
+				{
+					code:
+						response.giftCertificate?.code ||
+						code,
+
+					value:
+						parseFloat(
+							response.giftCertificate?.value || 0
+						) || 0,
+
+					applicableValue:
+						parseFloat(
+							response.giftCertificate?.applicableValue || 0
+						) || 0,
+
+					remainingValue:
+						parseFloat(
+							response.giftCertificate?.remainingValue || 0
+						) || 0
+				};
                 const giftCertificate =
                     response.giftCertificate || {};
 
@@ -6588,6 +6622,15 @@ function restoreCheckoutAddonState() {
                     applicableValue: 0,
                     remainingValue: 0
                 };
+                
+                window.MaxaromaCheckout
+				.totalsState
+				.giftCertificate = {
+					code: '',
+					value: 0,
+					applicableValue: 0,
+					remainingValue: 0
+				};
 
                 /*
                  * Backend already returned fresh totals.
@@ -6643,114 +6686,273 @@ function restoreCheckoutAddonState() {
             });
     };
 
-    function restoreGiftCertificateState(response) {
+function restoreGiftCertificateState(response) {
 
-        response = response || {};
+    response = response || {};
 
-        const result =
-            document.getElementById('giftcard-result');
+    const result =
+        document.getElementById(
+            'giftcard-result'
+        );
 
-        const input =
-            document.getElementById('giftcard-code');
+    const input =
+        document.getElementById(
+            'giftcard-code'
+        );
 
-        if (!result) {
-            return;
-        }
+    if (!result) {
+        return;
+    }
 
-        const giftCertificate =
-            response.giftCertificate ||
-            {};
+    /*
+     * =====================================================
+     * GIFT CERTIFICATE STATE
+     * =====================================================
+     */
+    window.MaxaromaCheckout =
+        window.MaxaromaCheckout || {};
 
-        const code =
-            String(
-                giftCertificate.code ||
+    window.MaxaromaCheckout.totalsState =
+        window.MaxaromaCheckout.totalsState || {};
+
+    const state =
+        window.MaxaromaCheckout.totalsState;
+
+    /*
+     * =====================================================
+     * RESPONSE GIFT CERTIFICATE
+     * =====================================================
+     *
+     * Important:
+     *
+     * Shipping / Insurance / Signature responses can
+     * contain:
+     *
+     *     giftCertificate: {}
+     *
+     * even though the Gift Certificate is still applied.
+     *
+     * Therefore an empty response must NOT clear an
+     * already-applied Gift Certificate.
+     */
+    const responseHasGiftCertificate =
+        Object.prototype.hasOwnProperty.call(
+            response,
+            'giftCertificate'
+        );
+
+    const responseGiftCertificate =
+        responseHasGiftCertificate
+            ? (
+                response.giftCertificate ||
+                {}
+            )
+            : null;
+
+    const responseCode =
+        responseGiftCertificate
+            ? String(
+                responseGiftCertificate.code ||
                 ''
-            ).trim();
+            ).trim()
+            : '';
 
-        const value =
-            parseFloat(
-                giftCertificate.value ||
+    const responseValue =
+        responseGiftCertificate
+            ? parseFloat(
+                responseGiftCertificate.value ||
                 0
-            );
+            ) || 0
+            : 0;
+
+    /*
+     * =====================================================
+     * PRESERVE EXISTING APPLIED GIFT CERTIFICATE
+     * =====================================================
+     *
+     * If backend response does not contain a valid Gift
+     * Certificate, but frontend already knows one was
+     * explicitly applied, preserve it.
+     */
+    const savedGiftCertificate =
+        state.giftCertificate || {};
+
+    const savedCode =
+        String(
+            savedGiftCertificate.code ||
+            ''
+        ).trim();
+
+    const savedValue =
+        parseFloat(
+            savedGiftCertificate.value ||
+            0
+        ) || 0;
+
+    /*
+     * -----------------------------------------------------
+     * Backend returned a VALID Gift Certificate.
+     * -----------------------------------------------------
+     */
+    if (
+        responseCode &&
+        responseValue > 0
+    ) {
+
+        state.giftCertificate = {
+            code:
+                responseCode,
+
+            value:
+                responseValue,
+
+            applicableValue:
+                parseFloat(
+                    responseGiftCertificate
+                        .applicableValue || 0
+                ) || 0,
+
+            remainingValue:
+                parseFloat(
+                    responseGiftCertificate
+                        .remainingValue || 0
+                ) || 0
+        };
+    }
+
+    /*
+     * -----------------------------------------------------
+     * Backend did NOT return Gift Certificate OR returned
+     * an empty object.
+     *
+     * If we already have a valid frontend state, preserve it.
+     * -----------------------------------------------------
+     */
+    else if (
+        savedCode &&
+        savedValue > 0
+    ) {
 
         /*
-         * No Gift Certificate applied.
+         * Do NOT clear:
+         *
+         * result.innerHTML
+         * input
+         * promo-field
+         *
+         * Existing applied Gift Certificate stays visible.
          */
-        if (!code || value <= 0) {
+        return;
+    }
 
-            if (input) {
-                input.value = '';
-            }
+    /*
+     * =====================================================
+     * READ FINAL STATE
+     * =====================================================
+     */
+    const giftCertificate =
+        state.giftCertificate || {};
 
-            result.innerHTML = '';
+    const code =
+        String(
+            giftCertificate.code ||
+            ''
+        ).trim();
 
-            const field =
-                input
-                    ? input.closest('.promo-field')
-                    : null;
+    const value =
+        parseFloat(
+            giftCertificate.value ||
+            0
+        ) || 0;
 
-            if (field) {
-                field.style.display = '';
-            }
-
-            return;
-        }
-
-        /*
-         * Gift Certificate is still applied
-         * after refresh.
-         */
-
-        const safeCode =
-            escapeHtml(code);
-
-        result.innerHTML =
-            '<div class="coupon-applied animate-in" ' +
-            'style="margin-top:12px;" ' +
-            'role="status" ' +
-            'aria-live="polite">' +
-
-            '<div>' +
-
-            '<span class="coupon-applied-code">' +
-            safeCode +
-            '</span>' +
-
-            '<span style="' +
-            'font-size:12px;' +
-            'color:var(--color-text-success);' +
-            'margin-left:8px;">' +
-            'Gift card applied!' +
-            '</span>' +
-
-            '</div>' +
-
-            '<div style="font-size:12px;margin-top:4px;">' +
-            'Applied: $' +
-            value.toFixed(2) +
-            '</div>' +
-
-            '<button ' +
-            'type="button" ' +
-            'class="giftcard-remove" ' +
-            'onclick="removeGiftCard()">' +
-            'Remove' +
-            '</button>' +
-
-            '</div>';
+    /*
+     * =====================================================
+     * NO GIFT CERTIFICATE
+     * =====================================================
+     *
+     * This is reached only when there is no valid saved
+     * Gift Certificate state.
+     *
+     * Explicit removeGiftCard() clears this state.
+     */
+    if (
+        !code ||
+        value <= 0
+    ) {
 
         if (input) {
             input.value = '';
-
-            const field =
-                input.closest('.promo-field');
-
-            if (field) {
-                field.style.display = 'none';
-            }
         }
+
+        result.innerHTML = '';
+
+        const field =
+            input
+                ? input.closest(
+                    '.promo-field'
+                )
+                : null;
+
+        if (field) {
+            field.style.display = '';
+        }
+
+        return;
     }
-    /* =========================================================
+
+    /*
+     * =====================================================
+     * RESTORE APPLIED GIFT CERTIFICATE UI
+     * =====================================================
+     */
+    const field =
+        input
+            ? input.closest(
+                '.promo-field'
+            )
+            : null;
+
+    if (field) {
+        field.style.display = 'none';
+    }
+
+    result.innerHTML =
+        '<div class="coupon-applied animate-in" ' +
+        'style="margin-top:12px;" ' +
+        'role="status" ' +
+        'aria-live="polite">' +
+
+        '<div>' +
+
+        '<span class="coupon-applied-code">' +
+        escapeHtml(code) +
+        '</span>' +
+
+        '<span style="' +
+        'font-size:12px;' +
+        'color:var(--color-text-success);' +
+        'margin-left:8px;">' +
+        'Gift card applied!' +
+        '</span>' +
+
+        '</div>' +
+
+        '<div style="font-size:12px;margin-top:4px;">' +
+        'Applied: $' +
+        value.toFixed(2) +
+        '</div>' +
+
+        '<button ' +
+        'type="button" ' +
+        'class="giftcard-remove" ' +
+        'onclick="removeGiftCard(\'giftcard\')"' +
+        '>' +
+        'Remove' +
+        '</button>' +
+
+        '</div>';
+}
+   /* =========================================================
        DISCOUNT / GIFT CARD AJAX QUEUE
        ========================================================= */
 
