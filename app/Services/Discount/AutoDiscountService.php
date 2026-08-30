@@ -2046,12 +2046,49 @@ class AutoDiscountService
      * This MUST later move to CartCalculatorService.
      */
     protected function getDealSubTotal(): float
-    {
-        return (float) Session::get(
-            'ShoppingCart.DealSubTotal',
-            0
-        );
-    }
+	{
+		$cart = Session::get(
+			'ShoppingCart.Cart',
+			[]
+		);
+
+		if (empty($cart)) {
+			return 0;
+		}
+
+		$totalDeal = 0.0;
+
+		foreach ($cart as $item) {
+
+			if (
+				($item['IsDealProducts'] ?? '') !== 'Yes'
+			) {
+				continue;
+			}
+
+			/*
+			 * Same Old Checkout behavior:
+			 *
+			 * Deal products whose DealDiscountFlag is
+			 * No / empty are excluded from Auto Discount
+			 * subtotal.
+			 */
+			$dealDiscountFlag =
+				$item['DealDiscountFlag'] ?? '';
+
+			if (
+				$dealDiscountFlag === 'No' ||
+				$dealDiscountFlag === ''
+			) {
+				$totalDeal +=
+					(float) (
+						$item['TotPrice'] ?? 0
+					);
+			}
+		}
+
+		return $totalDeal;
+	}
 
     /**
      * Convert CSV string to array.
