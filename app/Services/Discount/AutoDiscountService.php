@@ -720,30 +720,350 @@ class AutoDiscountService
      * exactly aligned with the latest CartTrait.
      */
     protected function applySkuRule(
-        $rule,
-        array $cart,
-        array $excludedSkus,
-        string $skuRemoveArr,
-        float $subTotal,
-        float $totalExcludePrice
-    ): array {
-        $matched = false;
-        $discount = 0;
-        $amountBasedExclude = 'No';
+    $rule,
+    array $cart,
+    array $excludedSkus,
+    string $skuRemoveArr,
+    float $subTotal,
+    float $totalExcludePrice
+): array {
+    $matched = false;
+    $discount = 0;
+    $amountBasedExclude = 'No';
 
-        $ruleSkus = $this->getExcludedSkus(
-            $rule->sku
-        );
+    $ruleSkus = $this->getExcludedSkus(
+        $rule->sku
+    );
 
-        $removeSkus = $this->csvToArray(
-            $skuRemoveArr
-        );
+    $removeSkus = $this->csvToArray(
+        $skuRemoveArr
+    );
 
-        $discountBase = 0;
+    $discountBase = 0;
 
-        foreach ($cart as $item) {
+    /*
+     * ---------------------------------------------------------
+     * FIRST PASS
+     * ---------------------------------------------------------
+     *
+     * Find eligible SKU items.
+     *
+     * Keep the existing Old Checkout exclusions:
+     *
+     * - Deal Products
+     * - Free Gift
+     * - Free Sample
+     * - exclude_sku
+     * - already processed SKU
+     * - Pocket Perfume when configured
+     */
+    foreach ($cart as $index => $item) {
 
-            $sku = $item['SKU'] ?? '';
+        $sku = $item['SKU'] ?? '';
+
+        if (
+            !in_array(
+                $sku,
+                $ruleSkus,
+                true
+            )
+        ) {
+            continue;
+        }
+
+        if (
+            ($item['IsDealProducts'] ?? '') ===
+            'Yes'
+        ) {
+            continue;
+        }
+
+        if (
+            ($item['IS_Free_Gift'] ?? '') ===
+            'Yes'
+        ) {
+            continue;
+        }
+
+        if (
+            ($item['Is_Free_Sample'] ?? '') ===
+            'Yes'
+        ) {
+            continue;
+        }
+
+        if (
+            in_array(
+                $sku,
+                $excludedSkus,
+                true
+            )
+        ) {
+            continue;
+        }
+
+        if (
+            in_array(
+                $sku,
+                $removeSkus,
+                true
+            )
+        ) {
+            continue;
+        }
+
+        if (
+            $rule->exclude_pocketperfume ===
+            'Yes' &&
+            $this->isPocketPerfume(
+                $item['CategoryID'] ?? 0
+            )
+        ) {
+            continue;
+        }
+
+        $matched = true;
+
+        /*
+         * Old percentage logic uses Price * Qty.
+         */
+        $lineAmount =
+            (float) (
+                $item['Price'] ?? 0
+            )
+            *
+            (float) (
+                $item['Qty'] ?? 0
+            );
+
+        /*
+         * Old fixed-discount allocation uses TotPrice.
+         */
+        $lineTotal =
+            (float) (
+                $item['TotPrice'] ?? 0
+            );
+
+        $discountBase +=
+            $lineAmount;
+
+        /*
+         * Keep existing SKU remove behavior.
+         */
+        $skuRemoveArr .=
+            $sku . ',';
+
+        /*
+         * -----------------------------------------------------
+         * PERCENTAGE SKU DISCOUNT
+         * -----------------------------------------------------
+         */
+        if (
+            (int) $rule->type === 1
+        ) {
+
+            $itemDiscount =
+                $lineAmount
+                *
+                (
+                    (float)
+                    $rule->auto_discount_amount
+                    / 100
+                );
+
+            $this->putItemDiscount(
+                $item,
+                $cart,
+                $itemDiscount
+            );
+        }
+    }
+
+    if (!$matched) {
+        return [
+            'matched' => false,
+
+            'discount' => 0,
+
+            'skuRemoveArr' =>
+                $skuRemoveArr,
+
+            'amountBasedDiscountExcludeSku' =>
+                $amountBasedExclude,
+
+            'discountCouponFlag' =>
+                $rule->discount_coupon_flag,
+        ];
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * PERCENTAGE DISCOUNT
+     * ---------------------------------------------------------
+     */
+    if (
+        (int) $rule->type === 1
+    ) {
+
+        $discount =
+            $discountBase
+            *
+            (
+                (float)
+                $rule->auto_discount_amount
+                / 100
+            );
+
+        return [
+            'matched' => true,
+
+            'discount' => $discount,
+
+            'skuRemoveArr' =>
+                $skuRemoveArr,
+
+            'amountBasedDiscountExcludeSku' =>
+                $amountBasedExclude,
+
+            'discountCouponFlag' =>
+                $rule->discount_coupon_flag,
+        ];
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * FIXED SKU DISCOUNT
+     * ---------------------------------------------------------
+     *
+     * IMPORTANT:
+     *
+     * Old checkout distributes the fixed discount across the
+     * matching SKU items according to their TotPrice.
+     *
+     * Example:
+     *
+     * SKU A = $100
+     * SKU B = $50
+     * Fixed discount = $30
+     *
+     * Total eligible = $150
+     *
+     * A gets $20
+     * B gets $10
+     *
+     * Keep the same behavior.
+     */
+    $fixedDiscount =
+        (float)
+        $rule->auto_discount_amount;
+
+    $totalEligiblePrice = 0.0;
+
+    /*
+     * Calculate TotalAmount exactly from eligible SKU items.
+     */
+    foreach ($cart as $item) {
+
+        $sku = $item['SKU'] ?? '';
+
+        if (
+            !in_array(
+                $sku,
+                $ruleSkus,
+                true
+            )
+        ) {
+            continue;
+        }
+
+        if (
+            ($item['IsDealProducts'] ?? '') ===
+            'Yes'
+        ) {
+            continue;
+        }
+
+        if (
+            ($item['IS_Free_Gift'] ?? '') ===
+            'Yes'
+        ) {
+            continue;
+        }
+
+        if (
+            ($item['Is_Free_Sample'] ?? '') ===
+            'Yes'
+        ) {
+            continue;
+        }
+
+        if (
+            in_array(
+                $sku,
+                $excludedSkus,
+                true
+            )
+        ) {
+            continue;
+        }
+
+        if (
+            in_array(
+                $sku,
+                $removeSkus,
+                true
+            )
+        ) {
+            continue;
+        }
+
+        if (
+            $rule->exclude_pocketperfume ===
+            'Yes' &&
+            $this->isPocketPerfume(
+                $item['CategoryID'] ?? 0
+            )
+        ) {
+            continue;
+        }
+
+        $totalEligiblePrice +=
+            (float) (
+                $item['TotPrice'] ?? 0
+            );
+    }
+
+    /*
+     * Old code only applies the fixed SKU discount when
+     * matching SKU amount is greater than zero.
+     */
+    if (
+        $totalEligiblePrice > 0 &&
+        $fixedDiscount > 0
+    ) {
+
+        $amountBasedExclude = 'Yes';
+
+        /*
+         * Same ratio used by Old Checkout:
+         *
+         * fixedDiscount * 100 / TotalAmount
+         */
+        $itemDiscountPercentage =
+            (
+                $fixedDiscount * 100
+            ) /
+            $totalEligiblePrice;
+
+        /*
+         * Allocate fixed discount item-wise.
+         */
+        foreach (
+            $cart as $index => $item
+        ) {
+
+            $sku =
+                $item['SKU'] ?? '';
 
             if (
                 !in_array(
@@ -806,85 +1126,47 @@ class AutoDiscountService
                 continue;
             }
 
-            $matched = true;
-
-            $lineAmount =
+            /*
+             * Old fixed SKU allocation uses TotPrice.
+             */
+            $itemTotal =
                 (float) (
-                    $item['Price'] ?? 0
-                )
-                *
-                (float) (
-                    $item['Qty'] ?? 0
+                    $item['TotPrice'] ?? 0
                 );
 
-            $discountBase +=
-                $lineAmount;
-
-            $skuRemoveArr .=
-                $sku . ',';
-
-            if (
-                (int) $rule->type === 1
-            ) {
-                $itemDiscount =
-                    $lineAmount
-                    *
-                    (
-                        (float)
-                        $rule->auto_discount_amount
-                        / 100
-                    );
-
-                $this->putItemDiscount(
-                    $item,
-                    $cart,
-                    $itemDiscount
-                );
-            }
-        }
-
-        if (!$matched) {
-            return [
-                'matched' => false,
-                'discount' => 0,
-                'skuRemoveArr' =>
-                    $skuRemoveArr,
-                'amountBasedDiscountExcludeSku' =>
-                    $amountBasedExclude,
-                'discountCouponFlag' =>
-                    $rule->discount_coupon_flag,
-            ];
-        }
-
-        if (
-            (int) $rule->type === 1
-        ) {
-            $discount =
-                $discountBase
-                *
+            $itemDiscount =
                 (
-                    (float)
-                    $rule->auto_discount_amount
-                    / 100
-                );
-        } else {
-            $discount =
-                (float)
-                $rule->auto_discount_amount;
+                    $itemTotal
+                    *
+                    $itemDiscountPercentage
+                ) / 100;
+
+            Session::put(
+                'ShoppingCart.Cart.'
+                . $index
+                . '.AutoItemWiseDiscout',
+                $itemDiscount
+            );
         }
 
-        return [
-            'matched' => true,
-            'discount' => $discount,
-            'skuRemoveArr' =>
-                $skuRemoveArr,
-            'amountBasedDiscountExcludeSku' =>
-                $amountBasedExclude,
-            'discountCouponFlag' =>
-                $rule->discount_coupon_flag,
-        ];
+        $discount = $fixedDiscount;
     }
 
+    return [
+        'matched' => true,
+
+        'discount' => $discount,
+
+        'skuRemoveArr' =>
+            $skuRemoveArr,
+
+        'amountBasedDiscountExcludeSku' =>
+            $amountBasedExclude,
+
+        'discountCouponFlag' =>
+            $rule->discount_coupon_flag,
+    ];
+}
     /**
      * Brand rule processor.
      */
