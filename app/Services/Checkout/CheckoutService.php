@@ -620,7 +620,27 @@ class CheckoutService
                 ];
             }
 
-            if ($action === 'remove') {
+            /*
+             * Preserve legacy GIFTCERTIFICATEFLAG behavior.
+             *
+             * Old Checkout only called ApplyGiftCoupons()
+             * when GIFTCERTIFICATEFLAG was enabled.
+             */
+            if (
+                config('Settings.GIFTCERTIFICATEFLAG') !== 'Yes'
+            ) {
+                $this->giftCertificateService
+                    ->remove();
+
+                $result = [
+                    'status' => 'success',
+                    'applied' => 'No',
+                    'giftCertificate' => [
+                        'code' => '',
+                        'value' => 0.0,
+                    ],
+                ];
+            } elseif ($action === 'remove') {
                 $result =
                     $this->giftCertificateService
                         ->remove();
