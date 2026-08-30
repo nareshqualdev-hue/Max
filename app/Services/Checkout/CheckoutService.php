@@ -667,17 +667,34 @@ class CheckoutService
             if (
                 ($cartAttributes['onlyGCPurchased'] ?? 0) != 1
             ) {
+                /*
+                 * Gift Certificate changes the checkout amount.
+                 *
+                 * Recalculate Protect My Order FIRST so TaxService
+                 * sees the current insurance charge. This prevents
+                 * TaxService from using the pre-Gift-Certificate
+                 * insurance amount during the same request.
+                 *
+                 * Existing ShippingInsuranceService remains the
+                 * single source of truth for the insurance calculation.
+                 */
+                $this->shippingInsuranceService
+                    ->calculate('add');
+
+                /*
+                 * Now calculate tax using the fully refreshed
+                 * checkout state.
+                 *
+                 * Existing TaxService/business rules are unchanged.
+                 */
                 $this->calculateTax(
                     $cartAttributes
                 );
-
-                $this->shippingInsuranceService
-                    ->calculate('add');
             }
 
             /*
-             * Recalculate final totals after Tax and
-             * Protect My Order have been refreshed.
+             * Recalculate final totals after Protect My Order and
+             * Tax have both been refreshed.
              */
             $totals =
                 $this->checkoutTotalsService

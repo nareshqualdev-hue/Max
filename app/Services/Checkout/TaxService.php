@@ -137,7 +137,7 @@ class TaxService
          */
         $allDiscount =
             $this->getAllDiscounts();
-
+		
         $allDiscount['TotalDiscount'] =
             (float) (
                 $allDiscount['TotalDiscount'] ?? 0
