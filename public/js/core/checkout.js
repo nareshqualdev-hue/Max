@@ -891,18 +891,91 @@
         10
     );
 
-const isPickupShippingMethod =
+	const isPickupShippingMethod =
     selectedShippingMethodId === 46;
+
+/*
+ * =========================================================
+ * SHIPPING METHOD INSURANCE STATE
+ * =========================================================
+ *
+ * Store Pickup (46) does not support Insurance.
+ *
+ * IMPORTANT:
+ *
+ * Do not overwrite the customer's previous Insurance
+ * preference when entering Pickup.
+ *
+ * Example:
+ *
+ * Standard Shipping
+ * Insurance = ON
+ *
+ *       ↓
+ *
+ * Store Pickup
+ * Insurance = temporarily OFF
+ *
+ *       ↓
+ *
+ * Standard Shipping
+ * Insurance = ON again
+ *
+ * Explicit Insurance OFF from the customer is preserved.
+ * =========================================================
+ */
 
 if (isPickupShippingMethod) {
 
     /*
-     * Insurance must be OFF for Pickup.
+     * Save the current Insurance preference only once
+     * before Pickup temporarily disables it.
+     */
+    if (
+        state.insuranceBeforePickup ===
+        undefined
+    ) {
+        state.insuranceBeforePickup =
+            state.insuranceApplied === true;
+    }
+
+    /*
+     * Pickup must always display Insurance OFF.
      */
     state.insuranceApplied = false;
     state.insurance = 0;
 
     currentInsuranceValue = 0;
+
+} else {
+
+    /*
+     * We are leaving Store Pickup.
+     *
+     * Restore the Insurance state that existed before
+     * Pickup was selected.
+     */
+    if (
+        state.insuranceBeforePickup !==
+        undefined
+    ) {
+
+        state.insuranceApplied =
+            state.insuranceBeforePickup === true;
+
+        /*
+         * Do not keep the Pickup $0 amount.
+         * The backend shipping-method response should
+         * provide the recalculated Insurance amount.
+         */
+        if (
+            state.insuranceApplied === true
+        ) {
+            state.insurance = 0;
+        }
+
+        delete state.insuranceBeforePickup;
+    }
 }
 	
     const insuranceApplied =

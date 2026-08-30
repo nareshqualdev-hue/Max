@@ -1479,11 +1479,58 @@ public function refreshAfterShippingMethod(
 
         $taxResult = null;
         $insurance = 0;
+
     } else {
 
         /*
          * -----------------------------------------------------
-         * 5. Tax
+         * 5. Request Signature validation.
+         *
+         * IMPORTANT:
+         *
+         * Sync Signature BEFORE Insurance and Tax.
+         *
+         * This makes sure that when:
+         *
+         * Standard Shipping
+         *      -> Store Pickup
+         *      -> Standard Shipping
+         *
+         * the Signature session value is in the correct state
+         * before Insurance/Tax are recalculated.
+         *
+         * Existing Signature business rules remain inside
+         * ShippingSignatureService.
+         * -----------------------------------------------------
+         */
+        $this->shippingSignatureService
+            ->sync();
+
+        /*
+         * -----------------------------------------------------
+         * 6. Shipping Insurance.
+         *
+         * Calculate after Signature sync so Insurance uses
+         * the current checkout state.
+         *
+         * Existing ShippingInsuranceService remains the
+         * source of truth.
+         * -----------------------------------------------------
+         */
+        $insurance =
+            $this->shippingInsuranceService
+                ->calculate(
+                    'add'
+                );
+
+        /*
+         * -----------------------------------------------------
+         * 7. Tax.
+         *
+         * Calculate LAST, after Shipping + Signature +
+         * Insurance have their current session values.
+         *
+         * TaxService remains completely unchanged.
          * -----------------------------------------------------
          */
         $taxResult =
@@ -1497,28 +1544,7 @@ public function refreshAfterShippingMethod(
                     $shipCity,
                     $shippingChargePayPalProductPage
                 );
-
-        /*
-         * -----------------------------------------------------
-         * 6. Shipping Insurance
-         * -----------------------------------------------------
-         */
-        $insurance =
-            $this->shippingInsuranceService
-                ->calculate(
-                    'add'
-                );
     }
-
-    /*
-     * ---------------------------------------------------------
-     * 7. Request Signature validation.
-     *
-     * If an already-applied signature is no longer eligible
-     * after shipping/address/total changes, clear it.
-     * ---------------------------------------------------------
-     */
-    $this->shippingSignatureService->sync();
 
     /*
      * ---------------------------------------------------------
@@ -1561,22 +1587,21 @@ public function refreshAfterShippingMethod(
 
         'insurance' =>
             $insurance,
-        
-        'shippingSignature' => [
-			'charge' =>
-				(float) Session::get(
-					'ShoppingCart.ShippingSignature',
-					0
-				),
 
-			'applied' =>
-				Session::has(
-					'ShoppingCart.ShippingSignature'
-				)
-					? 'Yes'
-					: 'No',
-		],
-            
+        'shippingSignature' => [
+            'charge' =>
+                (float) Session::get(
+                    'ShoppingCart.ShippingSignature',
+                    0
+                ),
+
+            'applied' =>
+                Session::has(
+                    'ShoppingCart.ShippingSignature'
+                )
+                    ? 'Yes'
+                    : 'No',
+        ],
 
         'totals' =>
             $totals,
@@ -1611,7 +1636,6 @@ public function refreshAfterShippingMethod(
 
     return $result;
 }
-
     /**
      * Return the currently applied Gift Certificate state.
      *
