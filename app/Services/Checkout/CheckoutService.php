@@ -21,7 +21,8 @@ class CheckoutService
 		protected CheckoutTotalsService $checkoutTotalsService,
 		protected CartCalculatorService $cartCalculatorService,
 		protected \App\Services\Discount\FreeGiftService $freeGiftService,
-		protected \App\Services\Discount\AutoDiscountService $autoDiscountService
+		protected \App\Services\Discount\AutoDiscountService $autoDiscountService,
+		protected \App\Services\Discount\QuantityDiscountService $quantityDiscountService
     ) {
     }
 
@@ -326,6 +327,9 @@ class CheckoutService
             ->calculateSubTotal();
             
         $this->autoDiscountService
+		->apply();
+		
+		$this->quantityDiscountService
 		->apply();
     
 
