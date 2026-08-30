@@ -326,11 +326,19 @@ class CheckoutService
         $this->cartCalculatorService
             ->calculateSubTotal();
             
-        $this->autoDiscountService
-		->apply();
-		
-		$this->quantityDiscountService
-		->apply();
+			if (
+				config('Settings.AUTODISCOUNTFLAG') === 'Yes'
+			) {
+				$this->autoDiscountService
+					->apply();
+			}
+
+			if (
+				config('Settings.QUANTITYDISCOUNTFLAG') === 'Yes'
+			) {
+				$this->quantityDiscountService
+					->apply();
+			}
     
 
         /*
