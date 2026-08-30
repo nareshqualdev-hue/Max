@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Auth;
 use App\Services\Cart\CartCalculatorService;
 
+
 class CheckoutService
 {
     public function __construct(
@@ -19,7 +20,8 @@ class CheckoutService
 		protected PaymentAvailabilityService $paymentAvailabilityService,
 		protected CheckoutTotalsService $checkoutTotalsService,
 		protected CartCalculatorService $cartCalculatorService,
-		protected \App\Services\Discount\FreeGiftService $freeGiftService
+		protected \App\Services\Discount\FreeGiftService $freeGiftService,
+		protected \App\Services\Discount\AutoDiscountService $autoDiscountService
     ) {
     }
 
@@ -322,6 +324,10 @@ class CheckoutService
          */
         $this->cartCalculatorService
             ->calculateSubTotal();
+            
+        $this->autoDiscountService
+		->apply();
+    
 
         /*
          * ---------------------------------------------------------
