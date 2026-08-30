@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Coupon;
 use App\Models\Manufacture;
 use App\Models\Products;
+use App\Models\ProductsCategory;
 use App\Models\QuantityDiscount;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -1737,19 +1738,19 @@ class QuantityDiscountService
         }
 
         /*
-         * Category IDs are represented in the cart
-         * through ProductID. The exact existing query
-         * depends on the Products schema.
+         * Category membership is stored in the existing
+         * pu_products_category mapping table.
          *
-         * Keep the query isolated here.
+         * Do not query category_id from pu_products:
+         * that column does not exist on the Products table.
          */
-        return Products::whereIn(
-            'products_id',
-            $tempProductIds
-        )
-        ->whereIn(
+        return ProductsCategory::whereIn(
             'category_id',
             $activeCategoryIds
+        )
+        ->whereIn(
+            'products_id',
+            $tempProductIds
         )
         ->distinct()
         ->pluck(
