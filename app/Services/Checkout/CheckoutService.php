@@ -651,9 +651,33 @@ class CheckoutService
             }
 
             /*
-             * Recalculate totals after Gift Certificate state
-             * changes. The totals service remains the final source
-             * of truth.
+             * Recalculate Tax and Protect My Order after
+             * Gift Certificate state changes.
+             *
+             * IMPORTANT:
+             * Existing TaxService and ShippingInsuranceService
+             * remain the source of truth. We only re-run their
+             * existing calculations here; no business rules are
+             * duplicated or changed.
+             */
+            $cartAttributes =
+                $this->cartAttributeService
+                    ->getAttributes();
+
+            if (
+                ($cartAttributes['onlyGCPurchased'] ?? 0) != 1
+            ) {
+                $this->calculateTax(
+                    $cartAttributes
+                );
+
+                $this->shippingInsuranceService
+                    ->calculate('add');
+            }
+
+            /*
+             * Recalculate final totals after Tax and
+             * Protect My Order have been refreshed.
              */
             $totals =
                 $this->checkoutTotalsService
