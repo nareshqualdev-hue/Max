@@ -1513,6 +1513,14 @@ is_string($image)
                 </div>
 
                 <!-- E-Gift Card accordion -->
+                @if (
+					strtolower(trim(Session::get('eusertype') ?? '')) != 'wholesaler'
+					&&
+					trim(Session::get('is_dropshipper') ?? '') != 'Yes'
+					&&
+					($onlyGCPurchased ?? 0) == 0
+				)
+
                 <div class="summary-accordion">
                   <button class="summary-accordion-head" onclick="toggleSummaryAccordion('giftcard')" aria-expanded="false" aria-controls="giftcard-panel" type="button" id="giftcard-toggle">
                     <span class="summary-accordion-title">
@@ -1535,7 +1543,7 @@ is_string($image)
                     <div id="giftcard-result"></div>
                   </div>
                 </div>
-
+				@endif
                 <!-- Shipping Rate Calculator accordion -->
                 <div class="summary-accordion">
                   <button class="summary-accordion-head" onclick="toggleSummaryAccordion('shipcalc')" aria-expanded="false" aria-controls="shipcalc-panel" type="button" id="shipcalc-toggle">

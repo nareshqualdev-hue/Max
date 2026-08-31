@@ -16,13 +16,13 @@ class CheckoutService
 		protected ShippingInsuranceService $shippingInsuranceService,
 		protected GiftWrappingService $giftWrappingService,
 		protected ShippingSignatureService $shippingSignatureService,
-		protected GiftCertificateService $giftCertificateService,
 		protected PaymentAvailabilityService $paymentAvailabilityService,
 		protected CheckoutTotalsService $checkoutTotalsService,
 		protected CartCalculatorService $cartCalculatorService,
 		protected \App\Services\Discount\FreeGiftService $freeGiftService,
 		protected \App\Services\Discount\AutoDiscountService $autoDiscountService,
-		protected \App\Services\Discount\QuantityDiscountService $quantityDiscountService
+		protected \App\Services\Discount\QuantityDiscountService $quantityDiscountService,
+		protected \App\Services\Checkout\GiftCertificateService $giftCertificateService,
     ) {
     }
 
@@ -323,6 +323,28 @@ class CheckoutService
          * insurance and final checkout totals are calculated.
          * ---------------------------------------------------------
          */
+         
+         $isGiftCertificateRestricted =
+			strtolower(
+				trim(
+					Session::get(
+						'eusertype',
+						''
+					)
+				)
+			) === 'wholesaler'
+			||
+			trim(
+				Session::get(
+					'is_dropshipper',
+					''
+				)
+			) === 'Yes';
+
+		if ($isGiftCertificateRestricted) {
+			$this->giftCertificateService
+			->remove();
+		}
         $this->cartCalculatorService
             ->calculateSubTotal();
             
