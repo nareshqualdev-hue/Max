@@ -3476,6 +3476,10 @@ function setShippingMethod(shippingMethodId) {
             ...response,
             cart: finalUiCart
         };
+        
+        updateBogoMessages(
+			finalUiCart
+		);
 
         /*
          * Backend owns Free Gift add/remove.
@@ -3510,7 +3514,67 @@ function setShippingMethod(shippingMethodId) {
 
         return response;
     }
-    function cartRequest(url, data) {
+    function updateBogoMessages(cart) {
+
+		if (!Array.isArray(cart)) {
+			return;
+		}
+
+		$('.order-item-row').each(function () {
+
+			const $row = $(this);
+
+			const cartIndex =
+				$row.attr('data-cart-index');
+
+			if (
+				cartIndex === undefined ||
+				cartIndex === ''
+			) {
+				return;
+			}
+
+			const item =
+				cart[cartIndex];
+
+			if (!item) {
+				return;
+			}
+
+			const message =
+				item.BogoDiscountMessage || '';
+
+			const $existingMessage =
+				$row.find(
+					'.order-item-bogo-message'
+				);
+
+			if (message) {
+
+				if ($existingMessage.length) {
+
+					$existingMessage.html(
+						message
+					);
+
+				} else {
+
+					$row.find(
+						'#OrderInfoDiv'
+					).append(
+						'<div class="order-item-bogo-message">' +
+						message +
+						'</div>'
+					);
+				}
+
+			} else {
+
+				$existingMessage.remove();
+			}
+		});
+		}
+		function cartRequest(url, data) {
 
         if (!url) {
             return $.Deferred()

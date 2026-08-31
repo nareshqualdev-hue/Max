@@ -352,7 +352,32 @@ class CartService
          * Gift Certificate must be synced first because the
          * applicable certificate amount depends on the new cart total.
          */
-        $this->giftCertificateService->sync();
+       
+       $isGiftCertificateRestricted =
+			strtolower(
+				trim(
+					Session::get(
+						'eusertype',
+						''
+					)
+				)
+			) === 'wholesaler'
+			||
+			trim(
+				Session::get(
+					'is_dropshipper',
+					''
+				)
+			) === 'Yes';
+
+		if ($isGiftCertificateRestricted) {
+			$this->giftCertificateService
+			->remove();
+		}
+		else
+		{
+			$this->giftCertificateService->sync();
+		}
 
         /*
          * Legacy UpdateCart() explicitly re-applies the active
@@ -407,7 +432,35 @@ class CartService
          * BOGO is also cart-dependent and must be recalculated
          * after quantity changes.
          */
-        $this->bogoDiscountService->apply();
+       if (
+				config('Settings.BOGODISCOUNTFLAG') === 'Yes'
+			) {
+				$this->bogoDiscountService
+					->apply();
+			}
+			
+			if (
+			config('global.BOGO_QTY__AUTO_COMBINED') == '1'
+			) {
+			$bogoDiscount =
+				(float) Session::get(
+					'ShoppingCart.DogoDiscount',
+					0
+				);
+
+			if ($bogoDiscount > 0) {
+				Session::put(
+					'ShoppingCart.AutoDiscount',
+					0
+				);
+
+				Session::put(
+					'ShoppingCart.QuantityDiscount',
+					0
+				);
+			}
+		}	
+			
     }
 
     /**
