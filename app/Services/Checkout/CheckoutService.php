@@ -460,47 +460,78 @@ class CheckoutService
          * Address is taken from the current checkout session.
          * ---------------------------------------------------------
          */
-        if (
-            ($cartAttributes['onlyGCPurchased'] ?? 0) != 1
-        ) {
-            $this->calculateTax(
-                $cartAttributes
-            );
-        }
+        
 
         /*
-         * ---------------------------------------------------------
-         * 4. Shipping insurance
-         * ---------------------------------------------------------
-         */
-        if (
+ * ---------------------------------------------------------
+ * 3. Shipping Signature
+ * ---------------------------------------------------------
+ *
+ * IMPORTANT:
+ *
+ * Do NOT call calculate('add') here.
+ *
+ * calculate('add') means "explicitly enable Signature".
+ * A checkout refresh must not turn an OFF customer
+ * preference back ON.
+ *
+ * sync() preserves the existing customer selection:
+ *
+ * - Signature OFF -> remains OFF
+ * - Signature ON  -> recalculates current charge
+ * - No longer eligible -> removes Signature
+ */
+if (
+    ($cartAttributes['onlyGCPurchased'] ?? 0) != 1
+) {
+    $this->shippingSignatureService
+        ->sync();
+}
+
+/*
+ * ---------------------------------------------------------
+ * 4. Shipping Insurance
+ * ---------------------------------------------------------
+ *
+ * Recalculate Insurance using the current cart.
+ *
+ * persistPreference = false is IMPORTANT.
+ *
+ * Refresh/recalculation must not turn an explicitly
+ * disabled Insurance back ON.
+ */
+if (
     ($cartAttributes['onlyGCPurchased'] ?? 0) != 1
 ) {
     $this->shippingInsuranceService
-        ->calculate('add');
-
-    /*
-     * ---------------------------------------------------------
-     * Shipping Signature
-     * ---------------------------------------------------------
-     *
-     * New checkout requirement:
-     *
-     * Page refresh => Signature ON again.
-     *
-     * Do not only change the frontend checkbox.
-     * Re-apply the real configured Signature charge in
-     * session so CheckoutTotalsService returns the same
-     * charge to Blade/frontend.
-     *
-     * ShippingSignatureService remains the source of truth
-     * for customer eligibility, pickup method and configured
-     * charge.
-     */
-    $this->shippingSignatureService
-        ->calculate('add');
+        ->calculate(
+            'add',
+            0,
+            'No',
+            false
+        );
 }
 
+/*
+ * ---------------------------------------------------------
+ * 5. Final Tax
+ * ---------------------------------------------------------
+ *
+ * Tax must be calculated AFTER the current Signature
+ * and Insurance amounts are finalized.
+ *
+ * TaxService uses these checkout charges as part of
+ * the taxable amount.
+ */
+if (
+    ($cartAttributes['onlyGCPurchased'] ?? 0) != 1
+) {
+    $this->calculateTax(
+        $cartAttributes
+    );
+}
+        
+        
         /*
          * ---------------------------------------------------------
          * 5. Final totals
