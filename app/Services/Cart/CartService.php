@@ -263,9 +263,74 @@ class CartService
             $orderType
         );
 
+    /*
+     * Preserve the legacy UpdateCart() retailer quantity rule.
+     *
+     * Retailers may not update a cart item above 20 pieces,
+     * regardless of the currently available stock.
+     */
+    $userType = strtolower(
+        trim(
+            (string) Session::get(
+                'eusertype',
+                'retailer'
+            )
+        )
+    );
+
+    if (
+        $userType === 'retailer'
+        && $qty > 20
+    ) {
+        $message =
+            'The maximum quantity you can add is 20 pieces.';
+
+        Session::flash('CartError', $message);
+        Session::flash('CartErrors', [$message]);
+
+        return [
+            'success' => false,
+            'Update' => 0,
+            'StockInfo' =>
+                $stock['StockInfo'] ?? 3333,
+            'availableStock' =>
+                $stock['availableStock'] ?? null,
+            'message' => $message,
+        ];
+    }
+
     if (
         ($stock['StockInfo'] ?? 1111) !== 3333
     ) {
+
+        /*
+         * Legacy behavior:
+         * when stock is unavailable and a retailer has more than
+         * 20 pieces available, the retailer-facing maximum is 20,
+         * not the raw available-stock value.
+         */
+        if (
+            $userType === 'retailer'
+            && isset($stock['availableStock'])
+            && $stock['availableStock'] !== ''
+            && (float) $stock['availableStock'] > 20
+        ) {
+            $message =
+                'The maximum quantity you can add is 20 pieces.';
+
+            Session::flash('CartError', $message);
+            Session::flash('CartErrors', [$message]);
+
+            return [
+                'success' => false,
+                'Update' => 0,
+                'StockInfo' =>
+                    $stock['StockInfo'] ?? 2222,
+                'availableStock' =>
+                    $stock['availableStock'],
+                'message' => $message,
+            ];
+        }
 
         return [
             'success' => false,

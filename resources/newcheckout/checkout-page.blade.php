@@ -719,7 +719,7 @@ is_string($image)
                   aria-autocomplete="list"
                   aria-controls="address-suggestions"
 
-                  onkeydown="handleAddressKeydown(event)">
+                  >
 
                 <label class="fl-label" for="shipping_address1">
                   Address
