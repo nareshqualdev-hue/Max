@@ -1429,6 +1429,15 @@ is_string($image)
                       <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
                       @endif
                     </div>
+					@php
+					   $bogoDiscountMessage =
+					   $item['BogoDiscountMessage'] ?? '';
+					@endphp	
+					 @if(!empty($bogoDiscountMessage))
+						<div class="order-item-bogo-message" id="OrderInfoDiv">
+							{!! $bogoDiscountMessage !!}
+						</div>
+					@endif
                   </div>
                   <div class="order-item-price">
                     <div class="order-item-price-current">{{ $money($itemTotal) }}</div>
@@ -2007,7 +2016,7 @@ is_string($image)
             @endif
           </div>
           @if(!empty($bogoDiscountMessage))
-			<div class="order-item-bogo-message">
+			<div class="order-item-bogo-message" id="OrderInfoDiv">
 				{!! $bogoDiscountMessage !!}
 			</div>
 		@endif

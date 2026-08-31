@@ -3562,7 +3562,7 @@ function setShippingMethod(shippingMethodId) {
 					$row.find(
 						'#OrderInfoDiv'
 					).append(
-						'<div class="order-item-bogo-message">' +
+						'<div class="order-item-bogo-message" id="OrderInfoDiv">' +
 						message +
 						'</div>'
 					);
