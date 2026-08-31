@@ -442,202 +442,230 @@
 
     function renderShippingMethods(response) {
 
-        const $list = $('#section-delivery fieldset');
+    const $list = $('#section-delivery fieldset');
 
-        if (!$list.length) {
-            return;
-        }
-        showShipMethodLoader(true);
-        const shippingData =
-            response.shippingMethods || {};
+    if (!$list.length) {
+        return;
+    }
 
-        const shippingMessages =
-            shippingData.messages ||
-            response.messages ||
-            [];
+    showShipMethodLoader(true);
 
-        const datediff =
-            shippingData.datediff ||
-            response.datediff ||
-            '';
+    const shippingData =
+        response.shippingMethods || {};
 
-        let methods =
-            shippingData.shipping_methods ||
-            response.shipping_methods ||
-            [];
+    const shippingMessages =
+        shippingData.messages ||
+        response.messages ||
+        [];
 
-        if (!Array.isArray(methods)) {
-            methods = Object.values(methods || {});
-        }
+    const datediff =
+        shippingData.datediff ||
+        response.datediff ||
+        '';
 
-        if (!methods.length) {
-            $list.html(
-                '<div class="shipping-empty">' +
-                'No shipping methods are available for this address.' +
-                '</div>'
-            );
-            showShipMethodLoader(false);
-            return;
-        }
+    let methods =
+        shippingData.shipping_methods ||
+        response.shipping_methods ||
+        [];
 
-        const selectedId = parseInt(
-            response.selectedShippingMethodId ||
-            response.selected_shipping_method_id ||
-            checkout.selectedShippingMethodId ||
-            0,
+    if (!Array.isArray(methods)) {
+        methods = Object.values(methods || {});
+    }
+
+    if (!methods.length) {
+        $list.html(
+            '<div class="shipping-empty">' +
+            'No shipping methods are available for this address.' +
+            '</div>'
+        );
+
+        showShipMethodLoader(false);
+
+        return;
+    }
+
+    const selectedId = parseInt(
+        response.selectedShippingMethodId ||
+        response.selected_shipping_method_id ||
+        checkout.selectedShippingMethodId ||
+        0,
+        10
+    );
+
+    let html = '';
+
+    methods.forEach(function (method) {
+
+        const methodId = parseInt(
+            method.shipping_mode_id || 0,
             10
         );
 
-        let html = '';
+        if (!methodId) {
+            return;
+        }
 
-        methods.forEach(function (method) {
+        const methodName =
+            method.method_name ||
+            'Shipping Method';
 
-            const methodId = parseInt(
-                method.shipping_mode_id || 0,
-                10
+        const charge =
+            parseFloat(
+                method.chargewithoutformat || 0
             );
 
-            if (!methodId) {
-                return;
-            }
+        const chargeText =
+            method.charge_str ||
+            (
+                charge > 0
+                    ? formatMoney(charge)
+                    : 'FREE'
+            );
 
-            const methodName =
-                method.method_name ||
-                'Shipping Method';
-
-            const charge =
-                parseFloat(
-                    method.chargewithoutformat || 0
+        const eta =
+            method.display_date
+                ? 'Arrives ' + method.display_date
+                : (
+                    method.estimateShipDate || ''
                 );
 
-            const chargeText =
-                method.charge_str ||
-                (
-                    charge > 0
-                        ? formatMoney(charge)
-                        : 'FREE'
-                );
+        const estDate =
+            method.estdate || '';
 
-            const eta =
-                method.display_date
-                    ? 'Arrives ' + method.display_date
-                    : (
-                        method.estimateShipDate || ''
+        const checked =
+            methodId === selectedId
+                ? ' checked'
+                : '';
+
+        const selectedClass =
+            methodId === selectedId
+                ? ' selected'
+                : '';
+
+        html +=
+            '<label class="shipping-option' +
+            selectedClass +
+            '" for="shipping-method-' +
+            methodId +
+            '">' +
+
+            '<input ' +
+            'type="radio" ' +
+            'id="shipping-method-' +
+            methodId +
+            '" ' +
+            'name="shipping" ' +
+            'value="' +
+            methodId +
+            '" ' +
+            'data-est-date="' +
+            escapeHtml(estDate) +
+            '" ' +
+            checked +
+            '>' +
+
+            '<div class="shipping-option-info">' +
+
+            '<div class="shipping-option-name">' +
+            methodName +
+            '</div>' +
+
+            '<div class="shipping-option-eta">' +
+            eta +
+            '</div>' +
+
+            '</div>' +
+
+            '<div class="shipping-option-price' +
+            (
+                charge <= 0
+                    ? ' free'
+                    : ''
+            ) +
+            '">' +
+            chargeText +
+            '</div>' +
+
+            '</label>';
+    });
+
+    let shippingMessageHtml = '';
+
+    if (
+        Array.isArray(shippingMessages) &&
+        shippingMessages.length
+    ) {
+        shippingMessageHtml =
+            shippingMessages
+                .map(function (message) {
+                    return (
+                        '<div class="shipping-method-message">' +
+                        message +
+                        '</div>'
                     );
-
-            const estDate =
-                method.estdate || '';
-
-            const checked =
-                methodId === selectedId
-                    ? ' checked'
-                    : '';
-
-            const selectedClass =
-                methodId === selectedId
-                    ? ' selected'
-                    : '';
-
-            html +=
-                '<label class="shipping-option' +
-                selectedClass +
-                '" for="shipping-method-' +
-                methodId +
-                '">' +
-
-                '<input ' +
-                'type="radio" ' +
-                'id="shipping-method-' +
-                methodId +
-                '" ' +
-                'name="shipping" ' +
-                'value="' +
-                methodId +
-                '" ' +
-                'data-est-date="' +
-                escapeHtml(estDate) +
-                '" ' +
-                checked +
-                '>' +
-
-                '<div class="shipping-option-info">' +
-
-                '<div class="shipping-option-name">' +
-                methodName +
-                '</div>' +
-
-                '<div class="shipping-option-eta">' +
-                eta +
-                '</div>' +
-                '</div>' +
-
-                '<div class="shipping-option-price' +
-                (
-                    charge <= 0
-                        ? ' free'
-                        : ''
-                ) +
-                '">' +
-                chargeText +
-                '</div>' +
-
-                '</label>';
-        });
-
-        let shippingMessageHtml = '';
-
-        if (
-            Array.isArray(shippingMessages) &&
-            shippingMessages.length
-        ) {
-            shippingMessageHtml =
-                shippingMessages
-                    .map(function (message) {
-                        return (
-                            '<div class="shipping-method-message">' +
-                            message +
-                            '</div>'
-                        );
-                    })
-                    .join('');
-        }
-
-        let shippingCutoffHtml = '';
-
-        if (datediff) {
-            shippingCutoffHtml =
-                ' <p class="ship-urgency" role="status">' +
-                'Place your order in the next ' +
-                '<strong>' +
-                escapeHtml(datediff) +
-                '</strong> ' +
-                'for delivery by the listed dates.' +
-                '</p>';
-        }
-
-        $list.html(
-            '<legend class="visually-hidden">' +
-            'Select shipping method' +
-            '</legend>' +
-            shippingCutoffHtml +
-            shippingMessageHtml +
-            html
-        );
-
-        const $checked =
-            $list.find(
-                'input[name="shipping"]:checked'
-            );
-
-        if ($checked.length) {
-            $checked.trigger('change');
-        }
-        else {
-            updateOnTimeDeliveryRate();
-        }
-        showShipMethodLoader(false);
+                })
+                .join('');
     }
 
+    let shippingCutoffHtml = '';
+
+    if (datediff) {
+        shippingCutoffHtml =
+            ' <p class="ship-urgency" role="status">' +
+            'Place your order in the next ' +
+            '<strong>' +
+            escapeHtml(datediff) +
+            '</strong> ' +
+            'for delivery by the listed dates.' +
+            '</p>';
+    }
+
+    $list.html(
+        '<legend class="visually-hidden">' +
+        'Select shipping method' +
+        '</legend>' +
+        shippingCutoffHtml +
+        shippingMessageHtml +
+        html
+    );
+
+    const $checked =
+        $list.find(
+            'input[name="shipping"]:checked'
+        );
+
+    if ($checked.length) {
+
+        /*
+         * =====================================================
+         * IMPORTANT:
+         *
+         * This change event is generated automatically after
+         * address/shipping-method refresh.
+         *
+         * Do NOT show Store Pickup popup here.
+         *
+         * Manual customer selection is handled separately
+         * by the normal change event below.
+         * =====================================================
+         */
+        $checked.trigger(
+            'change',
+            [
+                {
+                    suppressPickupPopup: true
+                }
+            ]
+        );
+
+    } else {
+
+        updateOnTimeDeliveryRate();
+    }
+
+    showShipMethodLoader(false);
+}
+    
     function updateOnTimeDeliveryRate() {
 
         $('.shipping-option-confidence').remove();
@@ -1116,63 +1144,56 @@ if (isPickupShippingMethod) {
      * Some totals responses expose the Signature amount here.
      */
 
+   if (
+    signatureChargeFromResponse ===
+    null &&
+    charges?.ShippingSignature?.charge !==
+    undefined &&
+    charges?.ShippingSignature?.charge !==
+    null
+) {
+
+    const totalsSignatureCharge =
+        parseFloat(
+            charges
+                .ShippingSignature
+                .charge
+        );
+
     if (
-        signatureChargeFromResponse ===
-        null &&
-        charges?.ShippingSignature?.charge !==
-        undefined &&
-        charges?.ShippingSignature?.charge !==
-        null
+        !Number.isNaN(
+            totalsSignatureCharge
+        )
     ) {
 
-        const totalsSignatureCharge =
-            parseFloat(
-                charges
-                    .ShippingSignature
-                    .charge
-            );
-
+        /*
+         * Generic totals responses can return
+         * Signature charge = 0 even though the
+         * customer's Signature is still ON.
+         *
+         * Never overwrite a valid active Signature
+         * charge with zero.
+         */
         if (
-            !Number.isNaN(
-                totalsSignatureCharge
-            )
+            totalsSignatureCharge <= 0 &&
+            state.signatureApplied === true &&
+            parseFloat(
+                state.signatureCharge || 0
+            ) > 0
         ) {
+
+            signatureChargeFromResponse =
+                parseFloat(
+                    state.signatureCharge
+                );
+
+        } else {
 
             signatureChargeFromResponse =
                 totalsSignatureCharge;
         }
     }
-
-    /*
-     * Lowercase compatibility.
-     */
-
-    if (
-        signatureChargeFromResponse ===
-        null &&
-        charges?.shipping_signature?.charge !==
-        undefined &&
-        charges?.shipping_signature?.charge !==
-        null
-    ) {
-
-        const totalsSignatureCharge =
-            parseFloat(
-                charges
-                    .shipping_signature
-                    .charge
-            );
-
-        if (
-            !Number.isNaN(
-                totalsSignatureCharge
-            )
-        ) {
-
-            signatureChargeFromResponse =
-                totalsSignatureCharge;
-        }
-    }
+}
 
     /*
      * ---------------------------------------------------------
@@ -2069,14 +2090,45 @@ if (isPickupShippingMethod) {
         }, 350);
     }
 
-function setShippingMethod(shippingMethodId) {
-    const address = getShippingAddress();
+function setShippingMethod(
+    shippingMethodId,
+    options
+) {
+
+    options = options || {};
+
+    /*
+     * =====================================================
+     * PICKUP POPUP CONTROL
+     * =====================================================
+     *
+     * Default:
+     *
+     * showPickupPopup = true
+     *
+     * એટલે existing/manual Store Pickup selection પર
+     * popup આવશે.
+     *
+     * renderShippingMethods() automatic refresh વખતે:
+     *
+     * showPickupPopup = false
+     *
+     * એટલે address change દરમિયાન automatic selected
+     * Pickup માટે popup નહીં આવે.
+     * =====================================================
+     */
+    const showPickupPopup =
+        options.showPickupPopup !== false;
+
+    const address =
+        getShippingAddress();
 
     if (!shippingMethodId || !addressReady(address)) {
         return;
     }
 
     if (!urls.setShippingMethod) {
+
         showMessage(
             '#shipping-method-messages',
             'Shipping method URL is not configured.',
@@ -2091,63 +2143,102 @@ function setShippingMethod(shippingMethodId) {
     }
 
     showLoader(true);
-    showMessage('#shipping-method-messages', '');
 
-    shippingMethodRequest = $.ajax({
-        type: 'POST',
-        url: urls.setShippingMethod,
-        headers: {
-            'X-CSRF-TOKEN': csrfToken
-        },
-        dataType: 'json',
-        data: {
-            ShipMethodID: shippingMethodId,
+    showMessage(
+        '#shipping-method-messages',
+        ''
+    );
 
-            country: address.country,
-            state: address.state,
-            zip: address.zip,
-            city: address.city,
+    shippingMethodRequest =
+        $.ajax({
 
-            IsCosmo: getShippingFlags().IsCosmo,
-            IsNandansons: getShippingFlags().IsNandansons,
-            IsPerfumePW: getShippingFlags().IsPerfumePW,
-            IsPCA: getShippingFlags().IsPCA,
-            IsND: getShippingFlags().IsND,
-            IsVenderItem: getShippingFlags().IsVenderItem,
+            type: 'POST',
 
-            IsMaxaromaTwoDelivery:
-                getShippingFlags().IsMaxaromaTwoDelivery,
+            url:
+                urls.setShippingMethod,
 
-            ISMaxTwoItem:
-                getShippingFlags().ISMaxTwoItem,
+            headers: {
+                'X-CSRF-TOKEN':
+                    csrfToken
+            },
 
-            ISMax2dayVal:
-                getShippingFlags().ISMax2dayVal,
+            dataType: 'json',
 
-            onlyGCPurchased:
-                getShippingFlags().onlyGCPurchased,
+            data: {
+                ShipMethodID:
+                    shippingMethodId,
 
-            EstDate:
-                $('#section-delivery')
-                    .find('input[name="shipping"]:checked')
-                    .data('est-date') || '',
+                country:
+                    address.country,
 
-            action:
-                checkout.action || '',
+                state:
+                    address.state,
 
-            isPayPalSubTotal:
-                checkout.isPayPalSubTotal || 0,
+                zip:
+                    address.zip,
 
-            shipping_charge_paypal_product_page:
-                checkout.shippingChargePayPalProductPage || 0
-        }
-    })
+                city:
+                    address.city,
+
+                IsCosmo:
+                    getShippingFlags().IsCosmo,
+
+                IsNandansons:
+                    getShippingFlags().IsNandansons,
+
+                IsPerfumePW:
+                    getShippingFlags().IsPerfumePW,
+
+                IsPCA:
+                    getShippingFlags().IsPCA,
+
+                IsND:
+                    getShippingFlags().IsND,
+
+                IsVenderItem:
+                    getShippingFlags().IsVenderItem,
+
+                IsMaxaromaTwoDelivery:
+                    getShippingFlags()
+                        .IsMaxaromaTwoDelivery,
+
+                ISMaxTwoItem:
+                    getShippingFlags()
+                        .ISMaxTwoItem,
+
+                ISMax2dayVal:
+                    getShippingFlags()
+                        .ISMax2dayVal,
+
+                onlyGCPurchased:
+                    getShippingFlags()
+                        .onlyGCPurchased,
+
+                EstDate:
+                    $('#section-delivery')
+                        .find(
+                            'input[name="shipping"]:checked'
+                        )
+                        .data('est-date') || '',
+
+                action:
+                    checkout.action || '',
+
+                isPayPalSubTotal:
+                    checkout.isPayPalSubTotal || 0,
+
+                shipping_charge_paypal_product_page:
+                    checkout.shippingChargePayPalProductPage || 0
+            }
+        })
+
         .done(function (response) {
 
             if (
                 response.status &&
                 response.status !== 'success'
             ) {
+
                 showMessage(
                     '#shipping-method-messages',
                     response.message ||
@@ -2224,9 +2315,17 @@ function setShippingMethod(shippingMethodId) {
              *
              * Shipping Method ID 46 = Store Pickup.
              *
-             * Existing popup behavior remains unchanged.
+             * IMPORTANT:
+             *
+             * Popup is shown ONLY when this function was
+             * called because of an actual/manual customer
+             * shipping-method selection.
+             *
+             * Automatic address refresh does NOT show popup.
+             * =================================================
              */
             if (
+                showPickupPopup &&
                 parseInt(
                     shippingMethodId,
                     10
@@ -2242,6 +2341,7 @@ function setShippingMethod(shippingMethodId) {
                 if ($pickupModal.length) {
 
                     if ($pickupText.length) {
+
                         $pickupText.html(
                             'You have Selected The Order to be Picked up From Address: 31-17 38th Ave, Long Island City NY 11101.'
                         );
@@ -2254,6 +2354,7 @@ function setShippingMethod(shippingMethodId) {
             }
 
             if (response.message) {
+
                 showMessage(
                     '#shipping-method-messages',
                     response.message,
@@ -2261,6 +2362,7 @@ function setShippingMethod(shippingMethodId) {
                 );
             }
         })
+
         .fail(function (xhr, status) {
 
             if (status === 'abort') {
@@ -2274,6 +2376,7 @@ function setShippingMethod(shippingMethodId) {
                 xhr.responseJSON &&
                 xhr.responseJSON.message
             ) {
+
                 message =
                     xhr.responseJSON.message;
             }
@@ -2284,12 +2387,16 @@ function setShippingMethod(shippingMethodId) {
                 'error'
             );
         })
+
         .always(function () {
-            shippingMethodRequest = null;
+
+            shippingMethodRequest =
+                null;
+
             showLoader(false);
         });
 }
-    function copyBillingToShipping() {
+  function copyBillingToShipping() {
         const fields = [
             'first_name',
             'last_name',
@@ -2328,22 +2435,46 @@ function setShippingMethod(shippingMethodId) {
         }
     );
 
-    $(document).on(
-        'change',
-        '#section-delivery input[name="shipping"]',
-        function () {
-            updateOnTimeDeliveryRate();
-            const shippingMethodId =
-                parseInt($(this).val(), 10);
+   $(document).on(
+    'change',
+    '#section-delivery input[name="shipping"]',
+    function (event, changeOptions) {
 
-            if (!shippingMethodId) {
-                return;
-            }
+        updateOnTimeDeliveryRate();
 
-            setShippingMethod(shippingMethodId);
+        const shippingMethodId =
+            parseInt(
+                $(this).val(),
+                10
+            );
 
+        if (!shippingMethodId) {
+            return;
         }
-    );
+
+        changeOptions =
+            changeOptions || {};
+
+        /*
+         * Manual customer selection:
+         *
+         * No suppressPickupPopup option
+         * -> popup is allowed.
+         *
+         * Automatic render refresh:
+         *
+         * suppressPickupPopup = true
+         * -> popup is suppressed.
+         */
+        setShippingMethod(
+            shippingMethodId,
+            {
+                showPickupPopup:
+                    changeOptions.suppressPickupPopup !== true
+            }
+        );
+    }
+); 
 
     $(document).on(
         'click',
@@ -6000,12 +6131,21 @@ function setShippingSignature(action) {
         return;
     }
 
-    if (shippingSignatureRequest) {
-        shippingSignatureRequest.abort();
-    }
-
-    const $checkbox =
-        $('#request-signature');
+    /*
+     * =========================================================
+     * SIGNATURE REQUEST VERSION
+     * =========================================================
+     *
+     * Only the latest explicit customer action is allowed
+     * to update Signature state.
+     *
+     * This protects:
+     *
+     * ON -> OFF -> ON
+     *
+     * from an older AJAX response changing the latest state.
+     * =========================================================
+     */
 
     window.MaxaromaCheckout =
         window.MaxaromaCheckout || {};
@@ -6013,37 +6153,52 @@ function setShippingSignature(action) {
     window.MaxaromaCheckout.totalsState =
         window.MaxaromaCheckout.totalsState || {};
 
+    const state =
+        window.MaxaromaCheckout.totalsState;
+
+    state.signatureRequestVersion =
+        (state.signatureRequestVersion || 0) + 1;
+
+    const requestVersion =
+        state.signatureRequestVersion;
+
+    /*
+     * Cancel previous Signature request.
+     */
+    if (shippingSignatureRequest) {
+        shippingSignatureRequest.abort();
+    }
+
+    const $checkbox =
+        $('#request-signature');
+
     const requestedState =
         action === 'add';
 
     /*
-     * Explicit customer action.
-     *
-     * Do not allow the page-refresh default state
-     * to override the customer's current action.
+     * =========================================================
+     * EXPLICIT USER ACTION
+     * =========================================================
      */
-    window.MaxaromaCheckout
-        .totalsState
-        .signatureRefreshDefault =
+
+    state.signatureRefreshDefault =
         false;
 
-    window.MaxaromaCheckout
-        .totalsState
-        .signatureApplied =
+    state.signatureApplied =
         requestedState;
 
     /*
-     * When Signature is explicitly removed,
-     * clear the previous frontend Signature charge.
+     * Explicit OFF must immediately clear the frontend charge.
      */
     if (!requestedState) {
 
-        window.MaxaromaCheckout
-            .totalsState
-            .signatureCharge =
+        state.signatureCharge =
             0;
     }
 
+    /*
+     * Keep checkbox/UI immediately synchronized.
+     */
     if ($checkbox.length) {
 
         $checkbox.prop(
@@ -6079,227 +6234,41 @@ function setShippingSignature(action) {
             }
 
         })
-            .done(function (response) {
+        .done(function (response) {
 
-                /*
-                 * =================================================
-                 * BACKEND ERROR
-                 * =================================================
-                 */
-                if (
-                    response.status &&
-                    response.status !== 'success'
-                ) {
+            /*
+             * =================================================
+             * IGNORE STALE RESPONSE
+             * =================================================
+             */
 
-                    const previousState =
-                        !requestedState;
+            if (
+                requestVersion !==
+                state.signatureRequestVersion
+            ) {
+                return;
+            }
 
-                    window.MaxaromaCheckout
-                        .totalsState
-                        .signatureApplied =
-                        previousState;
+            /*
+             * =================================================
+             * BACKEND ERROR
+             * =================================================
+             */
 
-                    if (!previousState) {
-
-                        window.MaxaromaCheckout
-                            .totalsState
-                            .signatureCharge =
-                            0;
-                    }
-
-                    if ($checkbox.length) {
-
-                        $checkbox.prop(
-                            'checked',
-                            previousState
-                        );
-
-                        $checkbox
-                            .closest('.addon-row')
-                            .toggleClass(
-                                'active',
-                                previousState
-                            );
-                    }
-
-                    showMessage(
-                        '#shipping-method-messages',
-                        response.message ||
-                        'Unable to update shipping signature.',
-                        'error'
-                    );
-
-                    return;
-                }
-
-                /*
-                 * =================================================
-                 * BACKEND SIGNATURE RESPONSE
-                 * =================================================
-                 */
-                let appliedState =
-                    null;
-
-                const signatureResponse =
-                    response.shippingSignature ||
-                    response.shipping_signature ||
-                    response.ShippingSignature ||
-                    null;
-
-                let backendSignatureCharge =
-                    null;
-
-                if (
-                    signatureResponse &&
-                    typeof signatureResponse === 'object'
-                ) {
-
-                    if (
-                        signatureResponse.charge !==
-                        undefined &&
-                        signatureResponse.charge !==
-                        null
-                    ) {
-
-                        backendSignatureCharge =
-                            parseFloat(
-                                signatureResponse.charge
-                            ) || 0;
-                    }
-
-                    if (
-                        signatureResponse.applied !==
-                        undefined
-                    ) {
-
-                        appliedState =
-                            isAppliedFlag(
-                                signatureResponse.applied
-                            );
-                    }
-
-                } else if (
-                    response.applied !==
-                    undefined
-                ) {
-
-                    appliedState =
-                        isAppliedFlag(
-                            response.applied
-                        );
-                }
-
-                /*
-                 * If backend did not return explicit state,
-                 * preserve the customer's requested state.
-                 */
-                if (appliedState === null) {
-
-                    appliedState =
-                        requestedState;
-                }
-
-                /*
-                 * Explicit OFF always means:
-                 *
-                 * Signature = OFF
-                 * Charge    = $0.00
-                 */
-                if (!requestedState) {
-
-                    appliedState =
-                        false;
-
-                    backendSignatureCharge =
-                        0;
-                }
-
-                /*
-                 * Save backend Signature state.
-                 */
-                window.MaxaromaCheckout
-                    .totalsState
-                    .signatureApplied =
-                    appliedState;
-
-                if (
-                    appliedState === true &&
-                    backendSignatureCharge !==
-                    null
-                ) {
-
-                    window.MaxaromaCheckout
-                        .totalsState
-                        .signatureCharge =
-                        backendSignatureCharge;
-
-                } else if (
-                    appliedState === false
-                ) {
-
-                    window.MaxaromaCheckout
-                        .totalsState
-                        .signatureCharge =
-                        0;
-                }
-
-                /*
-                 * Keep checkbox synchronized.
-                 */
-                if ($checkbox.length) {
-
-                    $checkbox.prop(
-                        'checked',
-                        appliedState
-                    );
-
-                    $checkbox
-                        .closest('.addon-row')
-                        .toggleClass(
-                            'active',
-                            appliedState
-                        );
-                }
-
-                /*
-                 * IMPORTANT:
-                 *
-                 * Backend setShippingSignature() has already done:
-                 *
-                 * Signature
-                 *      ↓
-                 * Insurance
-                 *      ↓
-                 * Tax
-                 *      ↓
-                 * Totals
-                 *
-                 * So updateTotals() only updates the frontend
-                 * with those fresh backend values.
-                 *
-                 * Do NOT make another Tax AJAX request here.
-                 */
-                updateTotals(response);
-            })
-            .fail(function (xhr, status) {
-
-                if (status === 'abort') {
-                    return;
-                }
+            if (
+                response.status &&
+                response.status !== 'success'
+            ) {
 
                 const previousState =
                     !requestedState;
 
-                window.MaxaromaCheckout
-                    .totalsState
-                    .signatureApplied =
+                state.signatureApplied =
                     previousState;
 
                 if (!previousState) {
 
-                    window.MaxaromaCheckout
-                        .totalsState
-                        .signatureCharge =
+                    state.signatureCharge =
                         0;
                 }
 
@@ -6318,23 +6287,227 @@ function setShippingSignature(action) {
                         );
                 }
 
-                const errorResponse =
-                    xhr.responseJSON || {};
-
                 showMessage(
                     '#shipping-method-messages',
-                    errorResponse.message ||
+                    response.message ||
                     'Unable to update shipping signature.',
                     'error'
                 );
-            })
-            .always(function () {
+
+                return;
+            }
+
+            /*
+             * =================================================
+             * BACKEND SIGNATURE RESPONSE
+             * =================================================
+             */
+
+            let appliedState =
+                null;
+
+            let backendSignatureCharge =
+                null;
+
+            const signatureResponse =
+                response.shippingSignature ||
+                response.shipping_signature ||
+                response.ShippingSignature ||
+                null;
+
+            if (
+                signatureResponse &&
+                typeof signatureResponse ===
+                'object'
+            ) {
+
+                if (
+                    signatureResponse.charge !==
+                    undefined &&
+                    signatureResponse.charge !==
+                    null
+                ) {
+
+                    backendSignatureCharge =
+                        parseFloat(
+                            signatureResponse.charge
+                        ) || 0;
+                }
+
+                if (
+                    signatureResponse.applied !==
+                    undefined
+                ) {
+
+                    appliedState =
+                        isAppliedFlag(
+                            signatureResponse.applied
+                        );
+                }
+
+            } else if (
+                response.applied !==
+                undefined
+            ) {
+
+                appliedState =
+                    isAppliedFlag(
+                        response.applied
+                    );
+            }
+
+            /*
+             * If backend does not return explicit applied state,
+             * keep the latest customer action.
+             */
+            if (appliedState === null) {
+
+                appliedState =
+                    requestedState;
+            }
+
+            /*
+             * Explicit OFF always wins.
+             */
+            if (!requestedState) {
+
+                appliedState =
+                    false;
+
+                backendSignatureCharge =
+                    0;
+            }
+
+            /*
+             * =================================================
+             * SAVE BACKEND STATE
+             * =================================================
+             */
+
+            state.signatureApplied =
+                appliedState;
+
+            if (
+                appliedState === true &&
+                backendSignatureCharge !==
+                null
+            ) {
+
+                state.signatureCharge =
+                    backendSignatureCharge;
+
+            } else if (
+                appliedState === false
+            ) {
+
+                state.signatureCharge =
+                    0;
+            }
+
+            /*
+             * =================================================
+             * KEEP CHECKBOX IN SYNC
+             * =================================================
+             */
+
+            if ($checkbox.length) {
+
+                $checkbox.prop(
+                    'checked',
+                    appliedState
+                );
+
+                $checkbox
+                    .closest('.addon-row')
+                    .toggleClass(
+                        'active',
+                        appliedState
+                    );
+            }
+
+            /*
+             * =================================================
+             * UPDATE TOTALS
+             * =================================================
+             *
+             * Backend has already recalculated:
+             *
+             * Signature
+             * Insurance
+             * Tax
+             * Total
+             *
+             * Do not make another totals/tax request here.
+             */
+
+            updateTotals(response);
+        })
+        .fail(function (xhr, status) {
+
+            /*
+             * Ignore aborted/stale requests.
+             */
+            if (
+                status === 'abort' ||
+                requestVersion !==
+                state.signatureRequestVersion
+            ) {
+                return;
+            }
+
+            const previousState =
+                !requestedState;
+
+            state.signatureApplied =
+                previousState;
+
+            if (!previousState) {
+
+                state.signatureCharge =
+                    0;
+            }
+
+            if ($checkbox.length) {
+
+                $checkbox.prop(
+                    'checked',
+                    previousState
+                );
+
+                $checkbox
+                    .closest('.addon-row')
+                    .toggleClass(
+                        'active',
+                        previousState
+                    );
+            }
+
+            const errorResponse =
+                xhr.responseJSON || {};
+
+            showMessage(
+                '#shipping-method-messages',
+                errorResponse.message ||
+                'Unable to update shipping signature.',
+                'error'
+            );
+        })
+        .always(function () {
+
+            /*
+             * Only clear the request reference if this is
+             * still the latest Signature request.
+             */
+            if (
+                requestVersion ===
+                state.signatureRequestVersion
+            ) {
 
                 shippingSignatureRequest =
                     null;
-            });
+            }
+        });
 }
-
 function restoreCheckoutAddonState() {
 
     window.MaxaromaCheckout =
