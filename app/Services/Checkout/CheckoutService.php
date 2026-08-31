@@ -23,6 +23,7 @@ class CheckoutService
 		protected \App\Services\Discount\AutoDiscountService $autoDiscountService,
 		protected \App\Services\Discount\QuantityDiscountService $quantityDiscountService,
 		protected \App\Services\Checkout\GiftCertificateService $giftCertificateService,
+		protected \App\Services\Discount\BogoDiscountService $bogoDiscountService,
     ) {
     }
 
@@ -406,6 +407,36 @@ class CheckoutService
 				$this->quantityDiscountService
 					->apply();
 			}
+			if (
+				config('Settings.BOGODISCOUNTFLAG') === 'Yes'
+			) {
+				$this->bogoDiscountService
+					->apply();
+			}
+			
+			if (
+			config('global.BOGO_QTY__AUTO_COMBINED') == '1'
+			) {
+			$bogoDiscount =
+				(float) Session::get(
+					'ShoppingCart.DogoDiscount',
+					0
+				);
+
+			if ($bogoDiscount > 0) {
+				Session::put(
+					'ShoppingCart.AutoDiscount',
+					0
+				);
+
+				Session::put(
+					'ShoppingCart.QuantityDiscount',
+					0
+				);
+			}
+		}	
+					
+			
     
 
         /*

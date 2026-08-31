@@ -315,12 +315,18 @@ is_string($image)
         opacity: 0;
         visibility: hidden;
       }
+
     </style>
   <div class="checkout-page" id="checkout-app">
   @include('newcheckout.checkout-header')
   <div id="full-page-loader" class="loader-overlay loader-hidden">
       <div class="loader"></div>
       <p>Please wait while we process your order… Kindly do not refresh the page or close the tab.</p>
+  </div>
+
+  <div id="login-loader" class="loader-overlay loader-hidden">
+      <div class="loader"></div>
+      <p>Please wait while you are logged in.</p>
   </div>
 
   <main class="checkout-main" role="main" id="main-content">

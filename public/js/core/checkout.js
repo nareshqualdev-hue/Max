@@ -34,6 +34,14 @@
             $("#full-page-loader").addClass('loader-hidden');
     }
 
+    function showLoginLoader(show) {
+        //$('#shipping-method-loader').toggle(!!show);
+        if (show === true)
+            $("#login-loader").removeClass('loader-hidden');
+        else
+            $("#login-loader").addClass('loader-hidden');
+    }
+
     function showShipMethodLoader(show) {
         if (show === true)
             $(".ship_method_loader").css('visibility', 'visible');
@@ -348,7 +356,7 @@
 
         return '$' + number.toFixed(2);
     }
-    
+
     function isAppliedFlag(value) {
 
     if (
@@ -653,7 +661,6 @@
             );
     }
 
-
 	function updateTotals(response) {
 
     response = response || {};
@@ -880,7 +887,7 @@
                 insurance > 0;
         }
     }
-	
+
 	const selectedShippingMethodId =
     parseInt(
         response.selectedShippingMethodId ??
@@ -977,7 +984,7 @@ if (isPickupShippingMethod) {
         delete state.insuranceBeforePickup;
     }
 }
-	
+
     const insuranceApplied =
         state.insuranceApplied === true;
 
@@ -2062,7 +2069,6 @@ if (isPickupShippingMethod) {
         }, 350);
     }
 
- 
 function setShippingMethod(shippingMethodId) {
     const address = getShippingAddress();
 
@@ -2321,8 +2327,6 @@ function setShippingMethod(shippingMethodId) {
             queueShippingMethodsLoad();
         }
     );
-
-    
 
     $(document).on(
         'change',
@@ -5243,6 +5247,7 @@ function setShippingMethod(shippingMethodId) {
             */
             if($("#checkout-login-form").valid())
             {
+                showLoginLoader(true);
                 $.ajax({
                     type: 'POST',
                     url: $form.attr('action'),
@@ -5256,7 +5261,6 @@ function setShippingMethod(shippingMethodId) {
                     }
 
                 }).done(function (response) {
-
                     if (
                         response.status === 'success' &&
                         response.error === 0
@@ -5280,7 +5284,7 @@ function setShippingMethod(shippingMethodId) {
                     $button.prop('disabled', false);
 
                 }).fail(function (xhr) {
-
+                    showLoginLoader(false);
                     let message =
                         'Invalid email or password.';
 
@@ -5877,7 +5881,7 @@ function setShippingMethod(shippingMethodId) {
                     null;
             });
 }
- 
+
     /* =========================================================
        INSURANCE CHECKBOX
        ========================================================= */
@@ -5913,7 +5917,7 @@ function setShippingMethod(shippingMethodId) {
             setShippingSignature(action);
         }
     );
- 
+
 function setShippingSignature(action) {
 
     action =
@@ -6377,7 +6381,7 @@ function restoreCheckoutAddonState() {
             );
     }
 }
-    
+
     window.applyGiftCard = function () {
 
         const input =
@@ -6712,7 +6716,7 @@ function restoreCheckoutAddonState() {
                     applicableValue: 0,
                     remainingValue: 0
                 };
-                
+
                 window.MaxaromaCheckout
 				.totalsState
 				.giftCertificate = {
