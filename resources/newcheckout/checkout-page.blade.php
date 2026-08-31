@@ -1414,6 +1414,25 @@ is_string($image)
                     <div class="order-item-name">{{ $productName }}</div>
                     <div class="order-item-variant"></div>
                     <div class="order-item-sku">{{ $sku }}</div>
+					@if(isset($item['FinalSale']) && $item['FinalSale'] != '')
+						<div class="order-item-variant">
+							{{ $item['FinalSale'] }}
+						</div>
+					@endif
+
+					@if(Auth::guard('store')->check())
+						<div class="order-item-variant">
+							{{ (isset($item['OrderType']) && $item['OrderType'] == 'Store') ? 'Store Item' : 'Online Item' }}
+						</div>
+					@endif
+
+					@if(isset($item['stock_left']) && $item['stock_left'] < 6)
+						<div class="order-item-variant stock_left pt-1">
+							Only {{ $item['stock_left'] }} left in stock
+						</div>
+					@endif
+                    
+                    
                     <div class="order-item-controls">
                       @if($isFreeGift)
                       <div class="qty-stepper" role="group" aria-label="Free Gift quantity">
@@ -1434,7 +1453,7 @@ is_string($image)
 					   $item['BogoDiscountMessage'] ?? '';
 					@endphp	
 					 @if(!empty($bogoDiscountMessage))
-						<div class="order-item-bogo-message" id="OrderInfoDiv">
+						<div class="order-item-bogo-message pt-1" id="OrderInfoDiv">
 							{!! $bogoDiscountMessage !!}
 						</div>
 					@endif
@@ -2000,6 +2019,24 @@ is_string($image)
           <div class="order-item-name">{{ $productName }}</div>
           <div class="order-item-variant"></div>
           <div class="order-item-sku">{{ $sku }}</div>
+          @if(isset($item['FinalSale']) && $item['FinalSale'] != '')
+			<div class="order-item-variant">
+				{{ $item['FinalSale'] }}
+			</div>
+		@endif
+
+		@if(Auth::guard('store')->check())
+			<div class="order-item-variant">
+				{{ (isset($item['OrderType']) && $item['OrderType'] == 'Store') ? 'Store Item' : 'Online Item' }}
+			</div>
+		@endif
+
+		@if(isset($item['stock_left']) && $item['stock_left'] < 6)
+			<div class="order-item-variant stock_left pt-1">
+				Only {{ $item['stock_left'] }} left in stock
+			</div>
+		@endif
+          
           <div class="order-item-controls">
             @if($isFreeGift)
             <div class="qty-stepper" role="group" aria-label="Free Gift quantity">
@@ -2016,7 +2053,7 @@ is_string($image)
             @endif
           </div>
           @if(!empty($bogoDiscountMessage))
-			<div class="order-item-bogo-message" id="OrderInfoDiv">
+			<div class="order-item-bogo-message pt-1" id="OrderInfoDiv">
 				{!! $bogoDiscountMessage !!}
 			</div>
 		@endif
