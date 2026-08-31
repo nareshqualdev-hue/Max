@@ -119,7 +119,52 @@ class CheckoutService
         if (Auth::guard('store')->check()) {
             $normalUser = Auth::guard('web')->user();
         }
+		/*
+		 * ---------------------------------------------------------
+		 * Wholesaler minimum order validation.
+		 *
+		 * Preserve old Is_WholeSaler_Allow() behavior:
+		 * - Only Wholesaler customers are restricted.
+		 * - Dropshippers are excluded from this restriction.
+		 * - Minimum amount comes from existing setting.
+		 * - Below minimum => redirect to Shopping Cart.
+		 * ---------------------------------------------------------
+		 */
+		if (
+			$normalUser
+			&&
+			($normalUser->is_dropshipper ?? 'No') != 'Yes'
+			&&
+			strtolower(
+				trim(
+					$normalUser->eusertype ?? ''
+				)
+			) === 'wholesaler'
+		) {
+			$orderSubTotal =
+				(float) Session::get(
+					'ShoppingCart.SubTotal',
+					0
+				);
 
+			$wholesalerMinimumOrder =
+				NumberFormat(
+					config(
+						'Settings.WHOLESALER_MIN_ORDER_AMOUNT'
+					)
+				);
+
+			if (
+				$orderSubTotal
+				<
+				$wholesalerMinimumOrder
+			) {
+				return [
+					'redirect' =>
+						redirect('/shoppingcart'),
+				];
+			}
+		}
         if ($normalUser) {
             $billingAddress = Session::get(
                 'ShoppingCart.BillingAddress',
