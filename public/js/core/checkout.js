@@ -401,45 +401,7 @@
     return null;
 }
 
-    function getMethodId(method) {
-        return parseInt(
-            method.shipping_mode_id ||
-            method.shipping_method_id ||
-            method.id ||
-            0,
-            10
-        );
-    }
-
-    function getMethodName(method) {
-        return (
-            method.shipping_method_name ||
-            method.shipping_mode_name ||
-            method.name ||
-            method.title ||
-            'Shipping Method'
-        );
-    }
-
-    function getMethodCharge(method) {
-        return parseFloat(
-            method.shipping_charge ??
-            method.charge ??
-            method.amount ??
-            method.price ??
-            0
-        );
-    }
-
-    function getMethodDays(method) {
-        return (
-            method.shipping_days ||
-            method.days ||
-            method.delivery_days ||
-            ''
-        );
-    }
-
+    
     function renderShippingMethods(response) {
 
     const $list = $('#section-delivery fieldset');
@@ -4824,7 +4786,33 @@ function setShippingMethod(
                     });
                     resetShippingSignatureAfterCartChange();
 
-                }, 180);
+/*
+ * =====================================================
+ * REFRESH SHIPPING METHODS AFTER CART CHANGE
+ * =====================================================
+ *
+ * Backend ShippingService preserves the currently
+ * selected shipping method when it is still available.
+ *
+ * Example:
+ * Expedited selected
+ *     ↓
+ * Remove item
+ *     ↓
+ * Fresh shipping methods
+ *     ↓
+ * Expedited still available
+ *     ↓
+ * Expedited remains selected
+ */
+if (
+    typeof loadShippingMethods ===
+    'function'
+) {
+    loadShippingMethods();
+}
+
+}, 180);
 
             })
             .fail(function (xhr) {
