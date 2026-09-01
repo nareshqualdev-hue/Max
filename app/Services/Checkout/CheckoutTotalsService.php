@@ -475,30 +475,20 @@ class CheckoutTotalsService
      * services do not need to duplicate subtotal/charge/discount logic.
      */
     public function getSignatureEligibleAmount(): float
-    {
-        $totals = $this->getTotals();
+	{
+		$subtotal = (float) $this->getSubTotal();
 
-        $netTotal = (float) (
-            $totals['NetTotal'] ?? 0
-        );
+		$discounts = $this->discountService->getAll();
 
-        $insurance = (float) Session::get(
-            'shipping_insurance_charge',
-            0
-        );
+		$totalDiscount = (float) (
+			$discounts['TotalDiscount'] ?? 0
+		);
 
-        $signature = (float) Session::get(
-            'ShoppingCart.ShippingSignature',
-            0
-        );
-
-        return max(
-            0,
-            $netTotal
-            - $insurance
-            - $signature
-        );
-    }
+		return max(
+			0,
+			$subtotal - $totalDiscount
+		);
+	}
 
     /**
      * Get a single total component.

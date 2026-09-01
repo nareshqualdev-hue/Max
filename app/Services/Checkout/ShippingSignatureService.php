@@ -91,7 +91,7 @@ class ShippingSignatureService
     $eligibleAmount =
         $this->getSignatureEligibleAmount();
 
-    if ($eligibleAmount >= 200) {
+    if ($eligibleAmount > 200) {
 
         Session::put(
             'ShoppingCart.ShippingSignature',
@@ -226,7 +226,7 @@ class ShippingSignatureService
      *
      * Keep Signature applied, but make the charge $0.
      */
-    if ($eligibleAmount >= 200) {
+    if ($eligibleAmount > 200) {
 
         Session::put(
             'ShoppingCart.ShippingSignature',

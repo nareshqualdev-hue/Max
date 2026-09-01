@@ -4146,6 +4146,7 @@ function setShippingMethod(
                 updateCheckoutDrawerSubtotal({
                     cart: responseCart
                 });
+                resetShippingSignatureAfterCartChange();
 
                 /*
                  * =====================================================
@@ -4820,6 +4821,7 @@ function setShippingMethod(
                     updateCheckoutDrawerSubtotal({
                         cart: cart
                     });
+                    resetShippingSignatureAfterCartChange();
 
                 }, 180);
 
@@ -4839,7 +4841,65 @@ function setShippingMethod(
                 delete row.dataset.cartRemoving;
             });
     }
-    function syncCheckoutSummaryAfterCartChange(cart) {
+
+	
+	function resetShippingSignatureAfterCartChange() {
+
+    window.MaxaromaCheckout =
+        window.MaxaromaCheckout || {};
+
+    window.MaxaromaCheckout.totalsState =
+        window.MaxaromaCheckout.totalsState || {};
+
+    const state =
+        window.MaxaromaCheckout.totalsState;
+
+    /*
+     * Reset frontend Signature state immediately.
+     */
+    state.signatureRefreshDefault = false;
+    state.signatureApplied = false;
+    state.signatureCharge = 0;
+
+    /*
+     * Update Signature UI immediately.
+     */
+    const $signature =
+        $('#request-signature');
+
+    if ($signature.length) {
+
+        $signature.prop(
+            'checked',
+            false
+        );
+
+        $signature
+            .closest('.addon-row')
+            .removeClass(
+                'active'
+            );
+    }
+
+    /*
+     * IMPORTANT:
+     *
+     * Also remove Signature from backend/session.
+     *
+     * Otherwise Order Summary can still show the old
+     * Signature charge even though the checkbox is OFF.
+     */
+    if (
+        typeof setShippingSignature ===
+        'function'
+    ) {
+
+        setShippingSignature(
+            'remove'
+        );
+    }
+}
+	 function syncCheckoutSummaryAfterCartChange(cart) {
 
         if (!Array.isArray(cart)) {
             return;
