@@ -728,23 +728,24 @@
      */
 
     const shipping =
-        totals.shipping ??
-        totals.Shipping ??
-        totals.shipping_charge ??
-        totals.ShippingCharge ??
-        response.shipping_charge ??
-        response.shippingCharge ??
-        (
-            typeof shippingResponse === 'number'
-                ? shippingResponse
-                : (
-                    shippingResponse?.shipping_charge ??
-                    shippingResponse?.charge ??
-                    shippingResponse?.amount ??
-                    shippingResponse?.ShippingCharge ??
-                    0
-                )
-        );
+    totals.shipping ??
+    totals.Shipping ??
+    totals.shipping_charge ??
+    totals.ShippingCharge ??
+    charges?.ShippingCharge?.charge ??
+    response.shipping_charge ??
+    response.shippingCharge ??
+    (
+        typeof shippingResponse === 'number'
+            ? shippingResponse
+            : (
+                shippingResponse?.shipping_charge ??
+                shippingResponse?.charge ??
+                shippingResponse?.amount ??
+                shippingResponse?.ShippingCharge ??
+                0
+            )
+    );
 
     /*
      * =========================================================
