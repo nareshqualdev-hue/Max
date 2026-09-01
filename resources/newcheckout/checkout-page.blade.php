@@ -38,7 +38,6 @@ $charges[$key]['charge']
 ?? 0
 );
 };
-
 $checkoutSubTotal = (float) ($totals['SubTotal'] ?? 0);
 $checkoutDiscount = (float) ($totals['TotalDiscount'] ?? 0);
 $checkoutShipping = $chargeValue('ShippingCharge');
@@ -47,7 +46,10 @@ $checkoutInsurance = $chargeValue('ShippingInsurance');
 $checkoutSignature = $chargeValue('ShippingSignature');
 $checkoutGiftWrap = $chargeValue('GiftWrappingCharge');
 $checkoutNetTotal = (float) ($totals['NetTotal'] ?? 0);
-
+$NetTotal = (float) ($totals['NetTotal'] ?? 0);
+$CartAttr = $checkoutState['cartAttributes'];
+$CartAttr["IsPaypalExpressCheckout"] = "Yes";
+$InsureAmount = $NetTotal - $checkoutInsurance - $checkoutSignature;
 /* Current applied Coupon / Yotpo Reward codes. */
 $promoCouponCode = (string) Session::get(
 'ShoppingCart.PromoCoupon.CouponCode',
@@ -217,6 +219,7 @@ is_string($image)
   $checkoutState['onlyGCPurchased']
   ?? 0
   );
+
   @endphp
 
   @extends('layouts.app')
@@ -352,10 +355,10 @@ is_string($image)
           <button class="express-btn express-btn-link" type="button" aria-label="Pay with Link">
             Link
           </button>
+          @if($CartAttr["IsPaypalExpressCheckout"] == 'Yes')
           <!-- 4. PayPal -->
-          <button class="express-btn express-btn-paypal" type="button" aria-label="Pay with PayPal">
-            <img src="{{ url('images/checkout-new/paypal.svg') }}" alt="">
-          </button>
+          <div id="paypal-button-container-checkout-pg" class="express-btn express-btn-paypal btnPaypal" role="region" aria-label="Pay with PayPal"></div>
+          @endif
           <!-- 5. Apple Pay -->
           <button class="express-btn express-btn-apple" type="button" aria-label="Pay with Apple Pay">
             <img src="{{ url('images/checkout-new/apple-pay.svg') }}" alt="">
@@ -1037,7 +1040,9 @@ is_string($image)
               </svg>
               Card
             </button>
+            @if($CartAttr["IsPaypalExpressCheckout"] == 'Yes')
             <button class="payment-tab" data-method="PAYPAL" role="tab" aria-selected="false" id="pay-tab-paypal" aria-controls="pay-panel-paypal" onclick="switchPayTab('paypal')">PayPal</button>
+            @endif
             <button class="payment-tab" data-method="AFFIRM" role="tab" aria-selected="false" id="pay-tab-affirm" aria-controls="pay-panel-affirm" onclick="switchPayTab('affirm')">Affirm</button>
           </div>
 
@@ -1105,14 +1110,17 @@ is_string($image)
             </div>
           </div>
 
+          @if($CartAttr["IsPaypalExpressCheckout"] == 'Yes')
           <!-- PayPal Panel (hidden) -->
           <div role="tabpanel" id="pay-panel-paypal" aria-labelledby="pay-tab-paypal" hidden="">
             <div style="text-align:center; padding: var(--space-8) var(--space-4);">
               <p style="color: var(--color-text-secondary); font-size: var(--font-size-sm); margin-bottom: var(--space-4);">You'll be redirected to PayPal to complete your payment securely.</p>
-              <button type="button" class="btn btn-full" style="background:#003087; color:white; border-color:#003087; height:52px; font-size:var(--font-size-base); font-weight:700;">Continue with PayPal</button>
+              <button type="button" class="btn btn-full btnPaypal" style="background:#003087; color:white; border-color:#003087; height:52px; font-size:var(--font-size-base); font-weight:700;">Continue with PayPal</button>
+              <!-- <div id="paypal-button-container-checkout-pg" style="position: relative;z-index:1;" role="region" aria-label="Paypal Button"></div> -->
+              <div data-pp-message data-pp-style-layout="text" data-pp-style-logo-type="inline" data-pp-style-text-color="black" data-pp-style-text-size="12" data-pp-amount="{{$NetTotal}}" data-pp-placement=product aria-hidden="true"></div>
             </div>
           </div>
-
+          @endif
           <!-- Affirm Panel (hidden) -->
           <div role="tabpanel" id="pay-panel-affirm" aria-labelledby="pay-tab-affirm" hidden="">
             <div style="padding: var(--space-4);">
@@ -1159,12 +1167,12 @@ is_string($image)
         <div class="review-table" aria-label="Order review" style="margin-bottom: var(--space-5); padding-bottom: var(--space-5); border-bottom: 1px solid var(--color-border-default);">
           <div class="review-row">
             <span class="review-row-label">Contact</span>
-            <span class="review-row-value">{{ $checkoutEmail }}</span>
+            <span class="review-row-value" id="review-contact-value">{{ $checkoutEmail }}</span>
             <button class="review-row-edit" onclick="editSection('contact')" aria-label="Edit contact information">Edit</button>
           </div>
           <div class="review-row">
             <span class="review-row-label">Ship to</span>
-            <span class="review-row-value">
+            <span class="review-row-value"   id="review-ship-to-value">>
               {{ trim(
                   ($shippingAddress['address1'] ?? '') .
                   (!empty($shippingAddress['address2']) ? ', ' . $shippingAddress['address2'] : '') .
@@ -1177,7 +1185,7 @@ is_string($image)
           </div>
           <div class="review-row">
             <span class="review-row-label">Method</span>
-            <span class="review-row-value">
+            <span class="review-row-value" id="review-shipping-method-value">
               {{ $selectedShippingMethodName ?: 'Shipping method not selected' }}
               @if($selectedShippingMethodName && $checkoutShipping <= 0)
                 · Free
@@ -1209,7 +1217,7 @@ is_string($image)
             </div>
             <div class="review-summary-total">
               <span class="place-order-total-label">Total</span>
-              <div class="review-summary-tax">Includes {{ $money($checkoutTax) }} tax</div>
+              <div class="review-summary-tax"  id="review-summary-tax-value">Includes {{ $money($checkoutTax) }} tax</div>
             </div>
             <div class="review-summary-amount" id="place-order-total-amount" aria-label="Order total {{ $money($checkoutNetTotal) }}">{{ $money($checkoutNetTotal) }}</div>
             <svg class="review-summary-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -1431,8 +1439,7 @@ is_string($image)
 							Only {{ $item['stock_left'] }} left in stock
 						</div>
 					@endif
-                    
-                    
+
                     <div class="order-item-controls">
                       @if($isFreeGift)
                       <div class="qty-stepper" role="group" aria-label="Free Gift quantity">
@@ -1451,7 +1458,7 @@ is_string($image)
 					@php
 					   $bogoDiscountMessage =
 					   $item['BogoDiscountMessage'] ?? '';
-					@endphp	
+					@endphp
 					 @if(!empty($bogoDiscountMessage))
 						<div class="order-item-bogo-message pt-1" id="OrderInfoDiv">
 							{!! $bogoDiscountMessage !!}
@@ -2007,7 +2014,7 @@ is_string($image)
       );
       $bogoDiscountMessage =
 	  $item['BogoDiscountMessage'] ?? '';
-	  
+
       @endphp
 
       <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-free-gift="{{ $isFreeGift ? '1' : '0' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
@@ -2036,7 +2043,7 @@ is_string($image)
 				Only {{ $item['stock_left'] }} left in stock
 			</div>
 		@endif
-          
+
           <div class="order-item-controls">
             @if($isFreeGift)
             <div class="qty-stepper" role="group" aria-label="Free Gift quantity">
@@ -2076,8 +2083,10 @@ is_string($image)
       <button type="button" class="btn btn-primary btn-full" onclick="closeCartDrawer()">Done</button>
     </footer>
   </aside>
-
   </div>
+
+  @include("newcheckout.paypal");
+
   @php $StripeCardVer = filemtime(config('global.SITE_JS_CORE_PATH').'stripe-card.js'); @endphp
   <script src="https://js.stripe.com/v3/"></script>
   <script src="{{config('global.SITE_JS_CORE')}}stripe-card.js?ver={{$StripeCardVer}}"></script>
@@ -3402,10 +3411,7 @@ function keepProtection() {
 
   <script>
     window.MaxaromaCheckout = window.MaxaromaCheckout || {};
-
-    window.MaxaromaCheckout.csrfToken =
-      @json(csrf_token());
-
+    window.MaxaromaCheckout.csrfToken = @json(csrf_token());
     window.MaxaromaCheckout.urls = Object.assign(
       window.MaxaromaCheckout.urls || {}, {
         /*

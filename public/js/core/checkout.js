@@ -654,6 +654,9 @@
 	function updateTotals(response) {
 
     response = response || {};
+    
+    updateCheckoutReviewContact();
+    updateCheckoutReviewAddress();
 
     window.MaxaromaCheckout =
         window.MaxaromaCheckout || {};
@@ -1475,6 +1478,19 @@ if (isPickupShippingMethod) {
             'data-value',
             tax
         );
+        
+        
+     const reviewTax =
+    document.getElementById(
+        'review-summary-tax-value'
+    );
+
+	if (reviewTax) {
+		reviewTax.textContent =
+			'Includes ' +
+			formatMoney(tax) +
+			' tax';
+	}   
 
     /*
      * =========================================================
@@ -1900,8 +1916,170 @@ if (isPickupShippingMethod) {
             }
         )
     );
+    updateCheckoutReviewShippingMethod();
+
 }
 
+  function updateCheckoutReviewContact() {
+
+    const reviewContact =
+        document.getElementById(
+            'review-contact-value'
+        );
+
+    if (!reviewContact) {
+        return;
+    }
+
+    const emailInput =
+        document.getElementById('email');
+
+    if (!emailInput) {
+        return;
+    }
+
+    const email =
+        String(
+            emailInput.value || ''
+        ).trim();
+
+    if (email) {
+        reviewContact.textContent =
+            email;
+    }
+}
+  function updateCheckoutReviewAddress() {
+
+    const reviewAddress =
+        document.getElementById(
+            'review-ship-to-value'
+        );
+
+    if (!reviewAddress) {
+        return;
+    }
+
+    const address1 =
+        $('#shipping_address1').val() || '';
+
+    const address2 =
+        $('#shipping_address2').val() || '';
+
+    const city =
+        $('#shipping_city').val() || '';
+
+    const state =
+        $('#shipping_state').val() || '';
+
+    const zip =
+        $('#shipping_zip').val() || '';
+
+    const parts = [];
+
+    if (address1) {
+        parts.push(address1);
+    }
+
+    if (address2) {
+        parts.push(address2);
+    }
+
+    if (city) {
+        parts.push(city);
+    }
+
+    if (state) {
+        parts.push(state);
+    }
+
+    let value =
+        parts.join(', ');
+
+    if (zip) {
+        value =
+            value
+                ? value + ' ' + zip
+                : zip;
+    }
+
+    reviewAddress.textContent =
+        value;
+}
+
+
+function updateCheckoutReviewShippingMethod() {
+
+    const reviewMethod =
+        document.getElementById(
+            'review-shipping-method-value'
+        );
+
+    if (!reviewMethod) {
+        return;
+    }
+
+    const selected =
+        document.querySelector(
+            '#section-delivery input[name="shipping"]:checked'
+        );
+
+    if (!selected) {
+        reviewMethod.textContent =
+            'Shipping method not selected';
+
+        return;
+    }
+
+    const option =
+        selected.closest(
+            '.shipping-option'
+        );
+
+    if (!option) {
+        return;
+    }
+
+    const name =
+        option.querySelector(
+            '.shipping-option-name'
+        );
+
+    const price =
+        option.querySelector(
+            '.shipping-option-price'
+        );
+
+    const eta =
+        option.querySelector(
+            '.shipping-option-eta'
+        );
+
+    let value =
+        name
+            ? name.textContent.trim()
+            : 'Shipping Method';
+
+    if (
+        price &&
+        price.textContent.trim()
+    ) {
+        value +=
+            ' · ' +
+            price.textContent.trim();
+    }
+
+    if (
+        eta &&
+        eta.textContent.trim()
+    ) {
+        value +=
+            ' · ' +
+            eta.textContent.trim();
+    }
+
+    reviewMethod.textContent =
+        value;
+}
   function saveShippingAddress(callback) {
         /*
          * Phase 1 intentionally does not invent a new address endpoint.
@@ -2270,6 +2448,7 @@ function setShippingMethod(
              * Keep existing totals / insurance / tax flow.
              */
             updateTotals(response);
+            updateCheckoutReviewShippingMethod();
 
             /*
              * =================================================
@@ -2385,7 +2564,7 @@ function setShippingMethod(
             if ($(this).is(':checked')) {
                 copyBillingToShipping();
             }
-
+			updateCheckoutReviewAddress();
             queueShippingMethodsLoad();
         }
     );
@@ -2394,6 +2573,7 @@ function setShippingMethod(
         'input change',
         '#shipping_country, #shipping_state, #shipping_zip, #shipping_city, #shipping_address1, #shipping_address2',
         function () {
+			updateCheckoutReviewAddress();
             queueShippingMethodsLoad();
         }
     );
@@ -5549,6 +5729,15 @@ if (
                 });
             }
             return false;
+        }
+    );
+    
+      $(document).on(
+        'input change',
+        '#email',
+        function () {
+
+            updateCheckoutReviewContact();
         }
     );
     /* =========================================================
