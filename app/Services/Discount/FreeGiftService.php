@@ -1256,33 +1256,13 @@ public function removeAutoAddedFreeGifts(): int
                 )
             );
 
-        $isAutomaticFlag =
-            ($item['FreeGiftAutoAdded'] ?? 'No') === 'Yes';
-
-        $freeProductsId =
-            (int) (
-                $item['freeproductsid']
-                ?? $item['FreeGiftRuleId']
-                ?? 0
-            );
-
         /*
-         * ---------------------------------------------------------
-         * AUTOMATIC FREE GIFT
-         * ---------------------------------------------------------
+         * Only gifts automatically added by
+         * the Free Gift rule engine are removable.
          *
-         * New checkout gifts:
-         *   FreeGiftAutoAdded = Yes
-         *
-         * But an already existing gift can come from the
-         * previous checkout/session and may not have that flag.
-         *
-         * Therefore support BOTH:
-         *
-         * 1. Explicit FreeGiftAutoAdded flag
-         * 2. Legacy GIFT-* free-gift shape
-         *
-         * Free Samples are never removed here.
+         * Do NOT use FreeGiftCoupon here.
+         * Auto-added gifts may also contain the
+         * legacy FreeGiftCoupon = Yes flag.
          */
         $isRuleAutoGift =
             $isFreeGift
@@ -1292,64 +1272,31 @@ public function removeAutoAddedFreeGifts(): int
                 'GIFT-'
             )
             && (
-                $isAutomaticFlag
-                ||
-                $freeProductsId === 0
+                ($item['FreeGiftAutoAdded'] ?? 'No')
+                === 'Yes'
             );
 
         if ($isRuleAutoGift) {
 
             $removed++;
 
-            Log::info(
-                'Free Gift automatic removal item',
-                [
-                    'sku' =>
-                        $sku,
-
-                    'freeproductsid' =>
-                        $freeProductsId,
-
-                    'FreeGiftAutoAdded' =>
-                        $item['FreeGiftAutoAdded']
-                        ?? null,
-
-                    'FreeGiftCoupon' =>
-                        $item['FreeGiftCoupon']
-                        ?? null,
-
-                    'IS_Free_Gift' =>
-                        $item['IS_Free_Gift']
-                        ?? null,
-                ]
-            );
-
             continue;
         }
 
         /*
          * Preserve:
-         *
-         * - Normal products
+         * - normal products
          * - Free Samples
-         * - Coupon-selected Free Gifts
-         * - Other non-rule cart items
+         * - coupon-generated Free Gifts
          */
         $newCart[] = $item;
     }
 
-    /*
-     * ---------------------------------------------------------
-     * SAVE FINAL CART
-     * ---------------------------------------------------------
-     */
     if ($removed > 0) {
 
         Session::put(
             'ShoppingCart.Cart',
-            array_values(
-                $newCart
-            )
+            array_values($newCart)
         );
 
         Log::info(
@@ -1359,13 +1306,14 @@ public function removeAutoAddedFreeGifts(): int
                     $removed,
 
                 'reason' =>
-                    'rule_changed',
+                    'qualification_lost',
             ]
         );
     }
 
     return $removed;
 }
+
 
    /**
      * Resolve the legacy Free Gift rule for the current cart.
@@ -1904,7 +1852,7 @@ if ($eligibleProducts->isEmpty()) {
                         (int) $product->products_id,
                     'free_gift_products_id' =>
                         (int) (
-                            $selectedRule->products_id
+                            $selectedRule->free_gift_products_id
                             ?? 0
                         ),
                     'freegift_add_count' =>
@@ -2152,7 +2100,6 @@ if ($eligibleProducts->isEmpty()) {
                 return (int) (
                     $item['freeproductsid']
                     ?? $item['FreeGiftRuleId']
-                    ?? $item['free_gift_products_id']
                     ?? 0
                 );
             }

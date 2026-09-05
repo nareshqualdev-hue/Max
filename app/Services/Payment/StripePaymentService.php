@@ -115,6 +115,88 @@ class StripePaymentService
         );
     }
 
+     /**
+     * Create PaymentIntent WITHOUT confirming it.
+     *
+     * Used by:
+     *
+     * Google Pay
+     * Apple Pay
+     * Express Checkout
+     *
+     * Stripe.js will confirm the PaymentIntent.
+     */
+    public function createPaymentIntent(): array
+    {
+        /*
+         * Calculate server-side total.
+         */
+        $amount =
+            $this->checkoutAmount();
+
+        $currency =
+            $this->currency();
+
+        /*
+         * Create PaymentIntent.
+         *
+         * DO NOT set confirm=true here.
+         */
+        $intent =
+            PaymentIntent::create([
+
+                'amount' =>
+                    $amount,
+
+                'currency' =>
+                    $currency,
+
+                'automatic_payment_methods' => [
+                    'enabled' => true,
+                ],
+
+                'metadata' => [
+
+                    'source' =>
+                        'maxaroma_checkout',
+
+                    'customer_id' =>
+                        (string) Session::get(
+                            'sess_icustomerid',
+                            ''
+                        ),
+                ],
+            ]);
+
+        /*
+         * Save PaymentIntent in session.
+         */
+        $this->storePaymentIntent(
+            $intent
+        );
+
+        return [
+
+            'success' =>
+                true,
+
+            'payment_intent_id' =>
+                $intent->id,
+
+            /*
+             * This is what Stripe.js needs.
+             */
+            'client_secret' =>
+                $intent->client_secret,
+
+            'amount' =>
+                $intent->amount,
+
+            'currency' =>
+                $intent->currency,
+        ];
+    }
+
     /**
      * Retrieve a PaymentIntent.
      */
@@ -271,25 +353,25 @@ class StripePaymentService
          *
          * Stripe.js will handle this.
          */
-        if (
-            $intent->status
-            === 'requires_action'
-        ) {
-            $result[
-                'requires_action'
-            ] = true;
-
+        if ($intent->status === 'requires_action')
+        {
+            $result['requires_action'] = true;
             /*
              * client_secret is safe to send to
              * the browser.
              *
              * NEVER send the Stripe secret key.
              */
-            $result[
-                'client_secret'
-            ] =
-                $intent->client_secret;
+            $result['client_secret'] = $intent->client_secret;
+            return $result;
+        }
 
+        /*
+         * Payment is still processing.
+         */
+        if($intent->status === 'processing')
+        {
+            $result['processing'] = true;
             return $result;
         }
 

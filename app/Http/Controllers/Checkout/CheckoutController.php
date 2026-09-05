@@ -7,11 +7,13 @@ use App\Services\Payment\StripePaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Log;
+use App\Http\Controllers\Traits\AfterpayTrait;
 
 use App\Models\Order;
 use App\Models\OrderDetail;
 class CheckoutController extends Controller
 {
+    use AfterpayTrait;
     protected CheckoutService $checkoutService;
     protected StripePaymentService $StripePaymentService;
 
@@ -39,9 +41,9 @@ class CheckoutController extends Controller
         if (isset($result['redirect'])) {
             return $result['redirect'];
         }
-        return view('newcheckout.checkout-page')->with(
-            $result['data']
-        );
+
+        $result['data']['token_js_url'] = "https://portal.sandbox.afterpay.com/afterpay.js";
+        return view('newcheckout.checkout-page')->with($result['data']);
     }
 
     /**
@@ -191,6 +193,8 @@ class CheckoutController extends Controller
         {
             return $result['redirect'];
         }
+        $PaymentType = $request->payment_type??'';
+        $PaymentMethod = $request->payment_method??'';
         $CheckoutData = $result['data']['checkout']['totals'];
         $customer_id = (int)Session::get('sess_icustomerid');
         $SubTotal = (float)$CheckoutData['SubTotal'];
@@ -210,6 +214,7 @@ class CheckoutController extends Controller
         $NetTotal = $CheckoutData['NetTotal'];
 
         $CartAttributes = $result['data']['checkout']['cartAttributes'];
+
         $currency_info = Session::get('currency_code')."#".Session::get('currency_symbol')."#".Session::get('currency_rate');
         if(Session::has('etype') && Session::get('etype') == 'M')
 			$checkout_type = 'M';
@@ -283,8 +288,8 @@ class CheckoutController extends Controller
             'refer_amount' 		=> $AutoReferDiscount??0,
             'order_total' 		=> (float)$NetTotal,
             'shipinfo' 			=> (Session::get('ShoppingCart.Shipping.ShippingMethodName')??''),
-            'payment_type' 		=> "PAYMENT_STRIPE",
-            'payment_method' 	=> "Credit Card",
+            'payment_type' 		=> $PaymentType,
+            'payment_method' 	=> $PaymentMethod,
             'pay_status' 		=> 'Unpaid',
             'ccinfo' 			=> "",
             'customer_comment' 	=> "",

@@ -1,6 +1,6 @@
 <header class="checkout-header" role="banner">
   <div class="checkout-header-inner">
-    <a href="https://www.maxaroma.com" class="checkout-logo" aria-label="MaxAroma — Return to home">
+    <a href="{{ url('/') }}" class="checkout-logo" aria-label="MaxAroma — Return to home">
       <img src="https://www.maxaroma.com/public/images/logo.jpg" alt="MaxAroma" class="checkout-logo-img" width="160" height="40" onerror="this.onerror=null;this.replaceWith(Object.assign(document.createElement('span'),{className:'checkout-logo-text',textContent:'MAXAROMA'}))">
     </a>
 

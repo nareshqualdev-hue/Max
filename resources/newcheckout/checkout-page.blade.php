@@ -48,7 +48,11 @@ $checkoutGiftWrap = $chargeValue('GiftWrappingCharge');
 $checkoutNetTotal = (float) ($totals['NetTotal'] ?? 0);
 $NetTotal = (float) ($totals['NetTotal'] ?? 0);
 $CartAttr = $checkoutState['cartAttributes'];
+
 $CartAttr["IsPaypalExpressCheckout"] = "Yes";
+$CartAttr["Amazon_pay_Checkout"] = "Yes";
+$Is_Afterpay_Checkout = "Yes";
+
 $InsureAmount = $NetTotal - $checkoutInsurance - $checkoutSignature;
 /* Current applied Coupon / Yotpo Reward codes. */
 $promoCouponCode = (string) Session::get(
@@ -344,20 +348,20 @@ is_string($image)
         </div>
         <div class="express-buttons" role="group" aria-label="Express payment options">
           <!-- 1. Afterpay -->
-          <button class="express-btn express-btn-afterpay" type="button" aria-label="Pay with Afterpay">
+          <button id="afterpay-button" data-afterpay-entry-point="cart" class="express-btn express-btn-afterpay" type="button" aria-label="Pay with Afterpay">
             <img src="{{ url('images/checkout-new/afterpay.svg') }}" alt="">
           </button>
+          @if($CartAttr["Amazon_pay_Checkout"] == 'Yes' && $onlyGCPurchased != '1')
           <!-- 2. Amazon Pay -->
-          <button class="express-btn express-btn-amazon" type="button" aria-label="Pay with Amazon Pay">
-            <img src="{{ url('images/checkout-new/amazon-pay.svg') }}" alt="">
-          </button>
+          <div id="AmazonPayButtonAll" role="region" aria-label="Amazon Pay Button"></div>
+          @endif
           <!-- 3. Link (no brand SVG supplied — accessible wordmark) -->
           <button class="express-btn express-btn-link" type="button" aria-label="Pay with Link">
             Link
           </button>
           @if($CartAttr["IsPaypalExpressCheckout"] == 'Yes')
           <!-- 4. PayPal -->
-          <div id="paypal-button-container-checkout-pg" class="express-btn express-btn-paypal btnPaypal" role="region" aria-label="Pay with PayPal"></div>
+          <div id="paypal-button-container-checkout-pg" class="express-btn express-btn-paypal" role="region" aria-label="Pay with PayPal"></div>
           @endif
           <!-- 5. Apple Pay -->
           <button class="express-btn express-btn-apple" type="button" aria-label="Pay with Apple Pay">
@@ -1115,8 +1119,8 @@ is_string($image)
           <div role="tabpanel" id="pay-panel-paypal" aria-labelledby="pay-tab-paypal" hidden="">
             <div style="text-align:center; padding: var(--space-8) var(--space-4);">
               <p style="color: var(--color-text-secondary); font-size: var(--font-size-sm); margin-bottom: var(--space-4);">You'll be redirected to PayPal to complete your payment securely.</p>
-              <button type="button" class="btn btn-full btnPaypal" style="background:#003087; color:white; border-color:#003087; height:52px; font-size:var(--font-size-base); font-weight:700;">Continue with PayPal</button>
-              <!-- <div id="paypal-button-container-checkout-pg" style="position: relative;z-index:1;" role="region" aria-label="Paypal Button"></div> -->
+              <!-- <button type="button" class="btn btn-full btnPaypal" style="background:#003087; color:white; border-color:#003087; height:52px; font-size:var(--font-size-base); font-weight:700;">Continue with PayPal</button> -->
+              <div id="paypal-button-container-checkout" class="btnPaypal" style="position: relative;z-index:1;" role="region" aria-label="Paypal Button"></div>
               <div data-pp-message data-pp-style-layout="text" data-pp-style-logo-type="inline" data-pp-style-text-color="black" data-pp-style-text-size="12" data-pp-amount="{{$NetTotal}}" data-pp-placement=product aria-hidden="true"></div>
             </div>
           </div>
@@ -1183,6 +1187,7 @@ is_string($image)
             </span>
             <button class="review-row-edit" onclick="editSection('shipping')" aria-label="Edit shipping address">Edit</button>
           </div>
+          @if(($onlyGCPurchased ?? 0) == 0)
           <div class="review-row">
             <span class="review-row-label">Method</span>
             <span class="review-row-value" id="review-shipping-method-value">
@@ -1198,6 +1203,7 @@ is_string($image)
                 </span>
                 <button class="review-row-edit" onclick="editSection('delivery')" aria-label="Edit shipping method">Edit</button>
           </div>
+          @endif
           <div class="review-row">
             <span class="review-row-label">Payment</span>
             <span class="review-row-value">Visa ending in 4242</span>
@@ -1442,16 +1448,21 @@ is_string($image)
 
                     <div class="order-item-controls">
                       @if($isFreeGift)
-                      <div class="qty-stepper" role="group" aria-label="Free Gift quantity">
-                        <span class="qty-value" aria-live="polite">{{ $quantity }}</span>
-                      </div>
+
+                        <span>Qty :{{ $quantity }}</span>
                       <span class="free-gift-label">Free Gift</span>
                       @else
+                      @if(($item['IsGiftCertificateItem'] ?? 'No') === 'No')
                       <div class="qty-stepper" role="group" aria-label="Quantity for {{ $productName }}">
                         <button class="qty-btn" type="button" aria-label="Decrease quantity" onclick="updateQty(this,-1)">−</button>
                         <span class="qty-value" aria-live="polite">{{ $quantity }}</span>
                         <button class="qty-btn" type="button" aria-label="Increase quantity" onclick="updateQty(this,1)">+</button>
                       </div>
+                      
+                      @endif
+                      @if(($item['IsGiftCertificateItem'] ?? 'No') === 'Yes')
+                      <span>Qty :{{ $quantity }}</span>
+                      @endif
                       <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
                       @endif
                     </div>
@@ -1586,6 +1597,7 @@ is_string($image)
                 </div>
 				@endif
                 <!-- Shipping Rate Calculator accordion -->
+               @if(($onlyGCPurchased ?? 0) == 0)
                 <div class="summary-accordion">
                   <button class="summary-accordion-head" onclick="toggleSummaryAccordion('shipcalc')" aria-expanded="false" aria-controls="shipcalc-panel" type="button" id="shipcalc-toggle">
                     <span class="summary-accordion-title">
@@ -1632,7 +1644,7 @@ is_string($image)
                   </div>
                 </div>
               </div>
-
+				@endif
               <!-- Totals -->
               <div class="summary-totals" style="margin-top: var(--space-4);">
                 @include('newcheckout.cart-loader')
@@ -1644,6 +1656,7 @@ is_string($image)
                   <span class="summary-row-label">Savings</span>
                   <span class="summary-row-value" id="summary-savings-value">−{{ $money($checkoutDiscount) }}</span>
                 </div>
+                 @if(($onlyGCPurchased ?? 0) == 0)
                 <div class="summary-row">
                   <span class="summary-row-label">Shipping</span>
                   <span class="summary-row-value" id="summary-shipping-value">{{ $checkoutShipping > 0 ? $money($checkoutShipping) : 'Free' }}</span>
@@ -1660,6 +1673,7 @@ is_string($image)
                   <span class="summary-row-label">Request Signature</span>
                   <span class="summary-row-value">{{ $money($checkoutSignature) }}</span>
                 </div>
+                @endif
                 <div class="summary-row" id="gift-wrap-row" {{ $checkoutGiftWrap > 0 ? '' : 'hidden' }}>
                   <span class="summary-row-label">Gift wrap</span>
                   <span class="summary-row-value">{{ $money($checkoutGiftWrap) }}</span>
@@ -2045,17 +2059,22 @@ is_string($image)
 		@endif
 
           <div class="order-item-controls">
-            @if($isFreeGift)
-            <div class="qty-stepper" role="group" aria-label="Free Gift quantity">
-              <span class="qty-value" aria-live="polite">{{ $quantity }}</span>
-            </div>
+             @if($isFreeGift)
+
+              <span>Qty : {{ $quantity }}</span>
             <span class="free-gift-label">Free Gift</span>
             @else
+            
+            @if(($item['IsGiftCertificateItem'] ?? 'No') === 'No')
             <div class="qty-stepper" role="group" aria-label="Quantity for {{ $productName }}">
               <button class="qty-btn" type="button" aria-label="Decrease quantity" onclick="updateQty(this,-1)">−</button>
               <span class="qty-value" aria-live="polite">{{ $quantity }}</span>
               <button class="qty-btn" type="button" aria-label="Increase quantity" onclick="updateQty(this,1)">+</button>
             </div>
+            @endif
+             @if(($item['IsGiftCertificateItem'] ?? 'No') === 'Yes')
+             <span>Qty : {{ $quantity }}</span>
+             @endif
             <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
             @endif
           </div>
@@ -2085,8 +2104,6 @@ is_string($image)
   </aside>
   </div>
 
-  @include("newcheckout.paypal");
-
   @php $StripeCardVer = filemtime(config('global.SITE_JS_CORE_PATH').'stripe-card.js'); @endphp
   <script src="https://js.stripe.com/v3/"></script>
   <script src="{{config('global.SITE_JS_CORE')}}stripe-card.js?ver={{$StripeCardVer}}"></script>
@@ -2101,12 +2118,18 @@ is_string($image)
       updateOrder: @json(route('checkout.order.update')),
       orderReceipt: @json(route('order-receipt'))
     }
-
+    window.amazon = {
+      client_id : "{{ config('CLIENT_ID') }}",
+      merchant_id: "{{ config('MERCHANT_ID') }}",
+      callback_url : "{{ config('CALLBACK_CHECKOUT_URL') }}"
+    }
     StripeCard.init(
       @json(config('services.stripe.striptkey'))
     );
 </script>
-
+  @include("newcheckout.paypal")
+  @include("newcheckout.amazon")
+  @include("newcheckout.afterpay")
   <script>
     /* ============================================================
    MaxAroma Checkout — Interaction Layer

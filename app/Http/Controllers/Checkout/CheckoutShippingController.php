@@ -892,185 +892,179 @@ class CheckoutShippingController extends Controller
      * Controller only prepares address/flags and returns JSON.
      */
 
-	public function getAvailableShippingMethods(
-    Request $request
-): JsonResponse {
 
-    if (!$request->ajax()) {
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Invalid request.',
-        ], 400);
-    }
+    public function getAvailableShippingMethods(
+        Request $request
+    ): JsonResponse
+    {
 
-    $country = trim(
-        (string) $request->input('country', '')
-    );
+        if (!$request->ajax()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Invalid request.',
+            ], 400);
+        }
 
-    $state = trim(
-        (string) $request->input('state', '')
-    );
+        $country = trim(
+            (string) $request->input('country', '')
+        );
 
-    $zip = trim(
-        (string) $request->input('zip', '')
-    );
+        $state = trim(
+            (string) $request->input('state', '')
+        );
 
-    if (
-        $country === ''
-        ||
-        $zip === ''
-    ) {
-        return response()->json([
-            'status' => 'error',
-            'message' =>
-                'Shipping country and ZIP are required.',
-            'shippingMethods' => [],
-        ], 422);
-    }
+        $zip = trim(
+            (string) $request->input('zip', '')
+        );
 
-    addLog(
-        'GetAvailableShippingMethodsStart',
-        [
-            'ajax_request' =>
-                json_encode(
-                    $request->all()
-                ),
-        ]
-    );
+        if ($country === '' || $zip === '') {
+            return response()->json([
+                'status' => 'error',
+                'message' =>
+                    'Shipping country and ZIP are required.',
+                'shippingMethods' => [],
+            ], 422);
+        }
 
-    try {
+        addLog(
+            'GetAvailableShippingMethodsStart',
+            [
+                'ajax_request' =>
+                    json_encode(
+                        $request->all()
+                    ),
+            ]
+        );
 
-        /*
-         * ---------------------------------------------------------
-         * Resolve current shipping address.
-         * ---------------------------------------------------------
-         */
-        $address =
-            $this->resolveShippingAddress(
-                $request
-            );
-
-        /*
-         * ---------------------------------------------------------
-         * IMPORTANT:
-         *
-         * Do NOT pass cart-dependent shipping flags from
-         * frontend here.
-         *
-         * CheckoutService::getAvailableShippingMethods()
-         * already gets the authoritative flags from:
-         *
-         *     CartAttributeService::getAttributes()
-         *
-         * This includes:
-         *
-         *     IsCosmo
-         *     IsNandansons
-         *     IsPerfumePW
-         *     IsPCA
-         *     IsND
-         *     IsVenderItem
-         *     IsMaxaromaTwoDelivery
-         *     ISMaxTwoItem
-         *     ISMax2dayVal
-         *
-         * Frontend does NOT own these values.
-         *
-         * This is especially important for mixed carts:
-         *
-         *     $248  -> non-Max2Day
-         *     $985  -> Max2Day
-         *
-         * Old checkout result:
-         *
-         *     IsMaxaromaTwoDelivery = Yes
-         *     ISMaxTwoItem = Yes
-         *     ISMax2dayVal = No
-         *
-         * Therefore the existing Max2Day upgrade logic can run.
-         * ---------------------------------------------------------
-         */
-
-        $flags = [
+        try {
             /*
-             * onlyGCPurchased is checkout-level state.
-             *
-             * Keep the existing request value because this is
-             * already prepared by the checkout page.
+             * Resolve request address and keep it in session.
              */
-            'onlyGCPurchased' =>
-                (int) $request->input(
-                    'onlyGCPurchased',
-                    0
-                ),
-
-            /*
-             * Current selected method is session state.
-             *
-             * ShippingService can use this when required.
-             */
-            'selectedShippingMethodId' =>
-                (int) Session::get(
-                    'ShoppingCart.Shipping.ShippingMethodID',
-                    0
-                ),
-        ];
-
-        /*
-         * ---------------------------------------------------------
-         * Get shipping methods.
-         * ---------------------------------------------------------
-         *
-         * CheckoutService will merge these with the authoritative
-         * CartAttributeService values.
-         */
-        $result =
-            $this->checkoutService
-                ->getAvailableShippingMethods(
-                    $address,
-                    $flags
+            $address =
+                $this->resolveShippingAddress(
+                    $request
                 );
 
-        addLog(
-            'GetAvailableShippingMethodsEnd',
-            [
-                'status' =>
-                    $result['status']
-                    ?? 'success',
-            ]
-        );
+            /*
+             * These flags are already supported by
+             * ShippingService::getAvailableMethods().
+             *
+             * Do not move shipping business rules into
+             * this controller.
+             */
+            $flags = [
+                'IsCosmo' =>
+                    $request->input(
+                        'IsCosmo',
+                        'No'
+                    ),
 
-        return response()->json(
-            $result
-        );
+                'IsNandansons' =>
+                    $request->input(
+                        'IsNandansons',
+                        'No'
+                    ),
 
-    } catch (
-        \Throwable $e
-    ) {
+                'IsPerfumePW' =>
+                    $request->input(
+                        'IsPerfumePW',
+                        'No'
+                    ),
 
-        addLog(
-            'GetAvailableShippingMethodsError',
-            [
+                'IsPCA' =>
+                    $request->input(
+                        'IsPCA',
+                        'No'
+                    ),
+
+                'IsND' =>
+                    $request->input(
+                        'IsND',
+                        'No'
+                    ),
+
+                'IsVenderItem' =>
+                    $request->input(
+                        'IsVenderItem',
+                        'No'
+                    ),
+
+                'IsMaxaromaTwoDelivery' =>
+                    $request->input(
+                        'IsMaxaromaTwoDelivery',
+                        'No'
+                    ),
+
+                'ISMaxTwoItem' =>
+                    $request->input(
+                        'ISMaxTwoItem',
+                        'No'
+                    ),
+
+                'ISMax2dayVal' =>
+                    $request->input(
+                        'ISMax2dayVal',
+                        'No'
+                    ),
+
+                'onlyGCPurchased' =>
+                    (int) $request->input(
+                        'onlyGCPurchased',
+                        0
+                    ),
+
+                'selectedShippingMethodId' =>
+                    (int) Session::get(
+                        'ShoppingCart.Shipping.ShippingMethodID',
+                        0
+                    ),
+            ];
+
+            $result =
+                $this->checkoutService
+                    ->getAvailableShippingMethods(
+                        $address,
+                        $flags
+                    );
+
+            addLog(
+                'GetAvailableShippingMethodsEnd',
+                [
+                    'status' =>
+                        $result['status']
+                        ?? 'success',
+                ]
+            );
+
+            return response()->json(
+                $result
+            );
+        } catch (
+            \Throwable $e
+        ) {
+            addLog(
+                'GetAvailableShippingMethodsError',
+                [
+                    'message' =>
+                        $e->getMessage(),
+
+                    'request' =>
+                        $request->all(),
+
+                    'trace' =>
+                        $e->getTraceAsString(),
+                ]
+            );
+
+            return response()->json([
+                'status' => 'error',
+
                 'message' =>
-                    $e->getMessage(),
+                    'Unable to load shipping methods.',
 
-                'request' =>
-                    $request->all(),
-
-                'trace' =>
-                    $e->getTraceAsString(),
-            ]
-        );
-
-        return response()->json([
-            'status' => 'error',
-
-            'message' =>
-                'Unable to load shipping methods.',
-
-            'shippingMethods' => [],
-        ], 500);
+                'shippingMethods' => [],
+            ], 500);
+        }
     }
-}
-  
+
 }

@@ -137,7 +137,7 @@ class TaxService
          */
         $allDiscount =
             $this->getAllDiscounts();
-		
+
         $allDiscount['TotalDiscount'] =
             (float) (
                 $allDiscount['TotalDiscount'] ?? 0
@@ -257,6 +257,7 @@ class TaxService
                 $isFromPayPalProductPage,
                 $shippingChargePayPalProductPage
             ) {
+				
                 Log::info(
                     'CalculateTaxArea: '
                     . json_encode(
@@ -403,11 +404,11 @@ class TaxService
                 ) {
                     return null;
                 }
-
+				
                 Log::info(
                     'CalculateTaxRate: '
                     . json_encode(
-                        $rate
+                        $taxableSubTotal
                     )
                 );
 

@@ -141,6 +141,7 @@ class CartService
 
         $this->cartSessionService->putCart($cart);
         $this->cartCalculatorService->calculateSubTotal();
+        $this->syncOmnisendCart();
 
         return [
             'success' => true,
@@ -391,6 +392,8 @@ class CartService
      * logic here if already present.
      */
     $this->recalculateAfterCartMutation();
+    
+    $this->syncOmnisendCart();
 
     return [
         'success' => true,
@@ -660,7 +663,7 @@ class CartService
          * Gift Certificate applicability.
          */
         $this->recalculateAfterCartMutation();
-
+		$this->syncOmnisendCart();
         return [
             'success' => true,
             'message' => 'Item removed successfully.',
@@ -677,7 +680,7 @@ class CartService
     {
         $this->cartSessionService->putCart([]);
         $this->cartCalculatorService->calculateSubTotal();
-
+		$this->syncOmnisendCart();
         return [
             'success' => true,
             'cart' => [],
@@ -730,4 +733,20 @@ class CartService
 
         return round((float) $value, 2);
     }
+    protected function syncOmnisendCart(): void
+	{
+		if (!config('global.OMNISEND_CART')) {
+			return;
+		}
+
+		OmanisendRequest(
+			'setCart',
+			[
+				'CartData' => Session::get(
+					'ShoppingCart',
+					[]
+				),
+			]
+		);
+	}
 }

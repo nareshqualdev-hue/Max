@@ -403,6 +403,21 @@
 
     
     function renderShippingMethods(response) {
+	
+	const onlyGCPurchased =
+        parseInt(
+            response.onlyGCPurchased ??
+            checkout.onlyGCPurchased ??
+            0,
+            10
+        );
+
+    if (onlyGCPurchased === 1) {
+        $('#section-delivery').hide();
+        $('#shipping-method-list').empty();
+		
+        return;
+    }
 
     const $list = $('#section-delivery fieldset');
 
@@ -1797,6 +1812,14 @@ if (isPickupShippingMethod) {
                 'Place order for ' +
                 formattedTotal
             );
+            
+         $('#place-order-total-amount')
+            .text(
+
+                formattedTotal
+            ); 
+          
+            
 
         $('#mobile-summary-amount')
             .text(
@@ -1916,6 +1939,19 @@ if (isPickupShippingMethod) {
             }
         )
     );
+    const onlyGCPurchased =
+	parseInt(
+		response.onlyGCPurchased ??
+		checkout.onlyGCPurchased ??
+		0,
+		10
+	);
+
+    if (onlyGCPurchased === 1) {
+        $('#review-shipping-method-value').hide();
+		
+        return;
+    }
     updateCheckoutReviewShippingMethod();
 
 }
@@ -2096,25 +2132,24 @@ function updateCheckoutReviewShippingMethod() {
     }
 
     function loadShippingMethods() {
-        const address = getShippingAddress();
-        console.log(
-            'AT SHIPPING METHOD FUNCTION:',
-            window.MaxaromaCheckout
-        );
+		
+		const shippingFlags = getShippingFlags();
 
-        console.log(
-            'AT SHIPPING METHOD URL:',
-            window.MaxaromaCheckout?.urls?.shippingMethods
+         const onlyGCPurchased =
+        parseInt(
+            shippingFlags.onlyGCPurchased ?? 0,
+            10
         );
-        console.log(
-            'AT SIGNATURE FUNCTION:',
-            window.MaxaromaCheckout
-        );
+	
+    if (onlyGCPurchased === 1) {
+        $('#section-delivery').hide();
+        $('#shipping-method-list').empty();
 
-        console.log(
-            'AT SIGNATURE URL:',
-            window.MaxaromaCheckout?.urls?.shippingSignature
-        );
+        return;
+		
+     }   
+     const address = getShippingAddress();
+        
         if (!addressReady(address)) {
             $('#section-delivery fieldset').html(
                 '<div class="checkout-empty-state">' +
@@ -2124,6 +2159,8 @@ function updateCheckoutReviewShippingMethod() {
 
             return;
         }
+        
+   
         const shippingMethodsUrl =
             urls.shippingMethods ||
             '/checkoutnew/shipping-methods';
@@ -4907,7 +4944,15 @@ function setShippingMethod(
 
                     return;
                 }
+                if (
+						response.checkout.onlyGCPurchased === 1 ||
+						response.checkout.onlyGCPurchased === '1'
+					) {
 
+						window.location.reload();
+
+						return;
+					}
                 /*
                  * =====================================================
                  * REMOVE DELETED PRODUCT FROM BOTH UI LOCATIONS
@@ -7044,6 +7089,7 @@ function restoreCheckoutAddonState() {
                     response.totals &&
                     typeof updateTotals === 'function'
                 ) {
+					
                     updateTotals(response);
                 }
 
