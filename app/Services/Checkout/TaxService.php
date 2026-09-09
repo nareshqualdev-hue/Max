@@ -40,6 +40,10 @@ class TaxService
          * Reset taxable flags
          * ---------------------------------------------------------
          */
+         
+        
+         
+         
         Session::put(
             'ShoppingCart.TaxableShipping',
             'No'
@@ -142,6 +146,10 @@ class TaxService
             (float) (
                 $allDiscount['TotalDiscount'] ?? 0
             );
+            
+        
+      
+            
 
         $giftCertiTotal =
             Session::has(
@@ -201,6 +209,15 @@ class TaxService
                     $allDiscount['TotalDiscount']
                 )
             );
+        
+        
+         Log::info(
+            'Subtotal',
+            [
+                'Shipping Infor for Tax' =>
+                   $subTotal,
+            ]
+        );    
 
         /*
          * ---------------------------------------------------------
@@ -268,7 +285,17 @@ class TaxService
                 $taxableSubTotal =
                     (float)
                     $subTotal;
-
+				
+				
+				 Log::info(
+					'TaXNEW1',
+					[
+						
+						"subTotal" => $subTotal	 
+							
+					]
+				); 
+				
                 /*
                  * Shipping charge
                  */
@@ -288,7 +315,15 @@ class TaxService
                         )
                         : 0;
 
-                /*
+				Log::info(
+					'TaXNEW1',
+					[
+						"shippingChargeTotal" => $shippingChargeTotal	 
+							
+					]
+				); 
+               
+               /*
                  * PayPal Product Page shipping override
                  */
                 if (
@@ -347,6 +382,16 @@ class TaxService
                         $this->getCharge(
                             'ShippingInsurance'
                         );
+                    Log::info(
+					'TaXNEW2',
+					[
+						"ShippingInsurance" => (float)
+                        $this->getCharge(
+                            'ShippingInsurance'
+                        )	 
+							
+					]
+				);     
                 }
 
                 /*
@@ -369,6 +414,18 @@ class TaxService
                         $this->getCharge(
                             'ShippingSignature'
                         );
+                      Log::info(
+					'ShippingSignature',
+					[
+						"ShippingInsurance" => (float)
+                        $this->getCharge(
+                            'ShippingSignature'
+                        )	 
+							
+					]
+				);      
+                        
+                        
                 }
 
                 $taxableSubTotal =

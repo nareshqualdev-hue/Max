@@ -3,12 +3,15 @@
 namespace App\Services\Checkout;
 
 use Illuminate\Support\Facades\Session;
-
+use Illuminate\Support\Facades\Log;
+use App\Services\Discount\DiscountService;
 class ShippingInsuranceService
 {
     public function __construct(
-        protected CheckoutTotalsService $checkoutTotalsService
+        protected CheckoutTotalsService $checkoutTotalsService,
+       protected DiscountService $discountService
     ) {
+		
     }
 
     /**
@@ -135,7 +138,12 @@ class ShippingInsuranceService
                 'shipping_insurance_charge'
             );
         }
-
+		$subTotal =  $this->checkoutTotalsService
+        ->getSubTotal() + $this->checkoutTotalsService->getAllCharges("ShippingCharge") + $this->checkoutTotalsService->getAllCharges("GiftWrappingCharge")  + $this->checkoutTotalsService->getAllCharges("ShippingSignature");
+		$discounts = $this->discountService->getAll();
+       $netTotal = NumberFormat(
+						$subTotal - ($discounts['TotalDiscount'] ?? 0)
+					);
         /*
          * ---------------------------------------------------------
          * Store order:
@@ -188,47 +196,7 @@ class ShippingInsuranceService
          * because insurance is calculated on the amount before tax.
          * ---------------------------------------------------------
          */
-        if (
-            $phoneOrder === 'No'
-        ) {
-            $taxAmount = 0;
-
-            if (
-                Session::has(
-                    'ShoppingCart.Tax'
-                )
-                &&
-                Session::get(
-                    'ShoppingCart.Tax'
-                ) > 0
-            ) {
-                $taxAmount =
-                    (float)
-                    Session::get(
-                        'ShoppingCart.Tax'
-                    );
-            }
-
-            /*
-             * IMPORTANT:
-             *
-             * This should use the existing CheckoutTotalsService
-             * once the complete checkout flow is connected.
-             *
-             * For now we read the existing session value if it
-             * exists, otherwise calculate from current checkout
-             * components.
-             */
-            $netTotal =
-                $this->getNetTotal();
-
-            if (
-                $taxAmount > 0
-            ) {
-                $netTotal -=
-                    $taxAmount;
-            }
-        }
+        
 
         /*
          * ---------------------------------------------------------
@@ -333,10 +301,45 @@ class ShippingInsuranceService
          * Shipping Insurance itself must be excluded so the
          * insurance charge is not included in its own calculation.
          */
-        return $this->checkoutTotalsService
-            ->getNetTotalExcludingCharges([
-                'ShippingInsurance',
-            ]);
+        $netTotal =
+    $this->checkoutTotalsService
+        ->getNetTotalExcludingCharges([
+            'Tax',
+            'ShippingInsurance',
+        ]);
+
+Log::info(
+    'ShippingInsuranceNetTotalDebug',
+    [
+        'net_total' => $netTotal,
+        'subtotal' => Session::get(
+            'ShoppingCart.SubTotal',
+            0
+        ),
+        'coupon_discount' => Session::get(
+            'ShoppingCart.PromoCoupon.CouponDiscount',
+            0
+        ),
+        'first_coupon_discount' => Session::get(
+            'ShoppingCart.PromoCoupon.FirstCouponDiscount',
+            0
+        ),
+        'tax' => Session::get(
+            'ShoppingCart.Tax',
+            0
+        ),
+        'shipping' => Session::get(
+            'ShoppingCart.Shipping',
+            0
+        ),
+        'insurance' => Session::get(
+            'shipping_insurance_charge',
+            0
+        ),
+    ]
+);
+
+return (float) $netTotal;
     }
 
 }

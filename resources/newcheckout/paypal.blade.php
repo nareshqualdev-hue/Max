@@ -92,5 +92,5 @@
     let  country= '';
     let  city= '';
     </script>
-    <script type="text/javascript" src="{{config('global.SITE_JS_CORE')}}paypal.js?ver={{$JSSPaypalValVer}}"></script>
+    <!-- <script type="text/javascript" src="{{config('global.SITE_JS_CORE')}}paypal.js?ver={{$JSSPaypalValVer}}"></script> -->
 @endif

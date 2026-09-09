@@ -7,6 +7,7 @@ use App\Services\Checkout\CheckoutService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Facades\Log;
 
 
 class CheckoutShippingController extends Controller
@@ -290,17 +291,13 @@ class CheckoutShippingController extends Controller
         } catch (
             \Throwable $e
         ) {
-            addLog(
-                'SetShippingMethodError',
+            Log::info(
+                'CheckoutShippingMethodException',
                 [
-                    'message' =>
-                        $e->getMessage(),
-
-                    'request' =>
-                        $request->all(),
-
-                    'trace' =>
-                        $e->getTraceAsString(),
+                      'message' => $e->getMessage(),
+					 'file' => $e->getFile(),
+						'line' => $e->getLine(),
+						'trace' => $e->getTraceAsString(),
                 ]
             );
 

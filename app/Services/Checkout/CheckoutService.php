@@ -5,7 +5,7 @@ namespace App\Services\Checkout;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Auth;
 use App\Services\Cart\CartCalculatorService;
-
+use Illuminate\Support\Facades\Log;
 
 class CheckoutService
 {
@@ -24,6 +24,7 @@ class CheckoutService
 		protected \App\Services\Discount\QuantityDiscountService $quantityDiscountService,
 		protected \App\Services\Checkout\GiftCertificateService $giftCertificateService,
 		protected \App\Services\Discount\BogoDiscountService $bogoDiscountService,
+		protected \App\Services\Discount\CouponService $couponService,
     ) {
     }
 
@@ -256,6 +257,7 @@ class CheckoutService
 
             'JSFILES' => [
                 'checkout.js',
+                'paypal.js'
                 //'checkout-new.js'
             ],
 
@@ -369,7 +371,7 @@ class CheckoutService
          * insurance and final checkout totals are calculated.
          * ---------------------------------------------------------
          */
-         
+
          $isGiftCertificateRestricted =
 			strtolower(
 				trim(
@@ -391,9 +393,30 @@ class CheckoutService
 			$this->giftCertificateService
 			->remove();
 		}
+		/*
+		 * ---------------------------------------------------------
+		 * Recalculate active coupon after cart/subtotal changes.
+		 *
+		 * Important:
+		 * CouponService::apply() is the existing coupon business
+		 * logic. Reuse it so current DB coupon rules and current
+		 * cart state are always used.
+		 *
+		 * This fixes stale FirstCouponDiscount when:
+		 * - coupon rule changes in admin
+		 * - cart quantity changes
+		 * - cart item is added/removed
+		 * - subtotal changes
+		 * ---------------------------------------------------------
+		 */
+		Session::put(
+					'ShoppingCart.AutoDiscount',
+					0
+				);
+	
         $this->cartCalculatorService
             ->calculateSubTotal();
-            
+
 			if (
 				config('Settings.AUTODISCOUNTFLAG') === 'Yes'
 			) {
@@ -413,7 +436,7 @@ class CheckoutService
 				$this->bogoDiscountService
 					->apply();
 			}
-			
+
 			if (
 			config('global.BOGO_QTY__AUTO_COMBINED') == '1'
 			) {
@@ -434,10 +457,7 @@ class CheckoutService
 					0
 				);
 			}
-		}	
-					
-			
-    
+		}
 
         /*
          * ---------------------------------------------------------
@@ -460,7 +480,6 @@ class CheckoutService
          * Address is taken from the current checkout session.
          * ---------------------------------------------------------
          */
-        
 
         /*
  * ---------------------------------------------------------
@@ -500,6 +519,34 @@ if (
  * Refresh/recalculation must not turn an explicitly
  * disabled Insurance back ON.
  */
+
+
+	if (
+		($cartAttributes['onlyGCPurchased'] ?? 0) != 1
+	) {
+		$this->recalculateCouponAndTax(
+			$cartAttributes
+		);
+	}
+	else
+	{
+		$activeCouponCode = trim(
+			(string) Session::get(
+				'ShoppingCart.PromoCoupon.CouponCode',
+				''
+			)
+		);
+
+		if ($activeCouponCode !== '') {
+			$this->couponService->apply(
+				$activeCouponCode,
+				(int) Session::get(
+					'sess_icustomerid',
+					0
+				)
+			);
+		}
+	}
 if (
     ($cartAttributes['onlyGCPurchased'] ?? 0) != 1
 ) {
@@ -511,27 +558,6 @@ if (
             false
         );
 }
-
-/*
- * ---------------------------------------------------------
- * 5. Final Tax
- * ---------------------------------------------------------
- *
- * Tax must be calculated AFTER the current Signature
- * and Insurance amounts are finalized.
- *
- * TaxService uses these checkout charges as part of
- * the taxable amount.
- */
-if (
-    ($cartAttributes['onlyGCPurchased'] ?? 0) != 1
-) {
-    $this->calculateTax(
-        $cartAttributes
-    );
-}
-        
-        
         /*
          * ---------------------------------------------------------
          * 5. Final totals
@@ -999,14 +1025,13 @@ public function setShippingSignature(
          *
          * Existing Tax calculation logic remains unchanged.
          */
-        if (
-            ($attributes['onlyGCPurchased'] ?? 0) != 1
-        ) {
-
-            $this->calculateTax(
-                $attributes
-            );
-        }
+		if (
+			($attributes['onlyGCPurchased'] ?? 0) != 1
+		) {
+			$this->recalculateCouponAndTax(
+				$attributes
+			);
+		}
 
         /*
          * ---------------------------------------------------------
@@ -1350,14 +1375,13 @@ public function setShippingInsurance(
          * Calculate Tax after the Insurance value has been
          * updated so TaxService uses the current Insurance state.
          */
-        if (
-            ($cartAttributes['onlyGCPurchased'] ?? 0) != 1
-        ) {
-
-            $this->calculateTax(
-                $cartAttributes
-            );
-        }
+		if (
+			($cartAttributes['onlyGCPurchased'] ?? 0) != 1
+		) {
+			$this->recalculateCouponAndTax(
+				$cartAttributes
+			);
+		}
 
         /*
          * ---------------------------------------------------------
@@ -1453,7 +1477,7 @@ public function refreshAfterShippingMethod(
     array $paymentContext = []
 ): array {
 
-    addLog(
+    Log::info(
         'CheckoutRefreshAfterShippingStart',
         [
             'shipping_method_id' =>
@@ -1677,6 +1701,7 @@ public function refreshAfterShippingMethod(
          * Existing logic retained.
          * -----------------------------------------------------
          */
+        
         $this->shippingSignatureService
             ->sync();
 
@@ -1687,12 +1712,7 @@ public function refreshAfterShippingMethod(
          * EXISTING LOGIC - DO NOT CHANGE.
          * -----------------------------------------------------
          */
-        $insurance =
-            $this->shippingInsuranceService
-                ->calculate(
-                    'add'
-                );
-
+        
         /*
          * -----------------------------------------------------
          * 8. Tax.
@@ -1700,19 +1720,28 @@ public function refreshAfterShippingMethod(
          * EXISTING LOGIC - DO NOT CHANGE.
          * -----------------------------------------------------
          */
-        $taxResult =
-            $this->taxService
-                ->calculate(
-                    $shipCountry,
-                    $shipState,
-                    $shipZip,
-                    $onlyGCPurchased,
-                    $isPayPalSubTotal,
-                    $shipCity,
-                    $shippingChargePayPalProductPage
-                );
+         $cartAttributes =
+				$this->cartAttributeService
+					->getAttributes();
+        if (
+				($cartAttributes['onlyGCPurchased'] ?? 0) != 1
+			) {
+				
+
+				$this->recalculateCouponAndTax(
+    $cartAttributes,$address
+);
+			}
+			$taxResult = Session::get(
+			'ShoppingCart.Tax',
+			0);
     }
 
+$insurance =
+            $this->shippingInsuranceService
+                ->calculate(
+                    'add'
+                ); 
     /*
      * ---------------------------------------------------------
      * 9. Final totals.
@@ -1874,14 +1903,19 @@ protected function resolveOrderTotal(
      * Calculate tax from current checkout address.
      */
     protected function calculateTax(
-        array $cartAttributes
+        array $cartAttributes,
+        array $taxContext = []
     ) {
         $shippingAddress =
             Session::get(
                 'ShoppingCart.ShippingAddress',
                 []
             );
-
+		
+		    
+		
+		
+		
         /*
          * If BillingAsShipping is used, preserve the existing
          * checkout behavior by resolving the address accordingly.
@@ -1909,23 +1943,45 @@ protected function resolveOrderTotal(
                     $billingAddress;
             }
         }
-
+		/*$taxContext['country'] = "US";
+		$taxContext['state'] = "CA";
+		$taxContext['zip'] = "95131";
+		$taxContext['city'] = "San Jose";
+        */
         $country =
-            $shippingAddress['country']
+            $taxContext['country']
             ?? '';
 
         $state =
-            $shippingAddress['state']
+            $taxContext['state']
             ?? '';
 
         $zip =
-            $shippingAddress['zip']
+            $taxContext['zip']
             ?? '';
 
         $city =
-            $shippingAddress['city']
+            $taxContext['city']
             ?? '';
-
+		
+		Log::info(
+            'calculateTax',
+            [
+                'Shipping Infor for Tax' =>
+                    Session::get(
+                        'eusertype'
+                    )
+                    . '---'
+                    . $country
+                    . '--'
+                    . $state
+                    . '--'
+                    . $zip
+                    . '--'
+                    . $city
+            ]
+        );
+				
         /*
          * No address = no tax calculation yet.
          *
@@ -2009,176 +2065,453 @@ protected function resolveOrderTotal(
 public function getAvailableShippingMethods(
     array $address,
     array $flags = []
+    ): array {
+
+        $country = trim(
+            $address['country'] ?? ''
+        );
+
+        $state = trim(
+            $address['state'] ?? ''
+        );
+
+        $zip = trim(
+            $address['zip'] ?? ''
+        );
+
+        /*
+        * Keep current shipping address in session.
+        */
+        $currentAddress = Session::get(
+            'ShoppingCart.ShippingAddress',
+            []
+        );
+
+        Session::put(
+            'ShoppingCart.ShippingAddress',
+            array_merge(
+                $currentAddress,
+                $address
+            )
+        );
+
+        /*
+        * Cart attributes are the source of truth for
+        * cart-dependent shipping flags.
+        */
+        $cartAttributes =
+            $this->cartAttributeService
+                ->getAttributes();
+
+        /*
+        * IMPORTANT:
+        *
+        * Do NOT allow request/frontend values to override
+        * cart-dependent shipping flags.
+        *
+        * This is required for Max2Day logic.
+        *
+        * Example:
+        *
+        * CartAttributeService:
+        *     IsMaxaromaTwoDelivery = Yes
+        *     ISMaxTwoItem          = Yes
+        *     ISMax2dayVal          = No
+        *
+        * Frontend may still send:
+        *     IsMaxaromaTwoDelivery = No
+        *
+        * But the frontend value must NOT overwrite the
+        * actual cart attribute.
+        */
+        $flags = [
+
+            'IsCosmo' =>
+                $cartAttributes['IsCosmo'] ?? 'No',
+
+            'IsNandansons' =>
+                $cartAttributes['IsNandansons'] ?? 'No',
+
+            'IsPerfumePW' =>
+                $cartAttributes['IsPerfumePW'] ?? 'No',
+
+            'IsPCA' =>
+                $cartAttributes['IsPCA'] ?? 'No',
+
+            'IsND' =>
+                $cartAttributes['IsND'] ?? 'No',
+
+            'IsVenderItem' =>
+                $cartAttributes['IsVenderItem'] ?? 'No',
+
+            /*
+            * -----------------------------------------------------
+            * Max2Day
+            * -----------------------------------------------------
+            *
+            * These MUST come from CartAttributeService.
+            *
+            * Do NOT merge request/frontend values here.
+            */
+            'IsMaxaromaTwoDelivery' =>
+                $cartAttributes[
+                    'IsMaxaromaTwoDelivery'
+                ] ?? 'No',
+
+            'ISMaxTwoItem' =>
+                $cartAttributes[
+                    'ISMaxTwoItem'
+                ] ?? 'No',
+
+            'ISMax2dayVal' =>
+                $cartAttributes[
+                    'ISMax2dayVal'
+                ] ?? 'No',
+
+            /*
+            * Cart-level value.
+            */
+            'onlyGCPurchased' =>
+                $cartAttributes[
+                    'onlyGCPurchased'
+                ] ?? 0,
+        ];
+
+        /*
+        * Preserve any non-cart-dependent request flags.
+        *
+        * Currently the controller sends only:
+        *
+        *     onlyGCPurchased
+        *     selectedShippingMethodId
+        *
+        * Do NOT merge the complete request $flags because that
+        * would overwrite the cart-derived Max2Day/vendor values.
+        */
+        if (
+            isset(
+                $flags['selectedShippingMethodId']
+            )
+        ) {
+            $flags['selectedShippingMethodId'] =
+                (int) $flags[
+                    'selectedShippingMethodId'
+                ];
+        }
+
+        /*
+        * Keep request onlyGCPurchased out of the
+        * cart-derived source of truth.
+        *
+        * CartAttributeService already provides the actual value.
+        */
+
+        /*
+        * ShippingService owns all shipping-method
+        * business logic.
+        */
+        $shippingMethods =
+            $this->shippingService
+                ->getAvailableMethods(
+                    $address,
+                    $flags
+                );
+
+        return [
+            'status' =>
+                'success',
+
+            'shippingMethods' =>
+                $shippingMethods,
+
+            'selectedShippingMethodId' =>
+                (int) Session::get(
+                    'ShoppingCart.Shipping.ShippingMethodID',
+                    0
+                ),
+
+            'address' =>
+                Session::get(
+                    'ShoppingCart.ShippingAddress',
+                    []
+                ),
+        ];
+    }
+
+/**
+ * Update the current checkout ShippingAddress.
+ *
+ * Existing ShippingAddress values are preserved when only
+ * partial address data is supplied.
+ */
+public function updateShippingAddress(
+    array $address
 ): array {
-
-    $country = trim(
-        $address['country'] ?? ''
-    );
-
-    $state = trim(
-        $address['state'] ?? ''
-    );
-
-    $zip = trim(
-        $address['zip'] ?? ''
-    );
-
-    /*
-     * Keep current shipping address in session.
-     */
     $currentAddress = Session::get(
         'ShoppingCart.ShippingAddress',
         []
     );
 
+    if (!is_array($currentAddress)) {
+        $currentAddress = [];
+    }
+
+    $shippingAddress = array_merge(
+        $currentAddress,
+        $address
+    );
+
     Session::put(
         'ShoppingCart.ShippingAddress',
-        array_merge(
-            $currentAddress,
-            $address
+        $shippingAddress
+    );
+
+    return $shippingAddress;
+}
+protected function recalculateCouponAndTax(
+    array $cartAttributes,
+     array $taxContext = []
+): void {
+	
+
+
+
+$isPayPalSubTotal =
+    $taxContext['isPayPalSubTotal'] ?? 0;
+
+$shippingChargePayPalProductPage =
+    $taxContext['shippingChargePayPalProductPage'] ?? 0;
+    $couponCode = trim(
+        (string) Session::get(
+            'ShoppingCart.PromoCoupon.CouponCode',
+            ''
+        )
+    );
+    
+    $ShippingAddress = Session::get('ShoppingCart.ShippingAddress'); 
+    //echo "<pre>"; print_r($ShippingAddress); exit;
+    
+		if (empty($taxContext['country'])) {
+		$taxContext['country'] = $ShippingAddress['country'] ?? '';
+		}
+
+		if (empty($taxContext['state'])) {
+			$taxContext['state'] = $ShippingAddress['state'] ?? '';
+		}
+
+		if (empty($taxContext['zip'])) {
+			$taxContext['zip'] = $ShippingAddress['zip'] ?? '';
+		}
+
+		if (empty($taxContext['city'])) {
+			$taxContext['city'] = $ShippingAddress['city'] ?? '';
+		}
+    	
+   
+
+	 
+	
+	
+	
+    /*
+     * No active coupon.
+     */
+    if ($couponCode === '') {
+        $this->calculateTax($cartAttributes,$taxContext);
+
+        return;
+    }
+
+    /*
+     * First coupon calculation.
+     *
+     * This also gives us the coupon configuration,
+     * including count_ship_tax.
+     */
+    $couponResult = $this->couponService->apply(
+        $couponCode,
+        (int) Session::get(
+            'sess_icustomerid',
+            0
         )
     );
 
     /*
-     * Cart attributes are the source of truth for
-     * cart-dependent shipping flags.
-     */
-    $cartAttributes =
-        $this->cartAttributeService
-            ->getAttributes();
-
-    /*
-     * IMPORTANT:
-     *
-     * Do NOT allow request/frontend values to override
-     * cart-dependent shipping flags.
-     *
-     * This is required for Max2Day logic.
-     *
-     * Example:
-     *
-     * CartAttributeService:
-     *     IsMaxaromaTwoDelivery = Yes
-     *     ISMaxTwoItem          = Yes
-     *     ISMax2dayVal          = No
-     *
-     * Frontend may still send:
-     *     IsMaxaromaTwoDelivery = No
-     *
-     * But the frontend value must NOT overwrite the
-     * actual cart attribute.
-     */
-    $flags = [
-
-        'IsCosmo' =>
-            $cartAttributes['IsCosmo'] ?? 'No',
-
-        'IsNandansons' =>
-            $cartAttributes['IsNandansons'] ?? 'No',
-
-        'IsPerfumePW' =>
-            $cartAttributes['IsPerfumePW'] ?? 'No',
-
-        'IsPCA' =>
-            $cartAttributes['IsPCA'] ?? 'No',
-
-        'IsND' =>
-            $cartAttributes['IsND'] ?? 'No',
-
-        'IsVenderItem' =>
-            $cartAttributes['IsVenderItem'] ?? 'No',
-
-        /*
-         * -----------------------------------------------------
-         * Max2Day
-         * -----------------------------------------------------
-         *
-         * These MUST come from CartAttributeService.
-         *
-         * Do NOT merge request/frontend values here.
-         */
-        'IsMaxaromaTwoDelivery' =>
-            $cartAttributes[
-                'IsMaxaromaTwoDelivery'
-            ] ?? 'No',
-
-        'ISMaxTwoItem' =>
-            $cartAttributes[
-                'ISMaxTwoItem'
-            ] ?? 'No',
-
-        'ISMax2dayVal' =>
-            $cartAttributes[
-                'ISMax2dayVal'
-            ] ?? 'No',
-
-        /*
-         * Cart-level value.
-         */
-        'onlyGCPurchased' =>
-            $cartAttributes[
-                'onlyGCPurchased'
-            ] ?? 0,
-    ];
-
-    /*
-     * Preserve any non-cart-dependent request flags.
-     *
-     * Currently the controller sends only:
-     *
-     *     onlyGCPurchased
-     *     selectedShippingMethodId
-     *
-     * Do NOT merge the complete request $flags because that
-     * would overwrite the cart-derived Max2Day/vendor values.
+     * Invalid / unavailable coupon.
      */
     if (
-        isset(
-            $flags['selectedShippingMethodId']
-        )
+        ($couponResult['error'] ?? 1) !== 0
     ) {
-        $flags['selectedShippingMethodId'] =
-            (int) $flags[
-                'selectedShippingMethodId'
-            ];
+        $this->calculateTax($cartAttributes,$taxContext);
+
+        return;
     }
 
     /*
-     * Keep request onlyGCPurchased out of the
-     * cart-derived source of truth.
+     * ---------------------------------------------------------
+     * count_ship_tax != 1
+     * ---------------------------------------------------------
      *
-     * CartAttributeService already provides the actual value.
+     * No Coupon <-> Tax circular dependency.
+     *
+     * Keep the normal existing flow.
      */
+    if (
+        (string) (
+            $couponResult['count_ship_tax'] ?? ''
+        ) !== '1'
+    ) {
+        $this->calculateTax(
+            $cartAttributes,$taxContext
+        );
+
+        return;
+    }
 
     /*
-     * ShippingService owns all shipping-method
-     * business logic.
+     * ---------------------------------------------------------
+     * count_ship_tax = 1
+     * ---------------------------------------------------------
+     *
+     * Coupon uses Tax and Tax uses Coupon Discount.
+     *
+     * Resolve the dependency by iterating until both values
+     * become stable.
      */
-    $shippingMethods =
-        $this->shippingService
-            ->getAvailableMethods(
-                $address,
-                $flags
+
+    $previousCouponDiscount =
+        (float) (
+            $couponResult['discount']
+            ??
+            Session::get(
+                'ShoppingCart.PromoCoupon.FirstCouponDiscount',
+                Session::get(
+                    'ShoppingCart.PromoCoupon.CouponDiscount',
+                    0
+                )
+            )
+        );
+
+    $previousTax =
+        (float) Session::get(
+            'ShoppingCart.Tax',
+            0
+        );
+
+    /*
+     * Maximum 5 iterations.
+     */
+    for (
+        $iteration = 1;
+        $iteration <= 5;
+        $iteration++
+    ) {
+
+        /*
+         * -----------------------------------------------------
+         * 1. Recalculate Coupon using current Tax
+         * -----------------------------------------------------
+         *
+         * Existing CouponService logic remains untouched.
+         *
+         * This preserves:
+         * - Order Amount
+         * - SKU
+         * - Category
+         * - Brand
+         * - Excluded SKU
+         * - Pocket Perfume
+         * - Deal of Week
+         * - Gift Certificate
+         * - Free Shipping
+         * - Free Gift
+         */
+        $couponResult =
+            $this->couponService->apply(
+                $couponCode,
+                (int) Session::get(
+                    'sess_icustomerid',
+                    0
+                )
             );
 
-    return [
-        'status' =>
-            'success',
+        /*
+         * Read fresh coupon discount.
+         */
+        $currentCouponDiscount =
+            (float) (
+                $couponResult['discount']
+                ??
+                Session::get(
+                    'ShoppingCart.PromoCoupon.FirstCouponDiscount',
+                    Session::get(
+                        'ShoppingCart.PromoCoupon.CouponDiscount',
+                        0
+                    )
+                )
+            );
 
-        'shippingMethods' =>
-            $shippingMethods,
+        /*
+         * -----------------------------------------------------
+         * 2. Recalculate Tax using fresh Coupon Discount
+         * -----------------------------------------------------
+         */
+        $this->calculateTax(
+            $cartAttributes,$taxContext
+        );
 
-        'selectedShippingMethodId' =>
-            (int) Session::get(
-                'ShoppingCart.Shipping.ShippingMethodID',
+        $currentTax =
+            (float) Session::get(
+                'ShoppingCart.Tax',
                 0
-            ),
+            );
 
-        'address' =>
-            Session::get(
-                'ShoppingCart.ShippingAddress',
-                []
-            ),
-    ];
+        /*
+         * -----------------------------------------------------
+         * 3. Check whether Coupon + Tax are stable
+         * -----------------------------------------------------
+         */
+        if (
+            abs(
+                $currentCouponDiscount
+                -
+                $previousCouponDiscount
+            ) < 0.01
+            &&
+            abs(
+                $currentTax
+                -
+                $previousTax
+            ) < 0.01
+        ) {
+            break;
+        }
+
+        $previousCouponDiscount =
+            $currentCouponDiscount;
+
+        $previousTax =
+            $currentTax;
+    }
+
+    /*
+     * Final synchronized calculation.
+     *
+     * Apply coupon one final time using the latest Tax,
+     * then calculate final Tax using the latest Coupon.
+     */
+    $couponResult =
+        $this->couponService->apply(
+            $couponCode,
+            (int) Session::get(
+                'sess_icustomerid',
+                0
+            )
+        );
+
+    $this->calculateTax(
+        $cartAttributes,$taxContext
+    );
 }
+
 }

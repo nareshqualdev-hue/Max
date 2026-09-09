@@ -401,9 +401,8 @@
     return null;
 }
 
-    
     function renderShippingMethods(response) {
-	
+
 	const onlyGCPurchased =
         parseInt(
             response.onlyGCPurchased ??
@@ -415,7 +414,7 @@
     if (onlyGCPurchased === 1) {
         $('#section-delivery').hide();
         $('#shipping-method-list').empty();
-		
+
         return;
     }
 
@@ -642,7 +641,7 @@
 
     showShipMethodLoader(false);
 }
-    
+
     function updateOnTimeDeliveryRate() {
 
         $('.shipping-option-confidence').remove();
@@ -669,7 +668,7 @@
 	function updateTotals(response) {
 
     response = response || {};
-    
+
     updateCheckoutReviewContact();
     updateCheckoutReviewAddress();
 
@@ -1493,8 +1492,7 @@ if (isPickupShippingMethod) {
             'data-value',
             tax
         );
-        
-        
+
      const reviewTax =
     document.getElementById(
         'review-summary-tax-value'
@@ -1505,7 +1503,7 @@ if (isPickupShippingMethod) {
 			'Includes ' +
 			formatMoney(tax) +
 			' tax';
-	}   
+	}
 
     /*
      * =========================================================
@@ -1812,14 +1810,12 @@ if (isPickupShippingMethod) {
                 'Place order for ' +
                 formattedTotal
             );
-            
+
          $('#place-order-total-amount')
             .text(
 
                 formattedTotal
-            ); 
-          
-            
+            );
 
         $('#mobile-summary-amount')
             .text(
@@ -1949,7 +1945,7 @@ if (isPickupShippingMethod) {
 
     if (onlyGCPurchased === 1) {
         $('#review-shipping-method-value').hide();
-		
+
         return;
     }
     updateCheckoutReviewShippingMethod();
@@ -2042,7 +2038,6 @@ if (isPickupShippingMethod) {
         value;
 }
 
-
 function updateCheckoutReviewShippingMethod() {
 
     const reviewMethod =
@@ -2132,7 +2127,7 @@ function updateCheckoutReviewShippingMethod() {
     }
 
     function loadShippingMethods() {
-		
+        console.log("IN Shipping Methods");
 		const shippingFlags = getShippingFlags();
 
          const onlyGCPurchased =
@@ -2140,16 +2135,16 @@ function updateCheckoutReviewShippingMethod() {
             shippingFlags.onlyGCPurchased ?? 0,
             10
         );
-	
+
     if (onlyGCPurchased === 1) {
         $('#section-delivery').hide();
         $('#shipping-method-list').empty();
 
         return;
-		
-     }   
+
+     }
      const address = getShippingAddress();
-        
+
         if (!addressReady(address)) {
             $('#section-delivery fieldset').html(
                 '<div class="checkout-empty-state">' +
@@ -2159,8 +2154,7 @@ function updateCheckoutReviewShippingMethod() {
 
             return;
         }
-        
-   
+
         const shippingMethodsUrl =
             urls.shippingMethods ||
             '/checkoutnew/shipping-methods';
@@ -2654,7 +2648,7 @@ function setShippingMethod(
             }
         );
     }
-); 
+);
 
     $(document).on(
         'click',
@@ -3787,7 +3781,7 @@ function setShippingMethod(
             ...response,
             cart: finalUiCart
         };
-        
+
         updateBogoMessages(
 			finalUiCart
 		);
@@ -5056,7 +5050,6 @@ if (
             });
     }
 
-	
 	function resetShippingSignatureAfterCartChange() {
 
     window.MaxaromaCheckout =
@@ -5776,7 +5769,7 @@ if (
             return false;
         }
     );
-    
+
       $(document).on(
         'input change',
         '#email',
@@ -7089,7 +7082,7 @@ function restoreCheckoutAddonState() {
                     response.totals &&
                     typeof updateTotals === 'function'
                 ) {
-					
+
                     updateTotals(response);
                 }
 

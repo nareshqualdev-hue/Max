@@ -12,7 +12,7 @@ use App\Models\ProductsCategory;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Session;
-
+use Illuminate\Support\Facades\Log;
 class CouponService
 {
     public function __construct(
@@ -59,6 +59,18 @@ class CouponService
                 'ShoppingCart.Cart',
                 []
             );
+          
+          
+        foreach (array_keys($cart) as $index) {
+    Session::put(
+        'ShoppingCart.Cart.'
+        . $index
+        . '.CouponDisItemWiseDiscout',
+        0
+    );
+}
+
+    
 
         if (empty($cart)) {
             return $this->invalidCoupon(
@@ -199,9 +211,15 @@ class CouponService
          */
         $excludeSkuList =
             $this->csvToArray(
-                $coupon->exclude_product_skus
+                $coupon->exclude_sku
             );
-
+		
+		Log::info('Coupon Exclude SKU Debug', [
+		'coupon_code' => $coupon->coupon_number ?? null,
+		'db_exclude_product_skus' => $coupon->exclude_sku ?? null,
+		'excludeSkuList' => $excludeSkuList,
+	]);
+		
         /*
          * ---------------------------------------------------------
          * Cart eligibility
@@ -218,6 +236,26 @@ class CouponService
         foreach (
             $cartInfo as $item
         ) {
+			
+			if (
+				(string) $coupon->exclude_pocketperfume === 'Yes'
+				&&
+				isset($item['CategoryID'])
+				&&
+				in_array(
+					(int) $item['CategoryID'],
+					CheckoutConstants::POCKET_PERFUME_CATEGORIES,
+					true
+				)
+			) {
+				$sku = trim(
+					(string) ($item['SKU'] ?? '')
+				);
+
+				if ($sku !== '') {
+					$excludeSkuList[] = $sku;
+				}
+			}
             $isGiftCertificate =
                 $this->isGiftCertificateItem(
                     $item
@@ -302,6 +340,11 @@ class CouponService
                 'ShoppingCart.GiftCertiTotal',
                 0
             );
+        
+        $gcCouponExcludeTotal =
+		((string) $coupon->count_gc_purchase === '0')
+			? $giftCertificateTotal
+			: 0.0;    
 
         /*
          * ---------------------------------------------------------
@@ -331,7 +374,7 @@ class CouponService
 
         $saleTotal =
             $subTotal
-            - $giftCertificateTotal
+            - $gcCouponExcludeTotal
             - $totalDealPrice;
 
         /*
@@ -618,6 +661,9 @@ class CouponService
                     NumberFormat(
                         $couponDiscount
                     ),
+                'count_ship_tax' =>
+					(string) $coupon->count_ship_tax,
+    
             ];
         }
 
@@ -694,7 +740,12 @@ class CouponService
     ) {
 
         foreach ($cart as $item) {
-
+			Log::info('Coupon Excluded Item Debug', [
+					'sku' => $item['SKU'] ?? null,
+					'price' => $item['Price'] ?? null,
+					'qty' => $item['Qty'] ?? null,
+					'totPrice' => $item['TotPrice'] ?? null,
+				]);
             $sku =
                 (string) (
                     $item['SKU'] ?? ''
@@ -771,7 +822,11 @@ class CouponService
             (float) $subTotal
             - (float) $totalDealPrice
             - (float) $totalExcludePrice
-            - (float) $giftCertificateTotal
+            - (
+					(string) $coupon->count_gc_purchase === '0'
+						? (float) $giftCertificateTotal
+						: 0.0
+			  )
             + $shippingCharge
             + $taxValue;
 
@@ -784,27 +839,59 @@ class CouponService
             (float) $subTotal
             - (float) $totalDealPrice
             - (float) $totalExcludePrice
-            - (float) $giftCertificateTotal;
+            - (
+					(string) $coupon->count_gc_purchase === '0'
+						? (float) $giftCertificateTotal
+						: 0.0
+			  );
 
-    } else {
+    } 
+    else 
+    {
 
         /*
          * Old behavior when shipping/tax is NOT included.
          */
         $tempSubTotal =
             (float) $subTotal
-            - (float) $giftCertificateTotal
+            -  (
+					(string) $coupon->count_gc_purchase === '0'
+						? (float) $giftCertificateTotal
+						: 0.0
+				)
             - (float) $totalDealPrice
             - (float) $totalExcludePrice;
 
 
         $tempSaleTotal =
             (float) $subTotal
-            - (float) $giftCertificateTotal
+            - (
+					(string) $coupon->count_gc_purchase === '0'
+						? (float) $giftCertificateTotal
+						: 0.0
+				)
             - (float) $totalDealPrice
             - (float) $totalExcludePrice;
     }
+	
+		Log::info('Coupon Order Amount Debug', [
+		'coupon_code' => $coupon->coupon_number ?? null,
+		'coupon_discount' => $coupon->discount ?? null,
+		'count_ship_tax' => $coupon->count_ship_tax ?? null,
 
+		'subTotal' => $subTotal,
+		'totalExcludePrice' => $totalExcludePrice,
+		'totalDealPrice' => $totalDealPrice,
+		'giftCertificateTotal' => $giftCertificateTotal,
+
+		'tempSubTotal' => $tempSubTotal,
+		'tempSaleTotal' => $tempSaleTotal,
+
+		'shippingCharge' => $shippingCharge ?? 0,
+		'taxValue' => $taxValue ?? 0,
+	]);
+	
+	
 
     /*
      * ---------------------------------------------------------
@@ -868,7 +955,20 @@ class CouponService
             (float)
             $coupon->discount;
     }
-
+	
+	
+	Log::info('Coupon FINAL Calculation Debug', [
+    'coupon_code' => $coupon->coupon_number ?? null,
+    'count_gc_purchase' => $coupon->count_gc_purchase ?? null,
+    'subTotal' => $subTotal,
+    'totalExcludePrice' => $totalExcludePrice,
+    'giftCertificateTotal' => $giftCertificateTotal,
+    'totalDealPrice' => $totalDealPrice,
+    'tempSaleTotal' => $tempSaleTotal,
+    'coupon_type' => $coupon->type ?? null,
+    'coupon_rate' => $coupon->discount ?? null,
+    'calculated_discount' => $discount,
+]);	
 
     /*
      * ---------------------------------------------------------
@@ -1331,9 +1431,13 @@ class CouponService
          * Preserve normal order-amount eligibility.
          */
         $saleTotal =
-            $subTotal
-            - $giftCertificateTotal
-            - $totalDealPrice;
+		$subTotal
+		- (
+			(string) $coupon->count_gc_purchase === '0'
+				? $giftCertificateTotal
+				: 0.0
+		)
+		- $totalDealPrice;
 
         $discount = 0.0;
 
@@ -1770,6 +1874,16 @@ class CouponService
                 ) {
                     continue;
                 }
+                if (
+						$this->isGiftCertificateItem($item)
+					) {
+						if ((string) $coupon->count_gc_purchase === '0') {
+							continue;
+						}
+
+						
+					}
+
 
                 if (
                     !$this->isCouponEligibleDeal(
@@ -2090,6 +2204,13 @@ class CouponService
 
         $discount =
             NumberFormat($couponDiscount);
+        
+        Log::info('Coupon Session Save Debug', [
+				'coupon_code' => $couponCode,
+				'couponDiscount' => $couponDiscount,
+				'formatted_discount' => $discount,
+				'count_gc_purchase' => $coupon->count_gc_purchase ?? null,
+			]);    
 
         /*
          * ---------------------------------------------------------

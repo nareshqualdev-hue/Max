@@ -657,7 +657,7 @@ class CartService
          * including when the cart becomes empty.
          */
         $this->cartCalculatorService->calculateSubTotal();
-
+		$this->syncGiftCertificateTotals($cart);
         /*
          * Removing an item changes cart-dependent discounts and
          * Gift Certificate applicability.
@@ -679,6 +679,7 @@ class CartService
     public function clear(): array
     {
         $this->cartSessionService->putCart([]);
+        $this->syncGiftCertificateTotals([]);
         $this->cartCalculatorService->calculateSubTotal();
 		$this->syncOmnisendCart();
         return [
@@ -686,7 +687,34 @@ class CartService
             'cart' => [],
         ];
     }
+	protected function syncGiftCertificateTotals(array $cart): void
+	{
+		$giftCertiTotal = null;
+		$giftCertiCount = 0;
 
+		foreach ($cart as $item) {
+			if (
+				($item['IsGiftCertificateItem'] ?? 'No') === 'Yes'
+			) {
+				$giftCertiTotal =
+					($giftCertiTotal ?? 0)
+					+ (float) ($item['TotPrice'] ?? 0);
+
+				$giftCertiCount +=
+					(int) ($item['Qty'] ?? 0);
+			}
+		}
+
+		Session::put(
+			'ShoppingCart.GiftCertiTotal',
+			$giftCertiTotal
+		);
+
+		Session::put(
+			'ShoppingCart.GiftCertiCount',
+			$giftCertiCount
+		);
+	}
     public function getCart(): array
     {
         return $this->cartSessionService->getCart();
