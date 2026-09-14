@@ -10,13 +10,18 @@ use Illuminate\Support\Facades\Session;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
+use App\Services\Checkout\CheckoutTotalsService;
+use App\Services\Discount\FreeSampleService;
 
 class CheckoutCartController extends Controller
 {
     public function __construct(
         protected CartService $cartService,
         protected CheckoutService $checkoutService,
-        protected FreeGiftService $freeGiftService
+        protected FreeGiftService $freeGiftService,
+        protected FreeSampleService $freeSampleService,
+        protected CheckoutTotalsService $checkoutTotalsService
     ) {
     }
 
@@ -220,7 +225,6 @@ class CheckoutCartController extends Controller
         return response()->json($result);
     }
 
-
     /**
      * Return the current checkout cart state.
      *
@@ -360,7 +364,6 @@ protected function resolveFreeGiftAfterCartChange(): array
         ];
     }
 
-
     /*
      * =========================================================
      * EXISTING FREE GIFTS
@@ -448,7 +451,6 @@ protected function resolveFreeGiftAfterCartChange(): array
         }
     }
 
-
     /*
      * =========================================================
      * FREE GIFT RULE MUST USE SUBTOTAL
@@ -459,7 +461,6 @@ protected function resolveFreeGiftAfterCartChange(): array
             'ShoppingCart.SubTotal',
             0
         );
-
 
     Log::info(
         'Free Gift Rule Before Resolve',
@@ -480,7 +481,6 @@ protected function resolveFreeGiftAfterCartChange(): array
         ]
     );
 
-
     /*
      * =========================================================
      * RESOLVE CURRENT RULE
@@ -498,13 +498,11 @@ protected function resolveFreeGiftAfterCartChange(): array
                 0
             );
 
-
     $newRuleId =
         (int) (
             $decision['rule']['id']
             ?? 0
         );
-
 
     /*
      * =========================================================
@@ -544,7 +542,6 @@ protected function resolveFreeGiftAfterCartChange(): array
             )
         );
 
-
     /*
      * =========================================================
      * REMOVE OLD FREE GIFT WHEN RULE CHANGES
@@ -565,7 +562,6 @@ protected function resolveFreeGiftAfterCartChange(): array
         $removedFreeGiftCount =
             $this->freeGiftService
                 ->removeAutoAddedFreeGifts();
-
 
         /*
          * -----------------------------------------------------
@@ -745,7 +741,6 @@ protected function resolveFreeGiftAfterCartChange(): array
             );
         }
 
-
         /*
          * -----------------------------------------------------
          * OLD GIFT REMOVED
@@ -761,7 +756,6 @@ protected function resolveFreeGiftAfterCartChange(): array
              */
             $this->checkoutService
                 ->refresh('cart');
-
 
             /*
              * Read FINAL cart again.
@@ -785,7 +779,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                             : []
                     );
 
-
             /*
              * Read SUBTOTAL again.
              *
@@ -796,7 +789,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                     'ShoppingCart.SubTotal',
                     0
                 );
-
 
             Log::info(
                 'Free Gift Rule Re-Resolve After Old Gift Removal',
@@ -814,7 +806,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                         count($cart),
                 ]
             );
-
 
             /*
              * -------------------------------------------------
@@ -836,7 +827,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                         0
                     );
 
-
             $decision[
                 'ruleChanged'
             ] = true;
@@ -847,7 +837,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                 $removedFreeGiftCount;
         }
     }
-
 
     /*
      * =========================================================
@@ -878,11 +867,9 @@ protected function resolveFreeGiftAfterCartChange(): array
             ]
         );
 
-
         $removed =
             $this->freeGiftService
                 ->removeAutoAddedFreeGifts();
-
 
         if (
             $removed > 0
@@ -890,7 +877,6 @@ protected function resolveFreeGiftAfterCartChange(): array
 
             $this->checkoutService
                 ->refresh('cart');
-
 
             $finalCart =
                 $this->cartService
@@ -911,7 +897,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                 $finalCart =
                     $finalCart['Cart'];
             }
-
 
             $decision[
                 'status'
@@ -940,7 +925,6 @@ protected function resolveFreeGiftAfterCartChange(): array
         }
     }
 
-
     /*
      * =========================================================
      * POPUP HTML
@@ -966,7 +950,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                 ]
                 : [];
 
-
         $popupGifts =
             array_map(
                 function ($gift) use (
@@ -977,7 +960,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                         is_array($gift)
                             ? $gift
                             : [];
-
 
                     $productId =
                         (int) (
@@ -996,12 +978,10 @@ protected function resolveFreeGiftAfterCartChange(): array
                             0
                         );
 
-
                     $gift[
                         'products_id'
                     ] =
                         $productId;
-
 
                     $gift[
                         'product_name'
@@ -1020,14 +1000,12 @@ protected function resolveFreeGiftAfterCartChange(): array
                         ??
                         '';
 
-
                     $gift['sku'] =
                         $gift['sku']
                         ??
                         $gift['SKU']
                         ??
                         '';
-
 
                     $gift[
                         'short_description'
@@ -1042,12 +1020,10 @@ protected function resolveFreeGiftAfterCartChange(): array
                         ??
                         '';
 
-
                     $gift['FoundSku'] =
                         $gift['FoundSku']
                         ??
                         'No';
-
 
                     $gift[
                         'free_gift_products_id'
@@ -1072,7 +1048,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                             0
                         );
 
-
                     $gift[
                         'freegift_add_count'
                     ] =
@@ -1094,7 +1069,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                             1
                         );
 
-
                     /*
                      * Legacy popup expects thumb_image.
                      */
@@ -1104,7 +1078,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                         ]
                         ??
                         null;
-
 
                     if (
                         empty($thumbImage)
@@ -1128,7 +1101,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                             );
                     }
 
-
                     if (
                         empty($thumbImage)
                         &&
@@ -1145,7 +1117,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                                 ->value(
                                     'image'
                                 );
-
 
                             if (
                                 !empty(
@@ -1184,7 +1155,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                         }
                     }
 
-
                     if (
                         empty(
                             $thumbImage
@@ -1197,19 +1167,16 @@ protected function resolveFreeGiftAfterCartChange(): array
                             );
                     }
 
-
                     $gift[
                         'thumb_image'
                     ] =
                         $thumbImage;
-
 
                     return $gift;
 
                 },
                 $popupGifts
             );
-
 
         $totalListItems =
             (int) (
@@ -1229,7 +1196,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                 ??
                 1
             );
-
 
         try {
 
@@ -1271,14 +1237,12 @@ protected function resolveFreeGiftAfterCartChange(): array
                 ]
             );
 
-
             $decision[
                 'popupHtml'
             ] =
                 '';
         }
     }
-
 
     /*
      * =========================================================
@@ -1301,7 +1265,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                 'eligibleGifts'
             ][0];
 
-
         $message =
             $this->freeGiftService
                 ->addGift(
@@ -1319,7 +1282,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                     ),
                     'No'
                 );
-
 
         if (
             $message === ''
@@ -1352,17 +1314,14 @@ protected function resolveFreeGiftAfterCartChange(): array
                 'message'
             ] = '';
 
-
             $this->checkoutService
                 ->refresh('cart');
-
 
             $decision[
                 'cart'
             ] =
                 $this->cartService
                     ->getCart();
-
 
             if (
                 is_array(
@@ -1414,7 +1373,6 @@ protected function resolveFreeGiftAfterCartChange(): array
         }
     }
 
-
     /*
      * =========================================================
      * FINAL CART
@@ -1434,7 +1392,6 @@ protected function resolveFreeGiftAfterCartChange(): array
             $this->cartService
                 ->getCart();
 
-
         if (
             is_array($finalCart)
             &&
@@ -1451,7 +1408,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                 $finalCart['Cart'];
         }
 
-
         $decision[
             'cart'
         ] =
@@ -1459,7 +1415,6 @@ protected function resolveFreeGiftAfterCartChange(): array
                 ? $finalCart
                 : [];
     }
-
 
     /*
      * =========================================================
@@ -1536,7 +1491,657 @@ protected function resolveFreeGiftAfterCartChange(): array
         ]
     );
 
-
     return $decision;
 }
+
+public function freeSamplePopup(Request $request)
+{
+    /*
+     * =========================================================
+     * Free Sample setting disabled
+     * =========================================================
+     */
+    if (
+        config('Settings.FREESAMPLE_VALUE') != 'Yes'
+    ) {
+
+        Log::info(
+            'FreeSamplePopupBlocked',
+            [
+                'reason' =>
+                    'FREESAMPLE_VALUE_NOT_YES',
+
+                'value' =>
+                    config(
+                        'Settings.FREESAMPLE_VALUE'
+                    ),
+            ]
+        );
+
+        $this->freeSampleService
+            ->removeSamples();
+
+        Session::forget(
+            'ShoppingCart.FreeSamplePendingRule'
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'html' => '',
+        ]);
+    }
+
+
+    /*
+     * =========================================================
+     * Store users cannot get Free Samples
+     * =========================================================
+     */
+    if (
+        Auth::guard('store')->check()
+    ) {
+        return response()->json([
+            'status' => 'success',
+            'html' => '',
+        ]);
+    }
+
+
+    /*
+     * =========================================================
+     * Get current cart
+     * =========================================================
+     */
+    $cart = Session::get(
+        'ShoppingCart.Cart',
+        []
+    );
+
+
+    /*
+     * =========================================================
+     * Free Gift conflict
+     *
+     * Preserve existing behavior:
+     * If Free Gift already exists in cart,
+     * do not show Free Sample popup.
+     * =========================================================
+     */
+    foreach (
+        $cart as $cartItem
+    ) {
+
+        if (
+            isset(
+                $cartItem['IS_Free_Gift']
+            )
+            &&
+            $cartItem['IS_Free_Gift'] == 'Yes'
+        ) {
+            return response()->json([
+                'status' => 'success',
+                'html' => '',
+            ]);
+        }
+    }
+
+
+    /*
+     * =========================================================
+     * Calculate Free Sample eligibility value
+     * =========================================================
+     */
+    $subTotal =
+        NumberFormat(
+            Session::get(
+                'ShoppingCart.SubTotal',
+                0
+            )
+        );
+
+
+    $totalDiscount =
+        (float) $this->checkoutTotalsService
+            ->getTotal('discount');
+
+
+    $giftCertiTotal =
+        NumberFormat(
+            Session::get(
+                'ShoppingCart.GiftCertiTotal',
+                0
+            )
+        );
+
+
+    /*
+     * DiscountService total contains GiftCoupon.
+     *
+     * Remove Gift Certificate from the discount amount
+     * first so that we know the actual non-Gift-Certificate
+     * discount.
+     */
+    $actualDiscount =
+        max(
+            0,
+            $totalDiscount
+            - $giftCertiTotal
+        );
+
+
+    /*
+     * Free Sample eligibility amount.
+     *
+     * Do NOT subtract GiftCertiTotal again here.
+     */
+    $totalValue =
+        max(
+            0,
+            $subTotal
+            - $actualDiscount
+        );
+
+
+    Log::info(
+        'FREE_SAMPLE_DEBUG',
+        [
+            'subTotal' =>
+                $subTotal,
+
+            'totalDiscount' =>
+                $totalDiscount,
+
+            'giftCertiTotal' =>
+                $giftCertiTotal,
+
+            'totalValue' =>
+                $totalValue,
+        ]
+    );
+
+
+    /*
+     * Detailed eligibility log.
+     */
+    Log::info(
+        'FreeSamplePopupEligibility',
+        [
+            'subTotal' =>
+                $subTotal,
+
+            'totalDiscountFromCheckout' =>
+                $totalDiscount,
+
+            'giftCertiTotal' =>
+                $giftCertiTotal,
+
+            'actualDiscount' =>
+                $actualDiscount,
+
+            'totalValue' =>
+                $totalValue,
+        ]
+    );
+
+
+    /*
+     * =========================================================
+     * Wholesaler / Dropshipper exclusion
+     * =========================================================
+     */
+    if (
+        strtolower(
+            trim(
+                Session::get(
+                    'eusertype',
+                    ''
+                )
+            )
+        ) == 'wholesaler'
+        ||
+        trim(
+            Session::get(
+                'is_dropshipper',
+                ''
+            )
+        ) == 'Yes'
+    ) {
+        return response()->json([
+            'status' => 'success',
+            'html' => '',
+        ]);
+    }
+
+
+    /*
+     * =========================================================
+     * Shipping-cart checkout must be enabled
+     * =========================================================
+     */
+    if (
+        config(
+            'Settings.CHECKOUT_SHOIPPINGCART'
+        ) != 'Yes'
+        ||
+        $totalValue <= 0
+    ) {
+
+        $this->freeSampleService
+            ->removeSamples();
+
+        Session::forget(
+            'ShoppingCart.FreeSamplePendingRule'
+        );
+
+        Log::info(
+            'FreeSamplePopupBlocked',
+            [
+                'reason' =>
+                    'CHECKOUT_DISABLED_OR_ZERO_TOTAL',
+
+                'totalValue' =>
+                    $totalValue,
+            ]
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'html' => '',
+        ]);
+    }
+
+
+    /*
+     * =========================================================
+     * Current Free Sample count
+     * =========================================================
+     */
+    $totalFreeSampleItems = 0;
+
+    foreach (
+        $cart as $cartItem
+    ) {
+
+        if (
+            isset(
+                $cartItem['Is_Free_Sample']
+            )
+            &&
+            $cartItem['Is_Free_Sample'] == 'Yes'
+        ) {
+
+            $totalFreeSampleItems +=
+                (int) (
+                    $cartItem['Qty']
+                    ?? 1
+                );
+        }
+    }
+
+
+    /*
+     * =========================================================
+     * Get products for the applicable Free Sample rule
+     * =========================================================
+     */
+    $sampleProducts =
+        $this->freeSampleService
+            ->getSampleProductsPopup(
+                $totalValue,
+                $totalFreeSampleItems
+            );
+
+
+    /*
+     * =========================================================
+     * No matching Free Sample rule/products
+     * =========================================================
+     */
+    if (
+        empty($sampleProducts)
+    ) {
+
+        Log::info(
+            'FreeSamplePopupBlocked',
+            [
+                'reason' =>
+                    'NO_SAMPLE_PRODUCTS',
+
+                'totalValue' =>
+                    $totalValue,
+
+                'totalFreeSampleItems' =>
+                    $totalFreeSampleItems,
+            ]
+        );
+
+        if (
+            $totalFreeSampleItems > 0
+        ) {
+            $this->freeSampleService
+                ->removeSamples();
+        }
+
+        Session::forget(
+            'ShoppingCart.FreeSamplePendingRule'
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'html' => '',
+        ]);
+    }
+
+
+    /*
+     * =========================================================
+     * Current applicable Free Sample rule
+     * =========================================================
+     */
+    $currentRuleStart =
+        (float) (
+            $sampleProducts[0][
+                'free_sample_rule_start'
+            ]
+            ?? 0
+        );
+
+    $currentRuleEnd =
+        (float) (
+            $sampleProducts[0][
+                'free_sample_rule_end'
+            ]
+            ?? 0
+        );
+
+
+    /*
+     * =========================================================
+     * Detect existing Free Sample rule
+     *
+     * Example:
+     *
+     * Existing:
+     *     201 - 300
+     *
+     * New eligibility:
+     *     186
+     *
+     * Current rule:
+     *     100 - 200
+     *
+     * Therefore:
+     *
+     *     201 - 300 != 100 - 200
+     *
+     * Old samples must be removed.
+     * =========================================================
+     */
+    $existingFreeSample = null;
+
+    foreach (
+        $cart as $cartItem
+    ) {
+
+        if (
+            isset(
+                $cartItem['Is_Free_Sample']
+            )
+            &&
+            $cartItem['Is_Free_Sample'] == 'Yes'
+        ) {
+
+            $existingFreeSample =
+                $cartItem;
+
+            break;
+        }
+    }
+
+
+    $oldRuleStart =
+        $existingFreeSample[
+            'FreeSampleRuleStart'
+        ]
+        ?? null;
+
+
+    $oldRuleEnd =
+        $existingFreeSample[
+            'FreeSampleRuleEnd'
+        ]
+        ?? null;
+
+
+    $ruleChanged =
+        $existingFreeSample !== null
+        &&
+        $oldRuleStart !== null
+        &&
+        $oldRuleEnd !== null
+        &&
+        (
+            (float) $oldRuleStart !==
+            $currentRuleStart
+
+            ||
+
+            (float) $oldRuleEnd !==
+            $currentRuleEnd
+        );
+
+
+    Log::info(
+        'FREE_SAMPLE_RULE_CHANGE_CHECK',
+        [
+            'totalValue' =>
+                $totalValue,
+
+            'oldRuleStart' =>
+                $oldRuleStart,
+
+            'oldRuleEnd' =>
+                $oldRuleEnd,
+
+            'currentRuleStart' =>
+                $currentRuleStart,
+
+            'currentRuleEnd' =>
+                $currentRuleEnd,
+
+            'ruleChanged' =>
+                $ruleChanged,
+        ]
+    );
+
+
+    /*
+     * =========================================================
+     * Rule changed
+     *
+     * Remove ONLY old Free Samples.
+     * Normal cart products remain untouched.
+     * =========================================================
+     */
+    if (
+        $ruleChanged
+    ) {
+
+        Log::info(
+            'FREE_SAMPLE_RULE_CHANGED',
+            [
+                'totalValue' =>
+                    $totalValue,
+
+                'oldRuleStart' =>
+                    $oldRuleStart,
+
+                'oldRuleEnd' =>
+                    $oldRuleEnd,
+
+                'newRuleStart' =>
+                    $currentRuleStart,
+
+                'newRuleEnd' =>
+                    $currentRuleEnd,
+            ]
+        );
+
+
+        /*
+         * Remove old Free Samples.
+         */
+        $this->freeSampleService
+            ->removeSamples();
+
+
+        /*
+         * Store the new rule.
+         *
+         * addSample() will read this rule and store it
+         * against the newly selected Free Samples.
+         */
+        Session::put(
+            'ShoppingCart.FreeSamplePendingRule',
+            [
+                'start' =>
+                    $currentRuleStart,
+
+                'end' =>
+                    $currentRuleEnd,
+            ]
+        );
+
+
+        /*
+         * Old samples are now removed.
+         */
+        $totalFreeSampleItems = 0;
+    }
+
+
+    /*
+     * =========================================================
+     * Customer choice
+     * =========================================================
+     */
+    $customerChoice =
+        (int) (
+            $sampleProducts[0][
+                'customer_choice'
+            ]
+            ?? 0
+        );
+
+
+    Log::info(
+        'FreeSamplePopupCustomerChoice',
+        [
+            'customerChoice' =>
+                $customerChoice,
+
+            'totalFreeSampleItems' =>
+                $totalFreeSampleItems,
+
+            'totalValue' =>
+                $totalValue,
+
+            'currentRuleStart' =>
+                $currentRuleStart,
+
+            'currentRuleEnd' =>
+                $currentRuleEnd,
+
+            'ruleChanged' =>
+                $ruleChanged,
+        ]
+    );
+
+
+    /*
+     * =========================================================
+     * Show Free Sample popup
+     *
+     * If rule changed, totalFreeSampleItems was reset to 0,
+     * therefore the popup will be shown for the new rule.
+     *
+     * Existing behavior is preserved when rule has not changed.
+     * =========================================================
+     */
+    if (
+        $customerChoice > 0
+        &&
+        $totalFreeSampleItems
+            != $customerChoice
+    ) {
+
+        /*
+         * Store the rule for addSample().
+         *
+         * This also covers the normal case where there are
+         * no existing Free Samples and the popup is shown.
+         */
+        Session::put(
+            'ShoppingCart.FreeSamplePendingRule',
+            [
+                'start' =>
+                    $currentRuleStart,
+
+                'end' =>
+                    $currentRuleEnd,
+            ]
+        );
+
+
+        $data = [
+            'TotalListItems' =>
+                $customerChoice,
+
+            'Free_Sample_Products' =>
+                $sampleProducts,
+        ];
+
+
+        $html =
+            view(
+                'popup.freesample-popup',
+                $data
+            )->render();
+
+
+        return response()->json([
+            'status' => 'success',
+            'html' => $html,
+        ]);
+    }
+
+
+    /*
+     * =========================================================
+     * No popup required
+     * =========================================================
+     */
+    return response()->json([
+        'status' => 'success',
+        'html' => '',
+    ]);
+}
+
+public function freeSampleAdd(Request $request)
+{
+    $productsId = $request->input('products_id');
+
+    $message = $this->freeSampleService->addSample(
+        $productsId
+    );
+
+    $this->checkoutService->refresh();
+
+    return response()->json([
+        'success' => true,
+        'message' => $message,
+    ]);
+}
+
+
 }

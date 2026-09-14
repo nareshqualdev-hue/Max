@@ -10,12 +10,16 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Log;
+use App\Services\Discount\FreeSampleService;
 class CheckoutDiscountController extends Controller
 {
     public function __construct(
         protected CouponService $couponService,
-        protected CheckoutService $checkoutService
+        protected CheckoutService $checkoutService,
+        protected FreeSampleService $freeSampleService
     ) {
+		   $this->freeSampleService = $freeSampleService;
+
     }
 
     /**
@@ -110,12 +114,38 @@ class CheckoutDiscountController extends Controller
              *
              * CheckoutService remains the central orchestrator.
              */
+             
+            $cartBeforeCoupon = Session::get(
+				'ShoppingCart.Cart',
+				[]
+			);
+
+			$freeSampleItems = [];
+
+			foreach ($cartBeforeCoupon as $item) {
+				if (
+					is_array($item)
+					&&
+					($item['Is_Free_Sample'] ?? 'No') === 'Yes'
+				) {
+					$freeSampleItems[] = $item;
+				}
+			} 
             $checkout =
                 $this->checkoutService
                     ->refresh(
                         'discount'
                     );
+			
+			$freeSampleRuleChanged = false;
 
+			if (!empty($freeSampleItems)) {
+				$freeSampleRuleChanged =
+					$this->freeSampleService
+						->syncFreeSamplesAfterCartMutation(
+							$freeSampleItems
+						);
+			}
             return response()->json([
                 'status' => 'success',
                 'error' => 0,
@@ -124,6 +154,8 @@ class CheckoutDiscountController extends Controller
                     ?? 'Coupon applied successfully.',
                 'discount' => $result,
                 'checkout' => $checkout,
+                'free_sample_rule_changed' =>
+					$freeSampleRuleChanged,
                 'totals' =>
                     $checkout['totals']
                     ?? [],

@@ -27,12 +27,12 @@ use App\Http\Controllers\TestController;
 use App\Http\Controllers\BlogController;
 use App\Http\Controllers\PhoneOrderController;
 use App\Http\Controllers\TempUserController;
+//POS Start
 use App\Http\Controllers\POSController;
 use App\Http\Middleware\POSMaintainMode;
 use App\Http\Controllers\POSAdmController;
 use App\Http\Controllers\StripeTerminalController;
 use App\Http\Controllers\POSConnecterController;
-
 
 use App\Http\Controllers\Checkout\CheckoutController;
 use App\Http\Controllers\Checkout\CheckoutCartController;
@@ -71,12 +71,18 @@ Route::prefix('checkoutnew')->group(function () {
     | Checkout
     |--------------------------------------------------------------------------
     */
-
+	Route::post(
+    '/free-sample/popup',
+    [CheckoutCartController::class, 'freeSamplePopup']
+);
+Route::post(
+    '/free-sample/add',
+    [CheckoutCartController::class, 'freeSampleAdd']
+);
     Route::get('/', [
         CheckoutController::class,
         'index'
     ])->name('checkoutnew.index');
-
 
     /*
     |--------------------------------------------------------------------------
@@ -112,7 +118,6 @@ Route::prefix('checkoutnew')->group(function () {
         ])->name('checkoutnew.cart.summary');
     });
 
-
     /*
     |--------------------------------------------------------------------------
     | Totals
@@ -124,7 +129,6 @@ Route::prefix('checkoutnew')->group(function () {
         'calculate'
     ])->name('checkoutnew.totals');
 
-
     /*
     |--------------------------------------------------------------------------
     | Address
@@ -135,7 +139,6 @@ Route::prefix('checkoutnew')->group(function () {
         CheckoutAddressController::class,
         'update'
     ])->name('checkoutnew.address.update');
-
 
     /*
     |--------------------------------------------------------------------------
@@ -173,7 +176,6 @@ Route::prefix('checkoutnew')->group(function () {
         'setGiftWrapping'
     ])->name('checkoutnew.gift-wrapping');
 
-
     /*
     |--------------------------------------------------------------------------
     | Discount
@@ -195,7 +197,6 @@ Route::prefix('checkoutnew')->group(function () {
         'removeYotpoReward'
     ])->name('checkoutnew.discount.remove-yotpo-reward');
 
-
     /*
     |--------------------------------------------------------------------------
     | Payment
@@ -208,6 +209,7 @@ Route::prefix('checkoutnew')->group(function () {
     ])->name('checkoutnew.payment.availability');
 
 });;
+
 Route::get('/clear-cache', function() {
    $exitCode = Artisan::call('cache:clear');
 });
@@ -218,6 +220,7 @@ Route::get('/clear-view', function() {
 
 /** Homepage Module Start **/
 Route::get('/', [HomeController::class,'index'])->name('home');
+Route::get('/newhome', [HomeController::class,'Home26'])->name('home26');
 Route::get('/homepagebanners', [HomeController::class,'HomePageBanners']);
 /** Homepage Module End **/
 
@@ -560,6 +563,8 @@ return redirect('/p4u/key-Roja/view', 301);
 
 Route::get('/usr', [TempUserController::class, 'index']);
 
+Route::get('/product-list-new', [ProductController::class,'ProductList26'])->where('filters', '(.*)')->name('product-list26');
+
 Route::get('/{category_name}/{category_name1}/p4u/cid-{category_id}/{filters?}', [ProductController::class,'ProductList'])->where('filters', '(.*)')->name('product-list1');
 Route::get('/{category_name}/p4u/cid-{category_id}/{filters?}', [ProductController::class,'ProductList'])->where('filters', '(.*)')->name('product-list2');
 Route::get('/{category_name}/p4u/cid-{category_id}/{filters?}', [ProductController::class,'ProductList'])->where('filters', '(.*)')->name('product-list3');
@@ -643,8 +648,6 @@ Route::post('/checkcoupontoredeem',[ShoppingcartController::class,'CheckCouponTo
 
 /** One Page Checkout - Shipping **/
 
-
-
 Route::post('/checkout/{method?}',[ShoppingcartController::class,'CheckoutPage'])->name('billing');
 Route::get('/checkout/{method?}',[ShoppingcartController::class,'CheckoutPage'])->name('billing');
 Route::match(['get', 'post'],'/shipping',[ShoppingcartController::class,'ShippingMethods'])->name('billing-shipping');
@@ -671,7 +674,6 @@ Route::get('/secure-checkout',[ShoppingcartController::class,'CheckoutPageNew'])
 Route::post('/secure-checkout1/{method?}', [CheckoutController::class, 'index'])->name('checkout-new');
 Route::get('/secure-checkout1/{method?}', [CheckoutController::class, 'index'])->name('checkout-new');
 
-
 Route::post(
     '/checkoutnew/shipping-insurance',
     [CheckoutShippingController::class, 'setShippingInsurance']
@@ -681,8 +683,6 @@ Route::post(
     '/checkoutnew/shipping-signature',
     [CheckoutShippingController::class, 'setShippingSignature']
 )->name('checkoutnew.shipping.signature');
-
-
 
 Route::post(
     '/checkoutnew/shipping-methods',
@@ -750,6 +750,11 @@ Route::post('/applepaylogupdate',[ShoppingcartController::class,'updateApplePayL
 Route::post('/paypalordercollect',[ShoppingcartController::class,'PaypalOrderCollect']);
 Route::post('/dopaymentpaypalpdp',[PaypalController::class,'DoPaymentPaypalPDP']);
 Route::post('/dopaymentpaypal',[PaypalController::class,'DoPaymentPaypal']);
+
+/* New Paypal Routes */
+Route::post('/prepare-paypal-cart',[CheckoutController::class,'PreparePaypalCart']);
+Route::post('/paypal-update',[CheckoutController::class,'CheckoutPaypalUpdate']);
+/* New Paypal Routes */
 
 Route::post('/stripe/placeorder',[StripeController::class,'SetStripe']);
 //Route::get('/stripe/placeorder',[StripeController::class,'SetStripe']);
@@ -1027,8 +1032,6 @@ Route::get('/luxury-edit', [LandingpageController::class,'LuxuryEdit']);
 
 /* New Checkout */
 
-
-
 Route::post(
     '/checkout/gift-certificate',
     [CheckoutShippingController::class, 'setGiftCertificate']
@@ -1057,4 +1060,14 @@ Route::post(
 )->name('checkout.discount.remove-yotpo-reward');
 /** One Page Checkout - Discount End **/
 
+//New Stripe Integration
+Route::get('/checkout/payment/stripe/config',[CheckoutController::class,'stripeConfig'])->name('checkout.payment.stripe.config');
+Route::post('/checkout/payment/stripe/pay',[CheckoutController::class,'stripePay'])->name('checkout.payment.stripe.pay');
+Route::post('/checkout/payment/stripe/verify',[CheckoutController::class,'stripeVerify'])->name('checkout.payment.stripe.verify');
+Route::get('/checkout/payment/stripe/return',[CheckoutController::class,'stripeReturn'])->name('checkout.payment.stripe.return');
+
+Route::post('/checkout/order/create',[CheckoutController::class,'MaxOrder'])->name('checkout.order.create');
+Route::post('/checkout/order/update',[CheckoutController::class,'UpdateOrder'])->name('checkout.order.update');
+Route::post('/checkout/order/dropshipper',[CheckoutController::class,'DropshipperDetails'])->name('checkout.order.dropshipper');
+//New Stripe Integration
 

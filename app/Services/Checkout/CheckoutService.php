@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Auth;
 use App\Services\Cart\CartCalculatorService;
 use Illuminate\Support\Facades\Log;
 
+use App\Models\Customer;
 class CheckoutService
 {
     public function __construct(
@@ -132,17 +133,8 @@ class CheckoutService
 		 * - Below minimum => redirect to Shopping Cart.
 		 * ---------------------------------------------------------
 		 */
-		if (
-			$normalUser
-			&&
-			($normalUser->is_dropshipper ?? 'No') != 'Yes'
-			&&
-			strtolower(
-				trim(
-					$normalUser->eusertype ?? ''
-				)
-			) === 'wholesaler'
-		) {
+		if($normalUser && ($normalUser->is_dropshipper ?? 'No') != 'Yes' && strtolower(trim($normalUser->eusertype ?? '')) === 'wholesaler')
+        {
 			$orderSubTotal =
 				(float) Session::get(
 					'ShoppingCart.SubTotal',
@@ -167,7 +159,9 @@ class CheckoutService
 				];
 			}
 		}
-        if ($normalUser) {
+        if($normalUser)
+        {
+
             $billingAddress = Session::get(
                 'ShoppingCart.BillingAddress',
                 []
@@ -253,6 +247,7 @@ class CheckoutService
             'CSSFILES' => [
                 'components.css',
                 'checkout-new.css',
+               
             ],
 
             'JSFILES' => [
@@ -281,6 +276,101 @@ class CheckoutService
         ];
     }
 
+    public function setShippingBillingAddress(
+        array $shipaddress = [],
+        array $billaddress = [],
+        string $billasship = 'Y'
+    ): array {
+
+        $shippingAddress =
+            $this->resolveAddress(
+                $shipaddress,
+                'Shipping'
+            );
+
+        Session::put('ShoppingCart.ShippingAddress',$shipaddress);
+
+        $billingAddress =
+            $this->resolveAddress(
+                $billaddress,
+                'Billing'
+            );
+
+        if($billasship == 'Y')
+        {
+            Session::put('ShoppingCart.BillingAddress',$shippingAddress);
+        } else {
+            Session::put('ShoppingCart.BillingAddress',$billingAddress);
+        }
+       return ['status' => 'success'];
+    }
+
+    protected function resolveAddress(
+        array $address,
+        string $type
+    ): array {
+        return [
+            'country' =>
+                trim(
+                    $address['country']
+                    ??
+                    Session::get(
+                        'ShoppingCart.'.$type.'Address.country',
+                        ''
+                    )
+                ),
+
+            'state' =>
+                trim(
+                    $address['state']
+                    ??
+                    Session::get(
+                        'ShoppingCart.'.$type.'Address.state',
+                        ''
+                    )
+                ),
+
+            'zip' =>
+                trim(
+                    $address['zip']
+                    ??
+                    Session::get(
+                        'ShoppingCart.'.$type.'Address.zip',
+                        ''
+                    )
+                ),
+
+            'city' =>
+                trim(
+                    $address['city']
+                    ??
+                    Session::get(
+                        'ShoppingCart.'.$type.'Address.city',
+                        ''
+                    )
+                ),
+
+            'address1' =>
+                trim(
+                    $address['address1']
+                    ??
+                    Session::get(
+                        'ShoppingCart.'.$type.'Address.address1',
+                        ''
+                    )
+                ),
+
+            'address2' =>
+                trim(
+                    $address['address2']
+                    ??
+                    Session::get(
+                        'ShoppingCart.'.$type.'Address.address2',
+                        ''
+                    )
+                ),
+        ];
+    }
     /**
      * Prepare the ShippingAddress used by the checkout Blade.
      * Existing session data always wins.
@@ -413,7 +503,7 @@ class CheckoutService
 					'ShoppingCart.AutoDiscount',
 					0
 				);
-	
+
         $this->cartCalculatorService
             ->calculateSubTotal();
 
@@ -520,7 +610,6 @@ if (
  * disabled Insurance back ON.
  */
 
-
 	if (
 		($cartAttributes['onlyGCPurchased'] ?? 0) != 1
 	) {
@@ -585,6 +674,7 @@ if (
                     )
                 );
 
+        //$dropshipperDetails = $this->GetDropshipperDetails();
         /*
          * ---------------------------------------------------------
          * 7. Final response
@@ -592,16 +682,10 @@ if (
          */
         $result = [
             'status' => 'success',
-
-            'cartAttributes' =>
-                $cartAttributes,
-
-            'paymentAvailability' =>
-                $paymentAvailability,
-
-            'totals' =>
-                $totals,
-
+            'cartAttributes' => $cartAttributes,
+            'paymentAvailability' => $paymentAvailability,
+            'totals' => $totals,
+            //'dropshipperDetails' => $dropshipperDetails,
             /*
              * Preserve the currently applied Gift Certificate
              * in the checkout AJAX response so the frontend can
@@ -855,9 +939,11 @@ if (
                  *
                  * Existing TaxService/business rules are unchanged.
                  */
-                $this->calculateTax(
-                    $cartAttributes
-                );
+
+                 $this->recalculateCouponAndTax(
+					$cartAttributes
+				);
+
             }
 
             /*
@@ -1658,7 +1744,6 @@ public function refreshAfterShippingMethod(
     Session::forget(
         'ShoppingCart.ShippingSignature'
     );
-
     /*
      * ---------------------------------------------------------
      * 5. Gift Certificate only cart.
@@ -1701,7 +1786,7 @@ public function refreshAfterShippingMethod(
          * Existing logic retained.
          * -----------------------------------------------------
          */
-        
+
         $this->shippingSignatureService
             ->sync();
 
@@ -1712,7 +1797,7 @@ public function refreshAfterShippingMethod(
          * EXISTING LOGIC - DO NOT CHANGE.
          * -----------------------------------------------------
          */
-        
+
         /*
          * -----------------------------------------------------
          * 8. Tax.
@@ -1726,7 +1811,6 @@ public function refreshAfterShippingMethod(
         if (
 				($cartAttributes['onlyGCPurchased'] ?? 0) != 1
 			) {
-				
 
 				$this->recalculateCouponAndTax(
     $cartAttributes,$address
@@ -1741,7 +1825,7 @@ $insurance =
             $this->shippingInsuranceService
                 ->calculate(
                     'add'
-                ); 
+                );
     /*
      * ---------------------------------------------------------
      * 9. Final totals.
@@ -1911,11 +1995,11 @@ protected function resolveOrderTotal(
                 'ShoppingCart.ShippingAddress',
                 []
             );
-		
-		    
-		
-		
-		
+		$insurance =
+            $this->shippingInsuranceService
+                ->calculate(
+                    'add'
+                );
         /*
          * If BillingAsShipping is used, preserve the existing
          * checkout behavior by resolving the address accordingly.
@@ -1963,7 +2047,7 @@ protected function resolveOrderTotal(
         $city =
             $taxContext['city']
             ?? '';
-		
+
 		Log::info(
             'calculateTax',
             [
@@ -1981,7 +2065,7 @@ protected function resolveOrderTotal(
                     . $city
             ]
         );
-				
+
         /*
          * No address = no tax calculation yet.
          *
@@ -2272,173 +2356,105 @@ protected function recalculateCouponAndTax(
     array $cartAttributes,
      array $taxContext = []
 ): void {
-	
 
+    $isPayPalSubTotal =
+        $taxContext['isPayPalSubTotal'] ?? 0;
 
-
-$isPayPalSubTotal =
-    $taxContext['isPayPalSubTotal'] ?? 0;
-
-$shippingChargePayPalProductPage =
-    $taxContext['shippingChargePayPalProductPage'] ?? 0;
-    $couponCode = trim(
-        (string) Session::get(
-            'ShoppingCart.PromoCoupon.CouponCode',
-            ''
-        )
-    );
-    
-    $ShippingAddress = Session::get('ShoppingCart.ShippingAddress'); 
-    //echo "<pre>"; print_r($ShippingAddress); exit;
-    
-		if (empty($taxContext['country'])) {
-		$taxContext['country'] = $ShippingAddress['country'] ?? '';
-		}
-
-		if (empty($taxContext['state'])) {
-			$taxContext['state'] = $ShippingAddress['state'] ?? '';
-		}
-
-		if (empty($taxContext['zip'])) {
-			$taxContext['zip'] = $ShippingAddress['zip'] ?? '';
-		}
-
-		if (empty($taxContext['city'])) {
-			$taxContext['city'] = $ShippingAddress['city'] ?? '';
-		}
-    	
-   
-
-	 
-	
-	
-	
-    /*
-     * No active coupon.
-     */
-    if ($couponCode === '') {
-        $this->calculateTax($cartAttributes,$taxContext);
-
-        return;
-    }
-
-    /*
-     * First coupon calculation.
-     *
-     * This also gives us the coupon configuration,
-     * including count_ship_tax.
-     */
-    $couponResult = $this->couponService->apply(
-        $couponCode,
-        (int) Session::get(
-            'sess_icustomerid',
-            0
-        )
-    );
-
-    /*
-     * Invalid / unavailable coupon.
-     */
-    if (
-        ($couponResult['error'] ?? 1) !== 0
-    ) {
-        $this->calculateTax($cartAttributes,$taxContext);
-
-        return;
-    }
-
-    /*
-     * ---------------------------------------------------------
-     * count_ship_tax != 1
-     * ---------------------------------------------------------
-     *
-     * No Coupon <-> Tax circular dependency.
-     *
-     * Keep the normal existing flow.
-     */
-    if (
-        (string) (
-            $couponResult['count_ship_tax'] ?? ''
-        ) !== '1'
-    ) {
-        $this->calculateTax(
-            $cartAttributes,$taxContext
-        );
-
-        return;
-    }
-
-    /*
-     * ---------------------------------------------------------
-     * count_ship_tax = 1
-     * ---------------------------------------------------------
-     *
-     * Coupon uses Tax and Tax uses Coupon Discount.
-     *
-     * Resolve the dependency by iterating until both values
-     * become stable.
-     */
-
-    $previousCouponDiscount =
-        (float) (
-            $couponResult['discount']
-            ??
-            Session::get(
-                'ShoppingCart.PromoCoupon.FirstCouponDiscount',
-                Session::get(
-                    'ShoppingCart.PromoCoupon.CouponDiscount',
-                    0
-                )
+    $shippingChargePayPalProductPage =
+        $taxContext['shippingChargePayPalProductPage'] ?? 0;
+        $couponCode = trim(
+            (string) Session::get(
+                'ShoppingCart.PromoCoupon.CouponCode',
+                ''
             )
         );
 
-    $previousTax =
-        (float) Session::get(
-            'ShoppingCart.Tax',
-            0
+        $ShippingAddress = Session::get('ShoppingCart.ShippingAddress');
+        //echo "<pre>"; print_r($ShippingAddress); exit;
+
+            if (empty($taxContext['country'])) {
+            $taxContext['country'] = $ShippingAddress['country'] ?? '';
+            }
+
+            if (empty($taxContext['state'])) {
+                $taxContext['state'] = $ShippingAddress['state'] ?? '';
+            }
+
+            if (empty($taxContext['zip'])) {
+                $taxContext['zip'] = $ShippingAddress['zip'] ?? '';
+            }
+
+            if (empty($taxContext['city'])) {
+                $taxContext['city'] = $ShippingAddress['city'] ?? '';
+            }
+
+        /*
+        * No active coupon.
+        */
+        if ($couponCode === '') {
+            $this->calculateTax($cartAttributes,$taxContext);
+
+            return;
+        }
+
+        /*
+        * First coupon calculation.
+        *
+        * This also gives us the coupon configuration,
+        * including count_ship_tax.
+        */
+        $couponResult = $this->couponService->apply(
+            $couponCode,
+            (int) Session::get(
+                'sess_icustomerid',
+                0
+            )
         );
 
-    /*
-     * Maximum 5 iterations.
-     */
-    for (
-        $iteration = 1;
-        $iteration <= 5;
-        $iteration++
-    ) {
+        /*
+        * Invalid / unavailable coupon.
+        */
+        if (
+            ($couponResult['error'] ?? 1) !== 0
+        ) {
+            $this->calculateTax($cartAttributes,$taxContext);
+
+            return;
+        }
 
         /*
-         * -----------------------------------------------------
-         * 1. Recalculate Coupon using current Tax
-         * -----------------------------------------------------
-         *
-         * Existing CouponService logic remains untouched.
-         *
-         * This preserves:
-         * - Order Amount
-         * - SKU
-         * - Category
-         * - Brand
-         * - Excluded SKU
-         * - Pocket Perfume
-         * - Deal of Week
-         * - Gift Certificate
-         * - Free Shipping
-         * - Free Gift
-         */
-        $couponResult =
-            $this->couponService->apply(
-                $couponCode,
-                (int) Session::get(
-                    'sess_icustomerid',
-                    0
-                )
+        * ---------------------------------------------------------
+        * count_ship_tax != 1
+        * ---------------------------------------------------------
+        *
+        * No Coupon <-> Tax circular dependency.
+        *
+        * Keep the normal existing flow.
+        */
+        if (
+            (string) (
+                $couponResult['count_ship_tax'] ?? ''
+            ) !== '1'
+        ) {
+            $this->calculateTax(
+                $cartAttributes,$taxContext
             );
 
+            return;
+        }
+
         /*
-         * Read fresh coupon discount.
-         */
-        $currentCouponDiscount =
+        * ---------------------------------------------------------
+        * count_ship_tax = 1
+        * ---------------------------------------------------------
+        *
+        * Coupon uses Tax and Tax uses Coupon Discount.
+        *
+        * Resolve the dependency by iterating until both values
+        * become stable.
+        */
+
+        $previousCouponDiscount =
             (float) (
                 $couponResult['discount']
                 ??
@@ -2451,67 +2467,162 @@ $shippingChargePayPalProductPage =
                 )
             );
 
-        /*
-         * -----------------------------------------------------
-         * 2. Recalculate Tax using fresh Coupon Discount
-         * -----------------------------------------------------
-         */
-        $this->calculateTax(
-            $cartAttributes,$taxContext
-        );
-
-        $currentTax =
+        $previousTax =
             (float) Session::get(
                 'ShoppingCart.Tax',
                 0
             );
 
         /*
-         * -----------------------------------------------------
-         * 3. Check whether Coupon + Tax are stable
-         * -----------------------------------------------------
-         */
-        if (
-            abs(
-                $currentCouponDiscount
-                -
-                $previousCouponDiscount
-            ) < 0.01
-            &&
-            abs(
-                $currentTax
-                -
-                $previousTax
-            ) < 0.01
+        * Maximum 5 iterations.
+        */
+        for (
+            $iteration = 1;
+            $iteration <= 5;
+            $iteration++
         ) {
-            break;
+
+            /*
+            * -----------------------------------------------------
+            * 1. Recalculate Coupon using current Tax
+            * -----------------------------------------------------
+            *
+            * Existing CouponService logic remains untouched.
+            *
+            * This preserves:
+            * - Order Amount
+            * - SKU
+            * - Category
+            * - Brand
+            * - Excluded SKU
+            * - Pocket Perfume
+            * - Deal of Week
+            * - Gift Certificate
+            * - Free Shipping
+            * - Free Gift
+            */
+            $couponResult =
+                $this->couponService->apply(
+                    $couponCode,
+                    (int) Session::get(
+                        'sess_icustomerid',
+                        0
+                    )
+                );
+
+            /*
+            * Read fresh coupon discount.
+            */
+            $currentCouponDiscount =
+                (float) (
+                    $couponResult['discount']
+                    ??
+                    Session::get(
+                        'ShoppingCart.PromoCoupon.FirstCouponDiscount',
+                        Session::get(
+                            'ShoppingCart.PromoCoupon.CouponDiscount',
+                            0
+                        )
+                    )
+                );
+
+            /*
+            * -----------------------------------------------------
+            * 2. Recalculate Tax using fresh Coupon Discount
+            * -----------------------------------------------------
+            */
+            $this->calculateTax(
+                $cartAttributes,$taxContext
+            );
+
+            $currentTax =
+                (float) Session::get(
+                    'ShoppingCart.Tax',
+                    0
+                );
+
+            /*
+            * -----------------------------------------------------
+            * 3. Check whether Coupon + Tax are stable
+            * -----------------------------------------------------
+            */
+            if (
+                abs(
+                    $currentCouponDiscount
+                    -
+                    $previousCouponDiscount
+                ) < 0.01
+                &&
+                abs(
+                    $currentTax
+                    -
+                    $previousTax
+                ) < 0.01
+            ) {
+                break;
+            }
+
+            $previousCouponDiscount =
+                $currentCouponDiscount;
+
+            $previousTax =
+                $currentTax;
         }
 
-        $previousCouponDiscount =
-            $currentCouponDiscount;
+        /*
+        * Final synchronized calculation.
+        *
+        * Apply coupon one final time using the latest Tax,
+        * then calculate final Tax using the latest Coupon.
+        */
+        $couponResult =
+            $this->couponService->apply(
+                $couponCode,
+                (int) Session::get(
+                    'sess_icustomerid',
+                    0
+                )
+            );
 
-        $previousTax =
-            $currentTax;
+        $this->calculateTax(
+            $cartAttributes,$taxContext
+        );
     }
 
-    /*
-     * Final synchronized calculation.
-     *
-     * Apply coupon one final time using the latest Tax,
-     * then calculate final Tax using the latest Coupon.
-     */
-    $couponResult =
-        $this->couponService->apply(
-            $couponCode,
-            (int) Session::get(
-                'sess_icustomerid',
-                0
-            )
-        );
-
-    $this->calculateTax(
-        $cartAttributes,$taxContext
-    );
-}
-
+    public function GetDropshipperDetails()
+    {
+        $DropshipperAccountDetails = array();
+        $DropshipperAccountDetails['status'] = false;
+        if(Auth::user() && Auth::user()->is_dropshipper == 'Yes' && Auth::user()->eusertype == 'Wholesaler')
+        {
+            $customer = Customer::where('customer_id', '=', Auth::user()->customer_id)->first();
+            if ($customer && $customer->count() > 0) {
+                $available_funds = $customer->available_funds;
+                $DropshipperAccountDetails['status'] = true;
+                $NetTotal = $this->checkoutTotalsService->getNetTotal();
+                if ($available_funds >= $NetTotal) {
+                    $DropshipperAccountDetails['fund_available'] = 'Yes';
+                    $DropshipperAccountDetails['fund_msg'] = "";
+                    $DropshipperAccountDetails['total_fund'] = $available_funds;
+                    $DropshipperAccountDetails['total_fund_formated'] = Price($available_funds);
+                    $DropshipperAccountDetails['total_payment'] = $NetTotal;
+                    $DropshipperAccountDetails['total_payment_formated'] = Price($NetTotal);
+                    $DropshipperAccountDetails['remaining_fund'] = $available_funds - $NetTotal;
+                    $DropshipperAccountDetails['remaining_fund_formated'] = Price($available_funds - $NetTotal);
+                    $DropshipperAccountDetails['required_fund'] = "";
+                } else {
+                    $DropshipperAccountDetails['fund_available'] = 'No';
+                    $DropshipperAccountDetails['fund_msg'] = "Your dropshipper account does not have sufficient balance";
+                    $DropshipperAccountDetails['total_fund'] = $available_funds;
+                    $DropshipperAccountDetails['total_fund_formated'] = Price($available_funds);
+                    $DropshipperAccountDetails['total_payment'] = $NetTotal;
+                    $DropshipperAccountDetails['total_payment_formated'] = Price($NetTotal);
+                    $DropshipperAccountDetails['remaining_fund'] = "";
+                    $DropshipperAccountDetails['required_fund'] = $NetTotal - $available_funds;
+                    $DropshipperAccountDetails['required_fund_formated'] = Price($NetTotal - $available_funds);
+                }
+            }
+        }
+        return $DropshipperAccountDetails;
+    }
 }

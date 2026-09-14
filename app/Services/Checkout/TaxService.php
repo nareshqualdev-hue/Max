@@ -148,7 +148,14 @@ class TaxService
             );
             
         
-      
+       Log::info(
+            'Discount',
+            [
+                'Shipping Infor for Tax' =>
+                    $allDiscount['TotalDiscount'],
+            ]
+        );    
+
             
 
         $giftCertiTotal =

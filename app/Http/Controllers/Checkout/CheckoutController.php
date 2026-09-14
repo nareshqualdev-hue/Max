@@ -29,7 +29,8 @@ class CheckoutController extends Controller
         CheckoutService $checkoutService,
         StripePaymentService $StripePaymentService,
         ShippingService $ShippingService,
-        PaypalService $PaypalService)
+        PaypalService $PaypalService
+    )
     {
         $this->checkoutService = $checkoutService;
         $this->StripePaymentService = $StripePaymentService;
@@ -223,7 +224,7 @@ class CheckoutController extends Controller
 		$ShopCart = Session::get('ShoppingCart.Cart');
 		$ItemsArr = array();
 		$data = array();
-		if (is_array($ShopCart) && $ShopCart)
+		if(is_array($ShopCart) && $ShopCart)
         {
 			foreach ($ShopCart as $key => $CartItem)
             {
@@ -283,47 +284,49 @@ class CheckoutController extends Controller
 			$data["purchase_units"][0]["amount"] = $AmountArr;
 			$data["purchase_units"][0]["items"] = $ItemsArr;
 
-            //$data["application_context"]["shipping_preference"] = "SET_PROVIDED_ADDRESS";
-            $data["application_context"] = "";
-            $shippingAddressArr['name']['full_name'] = '';
-            $shippingAddressArr['address']['address_line_1'] = '';
-            $shippingAddressArr['address']['address_line_2'] = '';
-            $shippingAddressArr['address']['admin_area_2'] = ''; //city
-            $shippingAddressArr['address']['admin_area_1'] = ''; //state
-            $shippingAddressArr['address']['postal_code'] = '';
-            $shippingAddressArr['address']['country_code'] = '';
-            $shipping_nm = '';
+            if($request->btnAction == 'LastStep')
+            {
+                $data["application_context"]["shipping_preference"] = "SET_PROVIDED_ADDRESS";
+                //$data["application_context"] = "";
+                $shippingAddressArr['name']['full_name'] = '';
+                $shippingAddressArr['address']['address_line_1'] = '';
+                $shippingAddressArr['address']['address_line_2'] = '';
+                $shippingAddressArr['address']['admin_area_2'] = ''; //city
+                $shippingAddressArr['address']['admin_area_1'] = ''; //state
+                $shippingAddressArr['address']['postal_code'] = '';
+                $shippingAddressArr['address']['country_code'] = '';
+                $shipping_nm = '';
 
-            if (Session::has('ShoppingCart.BillingAddress.bill_city') && Session::get('ShoppingCart.BillingAddress.bill_city') != '') {
-                $shippingAddressArr['address']['admin_area_2'] = Session::get('ShoppingCart.BillingAddress.bill_city');
-            }
-            if (Session::has('ShoppingCart.BillingAddress.bill_state') && Session::get('ShoppingCart.BillingAddress.bill_state') != '') {
-                $shippingAddressArr['address']['admin_area_1'] = Session::get('ShoppingCart.BillingAddress.bill_state');
-            }
-            if (Session::has('ShoppingCart.BillingAddress.bill_zip') && Session::get('ShoppingCart.BillingAddress.bill_zip') != '') {
-                $shippingAddressArr['address']['postal_code'] = Session::get('ShoppingCart.BillingAddress.bill_zip');
-            }
-            if (Session::has('ShoppingCart.BillingAddress.bill_country') && Session::get('ShoppingCart.BillingAddress.bill_country') != '') {
-                $shippingAddressArr['address']['country_code'] = Session::get('ShoppingCart.BillingAddress.bill_country');
-            }
-            if (Session::has('ShoppingCart.BillingAddress.bill_address1') && Session::get('ShoppingCart.BillingAddress.bill_address1') != '') {
-                $shippingAddressArr['address']['address_line_1'] = Session::get('ShoppingCart.BillingAddress.bill_address1');
-            }
-            if (Session::has('ShoppingCart.BillingAddress.bill_address2') && Session::get('ShoppingCart.BillingAddress.bill_address2') != '') {
-                $shippingAddressArr['address']['address_line_2'] = Session::get('ShoppingCart.BillingAddress.bill_address2');
-            }
-            if (Session::has('ShoppingCart.BillingAddress.bill_first_name') && Session::get('ShoppingCart.BillingAddress.bill_first_name') != '') {
-                $shipping_nm = Session::get('ShoppingCart.BillingAddress.bill_first_name');
-            }
-            if (Session::has('ShoppingCart.BillingAddress.bill_last_name') && Session::get('ShoppingCart.BillingAddress.bill_last_name') != '') {
-                if ($shipping_nm != '') {
-                    $shipping_nm .= " ";
+                if (Session::has('ShoppingCart.BillingAddress.city') && Session::get('ShoppingCart.BillingAddress.city') != '') {
+                    $shippingAddressArr['address']['admin_area_2'] = Session::get('ShoppingCart.BillingAddress.city');
                 }
-                $shipping_nm .= Session::get('ShoppingCart.BillingAddress.bill_last_name');
+                if (Session::has('ShoppingCart.BillingAddress.state') && Session::get('ShoppingCart.BillingAddress.state') != '') {
+                    $shippingAddressArr['address']['admin_area_1'] = Session::get('ShoppingCart.BillingAddress.state');
+                }
+                if (Session::has('ShoppingCart.BillingAddress.zip') && Session::get('ShoppingCart.BillingAddress.zip') != '') {
+                    $shippingAddressArr['address']['postal_code'] = Session::get('ShoppingCart.BillingAddress.zip');
+                }
+                if (Session::has('ShoppingCart.BillingAddress.country') && Session::get('ShoppingCart.BillingAddress.country') != '') {
+                    $shippingAddressArr['address']['country_code'] = Session::get('ShoppingCart.BillingAddress.country');
+                }
+                if (Session::has('ShoppingCart.BillingAddress.address1') && Session::get('ShoppingCart.BillingAddress.address1') != '') {
+                    $shippingAddressArr['address']['address_line_1'] = Session::get('ShoppingCart.BillingAddress.address1');
+                }
+                if (Session::has('ShoppingCart.BillingAddress.address2') && Session::get('ShoppingCart.BillingAddress.address2') != '') {
+                    $shippingAddressArr['address']['address_line_2'] = Session::get('ShoppingCart.BillingAddress.address2');
+                }
+                if (Session::has('ShoppingCart.BillingAddress.first_name') && Session::get('ShoppingCart.BillingAddress.first_name') != '') {
+                    $shipping_nm = Session::get('ShoppingCart.BillingAddress.first_name');
+                }
+                if (Session::has('ShoppingCart.BillingAddress.last_name') && Session::get('ShoppingCart.BillingAddress.last_name') != '') {
+                    if ($shipping_nm != '') {
+                        $shipping_nm .= " ";
+                    }
+                    $shipping_nm .= Session::get('ShoppingCart.BillingAddress.last_name');
+                }
+                $shippingAddressArr['name']['full_name'] = $shipping_nm;
+                $data["purchase_units"][0]["shipping"] = $shippingAddressArr;
             }
-            $shippingAddressArr['name']['full_name'] = $shipping_nm;
-
-            //$data["purchase_units"][0]["shipping"] = $shippingAddressArr;
 		}
 		return response()->json($data);
     }
@@ -347,7 +350,8 @@ class CheckoutController extends Controller
 
         if($request->action == 'setShippingMethod')
         {
-            Session::put('ShoppingCart.Shipping.ShippingMethodID',$request->shippingMethod);
+            //Session::put('ShoppingCart.Shipping.ShippingMethodID',$request->shippingMethod);
+            $this->ShippingService->setShippingMethod($request->shippingMethod,$currentAddress);
         }
         $result = $this->checkoutService->prepareCheckout($request);
 
@@ -685,16 +689,17 @@ class CheckoutController extends Controller
         $PaymentType = $request->payment_type??'';
         $PaymentMethod = $request->payment_method??'';
         $PaypalOrder = 'No';
-        if($request->has('isPaypalOrder') && $request->isPaypalOrder == 'yes')
+
+        if($request->has('isPaypalOrder') && $request->isPaypalOrder == 'Yes')
         {
             $PaypalOrder = 'Yes';
+            $this->PreparePaypalOrder($request);
             if (Session::has('ShoppingCart.Payment_Detail'))
             {
                 $PaymentDetail = Session::get('ShoppingCart.Payment_Detail');
                 $PaymentType = $PaymentDetail['Payment_Type'];
                 $PaymentMethod = "Paypal Express Checkout";
             }
-            $this->PreparePaypalOrder($request);
         }
         $result = $this->checkoutService->prepareCheckout($request);
 
@@ -703,14 +708,22 @@ class CheckoutController extends Controller
             return $result['redirect'];
         }
 
-        $this->SetGuestCustomer($request,$PaypalOrder);
+        if(!Auth::user())
+        {
+            $this->SetGuestCustomer($request,$PaypalOrder);
+        }else{
+            $this->CustomerInfoUpdate();
+        }
+
+        $this->checkoutService->refresh('checkout');
 
         $CheckoutData = $result['data']['checkout']['totals'];
         $customer_id = (int)Session::get('sess_icustomerid');
         $SubTotal = (float)$CheckoutData['SubTotal'];
         $AllCharges = $CheckoutData['Charges'];
-
-        $Tax = (float)$AllCharges['Tax']['charge']??0;
+        $Tax = 0;
+        if(isset($AllCharges['Tax']['charge']))
+            $Tax = (float)$AllCharges['Tax']['charge']??0;
 
         $GiftWrappingCharge = 0;
         if(isset($AllCharges['GiftWrappingCharge']))
@@ -1073,7 +1086,7 @@ class CheckoutController extends Controller
                 'status' => $res['status'],
                 'message' => $res['message'],
             ]);
-        } else {
+        } elseif($request->has('PayMethod') && $request->PayMethod == 'PAYMENT_STRIPE') {
             $payment_intent_id = $request->payment_intent_id??'';
             $order_id = $request->order_id??'';
 
@@ -1098,12 +1111,26 @@ class CheckoutController extends Controller
             $Order->pay_status = 'Paid';
             $Order->paymentintentid = $payment_intent_id;
             $Order->save();
+        }elseif($request->has('PayMethod') && $request->PayMethod == 'PAYMENT_DS'){
+            $order_id = $request->order_id??'';
+            $Order = Order::find($order_id);
+            $Order->pay_status = 'Paid';
+            $Order->save();
 
-            return response()->json([
-                'status' => true,
-                'message' => 'Payment has been completed.',
-            ]);
+            $Customer = Customer::where('customer_id',$Order->customer_id)->first();
+            $DropshipperDetails = $this->checkoutService->GetDropshipperDetails();
+            if($Customer->available_funds > 0 && $DropshipperDetails['fund_available'] == 'Yes')
+            {
+                $remaining_fund = $DropshipperDetails['remaining_fund'];
+                $Customer->available_funds = $remaining_fund;
+                $Customer->save();
+            }
         }
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Payment has been completed.',
+        ]);
     }
 
     public function SetBillingShippingAddress($Data)
@@ -1115,6 +1142,76 @@ class CheckoutController extends Controller
         Session::put('ShoppingCart.ShippingAddress',$Billing);
 
 		return null;
+	}
+    public function CustomerInfoUpdate()
+	{
+		$allow_update_details = "Yes";
+		$normaluser = Auth::user();
+
+		if ($normaluser && $allow_update_details == "Yes")
+        {
+            $Billing = Session::get('ShoppingCart.BillingAddress');
+			if ($Billing['country'] != 'US') {
+				$state = isset($Billing['other_state']) ? $Billing['other_state'] : "";
+			} else {
+				$state = $Billing['state'];
+			}
+			$CustomerAddNew = array(
+				'first_name'		=> stripslashes($Billing['first_name']),
+				'last_name' 		=> stripslashes($Billing['last_name']),
+				'address1' 			=> stripslashes($Billing['address1']),
+				'city' 				=> stripslashes($Billing['city']),
+				'state' 			=> $state,
+				'country' 			=> $Billing['country'],
+				'zip' 				=> $Billing['zip'],
+				'phone' 			=> $Billing['phone']
+			);
+			if (isset($Billing['company']) && $Billing['company'] != "") {
+				$CustomerAddNew['company_name'] = stripslashes($Billing['company']);
+			}
+			if (isset($Billing['address2']) && $Billing['address2'] != "") {
+				$CustomerAddNew['address2'] = stripslashes($Billing['address2']);
+			}
+			$cust_upd = Customer::where('customer_id', '=', $normaluser->customer_id)->update($CustomerAddNew);
+
+            Session::put('ShoppingCart.BillingAddress.email',$normaluser->email);
+            Session::put('ShoppingCart.BillingAddress.cemail',$normaluser->email);
+
+            Session::put('ShoppingCart.ShippingAddress.email',$normaluser->email);
+
+            Session::put('sess_useremail',$normaluser->email);
+            //merge guest accounts
+			$user_email = $normaluser->email;
+
+			$this->Merge_Guest_Register($user_email, $normaluser);
+			//merge guest accounts
+		}
+        /*
+		if(isset($request['newsletter']) && $request['newsletter'] == 'Yes' && trim($request['bill_email']) != '')
+        {
+			$check_news = NewsLetter::where('email', '=', trim($request['bill_email']))->get();
+			if ($check_news && $check_news->count() <= 0) {
+				$arrInsert = array(
+					'first_name' => trim($request['bill_fname']),
+					'last_name'  => trim($request['bill_lname']),
+					'email' 	 => trim($request['bill_email']),
+					'phone_no' => trim($request['bill_phone']),
+					'status'	 => '1'
+				);
+				$News = NewsLetter::create($arrInsert);
+				$NewsId = $News->news_letter_id;
+				if ($NewsId) {
+					$data["phone"] = trim($request['bill_phone']); //"+12679018713";
+					$data["email"] = trim($request['bill_email']); //"test@gmail.com";
+					$data["first_name"] = trim($request['bill_fname']);
+					$data["visitorId"] = $NewsId; //"762bb2a97d604f958e3071fef83dfd5a";
+					if (trim($data["phone"]) != "" && config('global.SITE_MODE') == 'Live') {
+						AddAttentiveSubscriber($data);
+					}
+				}
+			}
+		}
+        */
 	}
     public function SetGuestCustomer($request, $isPaypal = 'No')
     {
@@ -1626,5 +1723,11 @@ class CheckoutController extends Controller
             ]);
 
         return true;
+    }
+
+    public function DropshipperDetails(Request $request)
+    {
+        $data = $this->checkoutService->GetDropshipperDetails();
+        return response()->json($data);
     }
 }

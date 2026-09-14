@@ -49,6 +49,7 @@ $checkoutNetTotal = (float) ($totals['NetTotal'] ?? 0);
 $NetTotal = (float) ($totals['NetTotal'] ?? 0);
 $CartAttr = $checkoutState['cartAttributes'];
 
+//$DropShipperDetails = $checkout['dropshipperDetails'];
 $CartAttr["IsPaypalExpressCheckout"] = "Yes";
 $CartAttr["Amazon_pay_Checkout"] = "Yes";
 $Is_Afterpay_Checkout = "Yes";
@@ -322,7 +323,10 @@ is_string($image)
         opacity: 0;
         visibility: hidden;
       }
-
+      .btn-dropship{
+        min-height: 40px;
+        padding: 0.5rem 1rem;
+      }
     </style>
   <div class="checkout-page" id="checkout-app">
   @include('newcheckout.checkout-header')
@@ -361,7 +365,7 @@ is_string($image)
           </button>
           @if($CartAttr["IsPaypalExpressCheckout"] == 'Yes')
           <!-- 4. PayPal -->
-          <div id="paypal-button-container-checkout-pg" class="express-btn express-btn-paypal" role="region" aria-label="Pay with PayPal"></div>
+          <div id="paypal-button-container-checkout" class="express-btn express-btn-paypal" role="region" aria-label="Pay with PayPal"></div>
           @endif
           <!-- 5. Apple Pay -->
           <button class="express-btn express-btn-apple" type="button" aria-label="Pay with Apple Pay">
@@ -657,7 +661,7 @@ is_string($image)
                 <select
                   class="fl-input"
                   id="shipping_country"
-                  name="shipping[country]"
+                  name="shipping_country"
                   autocomplete="shipping country"
                   aria-label="Country"
                   aria-required="true">
@@ -1042,7 +1046,11 @@ is_string($image)
                 <rect x="1" y="1" width="14" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"></rect>
                 <path d="M1 5H15" stroke="currentColor" stroke-width="1.3"></path>
               </svg>
+              @if(!Auth::user() || (Auth::user() && Auth::user()->is_dropshipper == 'No'))
               Card
+              @else
+              Dropshipper Fund
+              @endif
             </button>
             @if($CartAttr["IsPaypalExpressCheckout"] == 'Yes')
             <button class="payment-tab" data-method="PAYPAL" role="tab" aria-selected="false" id="pay-tab-paypal" aria-controls="pay-panel-paypal" onclick="switchPayTab('paypal')">PayPal</button>
@@ -1053,6 +1061,8 @@ is_string($image)
           <!-- Card Panel -->
           <div role="tabpanel" id="pay-panel-card" aria-labelledby="pay-tab-card">
             <div style="display:flex; flex-direction:column; gap: var(--space-3);">
+              @if(!Auth::user() || (Auth::user() && Auth::user()->is_dropshipper == 'No'))
+              <input type="hidden" name="selectedPaymentMethod" id="selectedPaymentMethod" value="PAYMENT_STRIPE"/>
               <div id="stripe-card-payment">
                 <label class="error" id="stripe-error"></label>
                 <div class="fl-group pb-2">
@@ -1073,7 +1083,12 @@ is_string($image)
                 </div>
 
                 <div id="stripe-card-error" class="stripe-card-error" role="alert"></div>
-            </div>
+
+              </div>
+              @else
+                <input type="hidden" name="selectedPaymentMethod" id="selectedPaymentMethod" value="PAYMENT_DS"/>
+                <div class="row" id="dropshipper_details"></div>
+              @endif
               {{--
               <div class="fl-group">
                 <input class="fl-input" type="text" id="card-number" name="card-number" placeholder="Card number" autocomplete="cc-number" inputmode="numeric" maxlength="19" aria-required="true">
@@ -1120,7 +1135,7 @@ is_string($image)
             <div style="text-align:center; padding: var(--space-8) var(--space-4);">
               <p style="color: var(--color-text-secondary); font-size: var(--font-size-sm); margin-bottom: var(--space-4);">You'll be redirected to PayPal to complete your payment securely.</p>
               <!-- <button type="button" class="btn btn-full btnPaypal" style="background:#003087; color:white; border-color:#003087; height:52px; font-size:var(--font-size-base); font-weight:700;">Continue with PayPal</button> -->
-              <div id="paypal-button-container-checkout" class="btnPaypal" style="position: relative;z-index:1;" role="region" aria-label="Paypal Button"></div>
+              <div id="paypal-button-container-checkout-pg" class="btnPaypal" style="position: relative;z-index:1;" role="region" aria-label="Paypal Button"></div>
               <div data-pp-message data-pp-style-layout="text" data-pp-style-logo-type="inline" data-pp-style-text-color="black" data-pp-style-text-size="12" data-pp-amount="{{$NetTotal}}" data-pp-placement=product aria-hidden="true"></div>
             </div>
           </div>
@@ -1417,6 +1432,9 @@ is_string($image)
                 !empty($item['Is_Free_Gift'])
                 && strtolower((string) $item['Is_Free_Gift']) === 'yes'
                 );
+                 $isFreeSample =
+					!empty($item['Is_Free_Sample'])
+					&& strtolower((string) $item['Is_Free_Sample']) === 'yes';
                 @endphp
 
                 <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-free-gift="{{ $isFreeGift ? '1' : '0' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
@@ -1447,10 +1465,11 @@ is_string($image)
 					@endif
 
                     <div class="order-item-controls">
-                      @if($isFreeGift)
+                      @if($isFreeGift || $isFreeSample)
 
                         <span>Qty :{{ $quantity }}</span>
-                      <span class="free-gift-label">Free Gift</span>
+                    
+                       <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
                       @else
                       @if(($item['IsGiftCertificateItem'] ?? 'No') === 'No')
                       <div class="qty-stepper" role="group" aria-label="Quantity for {{ $productName }}">
@@ -1458,9 +1477,9 @@ is_string($image)
                         <span class="qty-value" aria-live="polite">{{ $quantity }}</span>
                         <button class="qty-btn" type="button" aria-label="Increase quantity" onclick="updateQty(this,1)">+</button>
                       </div>
-                      
+
                       @endif
-                      @if(($item['IsGiftCertificateItem'] ?? 'No') === 'Yes')
+                      @if(($item['IsGiftCertificateItem'] ?? 'No') === 'Yes' )
                       <span>Qty :{{ $quantity }}</span>
                       @endif
                       <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
@@ -2028,7 +2047,9 @@ is_string($image)
       );
       $bogoDiscountMessage =
 	  $item['BogoDiscountMessage'] ?? '';
-
+	  $isFreeSample =
+					!empty($item['Is_Free_Sample'])
+					&& strtolower((string) $item['Is_Free_Sample']) === 'yes';	
       @endphp
 
       <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-free-gift="{{ $isFreeGift ? '1' : '0' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
@@ -2059,12 +2080,12 @@ is_string($image)
 		@endif
 
           <div class="order-item-controls">
-             @if($isFreeGift)
+             @if($isFreeGift || $isFreeSample)
 
               <span>Qty : {{ $quantity }}</span>
-            <span class="free-gift-label">Free Gift</span>
+             <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
             @else
-            
+
             @if(($item['IsGiftCertificateItem'] ?? 'No') === 'No')
             <div class="qty-stepper" role="group" aria-label="Quantity for {{ $productName }}">
               <button class="qty-btn" type="button" aria-label="Decrease quantity" onclick="updateQty(this,-1)">−</button>
@@ -3443,22 +3464,11 @@ function keepProtection() {
          * ---------------------------------------------------------
          */
 
-        shippingMethods: @json(
-          route('checkoutnew.shipping.methods')
-        ),
-
-        setShippingMethod: @json(
-          route('checkoutnew.shipping.method')
-        ),
-
-        shippingInsurance: @json(
-          route('checkoutnew.shipping.insurance')
-        ),
-
-        shippingSignature: @json(
-          route('checkoutnew.shipping.signature')
-        ),
-
+        shippingMethods: @json(route('checkoutnew.shipping.methods')),
+        setShippingMethod: @json(route('checkoutnew.shipping.method')),
+        shippingInsurance: @json(route('checkoutnew.shipping.insurance')),
+        shippingSignature: @json(route('checkoutnew.shipping.signature')),
+        setDropshipper:@json(route("checkout.order.dropshipper")),
         /*
          * ---------------------------------------------------------
          * Discount

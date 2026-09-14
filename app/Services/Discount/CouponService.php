@@ -215,7 +215,7 @@ class CouponService
             );
 		
 		Log::info('Coupon Exclude SKU Debug', [
-		'coupon_code' => $coupon->coupon_number ?? null,
+		'coupon_code1' => $coupon->coupon_number ?? null,
 		'db_exclude_product_skus' => $coupon->exclude_sku ?? null,
 		'excludeSkuList' => $excludeSkuList,
 	]);
@@ -992,37 +992,248 @@ class CouponService
    /**
      * Product SKU coupon.
      */
-    protected function applySkuCoupon(
-        $coupon,
-        array $excludeSkuList
-    ): array {
-        $couponSkus =
-            $this->csvToArray(
-                $coupon->sku
-            );
+  
+  protected function applySkuCoupon(
+    $coupon,
+    array $excludeSkuList
+): array {
+    $couponSkus =
+        $this->csvToArray(
+            $coupon->sku
+        );
 
+    if (
+        empty($couponSkus)
+    ) {
+        return [
+            'discount' => 0,
+            'matched' => false,
+        ];
+    }
+
+    $cart =
+        Session::get(
+            'ShoppingCart.Cart',
+            []
+        );
+
+    $matched = false;
+    $matchedTotal = 0.0;
+    $totalAmount = 0.0;
+
+    /*
+     * ---------------------------------------------------------
+     * SKU eligible products
+     * ---------------------------------------------------------
+     */
+    foreach (
+        $cart as $index => $item
+    ) {
+        /*
+         * Gift Certificate is handled separately using
+         * GiftCertiTotal.
+         */
         if (
-            empty($couponSkus)
+            $this->isGiftCertificateItem(
+                $item
+            )
         ) {
-            return [
-                'discount' => 0,
-                'matched' => false,
-            ];
+            continue;
         }
 
-        $cart =
-            Session::get(
-                'ShoppingCart.Cart',
-                []
+        /*
+         * Coupon SKU matching.
+         */
+        if (
+            !in_array(
+                $item['SKU'] ?? '',
+                $couponSkus,
+                true
+            )
+        ) {
+            continue;
+        }
+
+        /*
+         * Excluded SKU.
+         */
+        if (
+            in_array(
+                $item['SKU'] ?? '',
+                $excludeSkuList,
+                true
+            )
+        ) {
+            continue;
+        }
+
+        /*
+         * Deal-product eligibility.
+         */
+        if (
+            !$this->isCouponEligibleDeal(
+                $item,
+                $coupon
+            )
+        ) {
+            continue;
+        }
+
+        $matched = true;
+
+        $itemTotal =
+            (float) (
+                $item['TotPrice']
+                ?? 0
             );
 
-        $matched = false;
-        $matchedTotal = 0.0;
-        $totalAmount = 0.0;
+        $totalAmount +=
+            $itemTotal;
 
+        /*
+         * Percentage coupon.
+         */
+        if (
+            (string) $coupon->type === '1'
+        ) {
+            $itemAmount =
+                (
+                    (float)
+                    (
+                        $item['Price']
+                        ?? 0
+                    )
+                    *
+                    (int)
+                    (
+                        $item['Qty']
+                        ?? 0
+                    )
+                );
+
+            $itemDiscount =
+                $itemAmount
+                *
+                (
+                    (float)
+                    $coupon->discount
+                    / 100
+                );
+
+            $this->setItemWiseCouponDiscount(
+                $index,
+                $coupon,
+                $itemDiscount
+            );
+
+            $matchedTotal +=
+                $itemAmount;
+        }
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Gift Certificate
+     * ---------------------------------------------------------
+     *
+     * count_gc_purchase = 1
+     * => Gift Certificate is included.
+     *
+     * count_gc_purchase = 0
+     * => Gift Certificate is excluded.
+     *
+     * Gift Certificate does not need to match the coupon SKU.
+     */
+    $giftCertificateTotal =
+        (float) Session::get(
+            'ShoppingCart.GiftCertiTotal',
+            0
+        );
+
+    if (
+        (string) $coupon->count_gc_purchase
+        === '1'
+    ) {
+        $totalAmount +=
+            $giftCertificateTotal;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Shipping + Tax
+     * ---------------------------------------------------------
+     *
+     * count_ship_tax = 1
+     * => Include Shipping + Tax.
+     */
+    if (
+        (string) $coupon->count_ship_tax
+        === '1'
+    ) {
+        $shippingCharge =
+            (float) Session::get(
+                'ShoppingCart.Shipping.ShippingCharge',
+                0
+            );
+
+        $taxValue =
+            (float) Session::get(
+                'ShoppingCart.Tax',
+                0
+            );
+
+        $totalAmount +=
+            $shippingCharge
+            + $taxValue;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * No matching SKU
+     * ---------------------------------------------------------
+     *
+     * Gift Certificate alone must NOT make SKU coupon
+     * matched.
+     */
+    if (
+        !$matched
+    ) {
+        return [
+            'discount' => 0,
+            'matched' => false,
+        ];
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Fixed coupon
+     * ---------------------------------------------------------
+     *
+     * Distribute fixed discount proportionally across
+     * eligible SKU products.
+     */
+    if (
+        (string) $coupon->type === '0'
+        &&
+        $totalAmount > 0
+    ) {
         foreach (
             $cart as $index => $item
         ) {
+            /*
+             * Gift Certificate is included in the overall
+             * coupon amount but should not receive fixed
+             * item-wise distribution here unless it is part
+             * of the matched SKU list.
+             */
+            if (
+                $this->isGiftCertificateItem(
+                    $item
+                )
+            ) {
+                continue;
+            }
+
             if (
                 !in_array(
                     $item['SKU'] ?? '',
@@ -1052,292 +1263,462 @@ class CouponService
                 continue;
             }
 
-            $matched = true;
-
-            $totalAmount +=
-                (float)
+            $itemDiscount =
                 (
-                    $item['TotPrice']
-                    ?? 0
-                );
+                    (float)
+                    $coupon->discount
+                    * 100
+                )
+                /
+                $totalAmount;
 
-            if (
-                (string)
-                $coupon->type === '1'
-            ) {
-                $itemDiscount =
+            $itemDiscount =
+                (
+                    (float)
                     (
-                        (float)
-                        (
-                            $item['Price']
-                            ?? 0
-                        )
-                        *
-                        (int)
-                        (
-                            $item['Qty']
-                            ?? 0
-                        )
+                        $item['TotPrice']
+                        ?? 0
                     )
                     *
-                    (
-                        (float)
-                        $coupon->discount
-                        / 100
-                    );
-
-                $this->setItemWiseCouponDiscount(
-                    $index,
-                    $coupon,
                     $itemDiscount
-                );
+                )
+                / 100;
 
-                $matchedTotal +=
-                    (
-                        (float)
-                        (
-                            $item['Price']
-                            ?? 0
-                        )
-                        *
-                        (int)
-                        (
-                            $item['Qty']
-                            ?? 0
-                        )
-                    );
-            }
+            $this->setItemWiseCouponDiscount(
+                $index,
+                $coupon,
+                $itemDiscount
+            );
         }
 
-        if (
-            !$matched
-        ) {
-            return [
-                'discount' => 0,
-                'matched' => false,
-            ];
-        }
-
-        if (
-            (string)
-            $coupon->type === '0'
-            &&
-            $totalAmount > 0
-        ) {
-            foreach (
-                $cart as $index => $item
-            ) {
-                if (
-                    !in_array(
-                        $item['SKU'] ?? '',
-                        $couponSkus,
-                        true
-                    )
-                ) {
-                    continue;
-                }
-
-                if (
-                    in_array(
-                        $item['SKU'] ?? '',
-                        $excludeSkuList,
-                        true
-                    )
-                ) {
-                    continue;
-                }
-
-                if (
-                    !$this->isCouponEligibleDeal(
-                        $item,
-                        $coupon
-                    )
-                ) {
-                    continue;
-                }
-
-                $itemDiscount =
-                    (
-                        (float)
-                        $coupon->discount
-                        * 100
-                    )
-                    /
-                    $totalAmount;
-
-                $itemDiscount =
-                    (
-                        (float)
-                        (
-                            $item['TotPrice']
-                            ?? 0
-                        )
-                        *
-                        $itemDiscount
-                    )
-                    / 100;
-
-                $this->setItemWiseCouponDiscount(
-                    $index,
-                    $coupon,
-                    $itemDiscount
-                );
-            }
-
-            $discount =
+        $discount =
+            (float)
+            $coupon->discount;
+    } else {
+        /*
+         * Percentage coupon.
+         *
+         * totalAmount includes:
+         * - matched SKU products
+         * - Gift Certificate when enabled
+         * - Shipping + Tax when enabled
+         */
+        $discount =
+            $totalAmount
+            *
+            (
                 (float)
-                $coupon->discount;
-        } else {
-            $discount =
-                $matchedTotal
+                $coupon->discount
+                / 100
+            );
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Minimum order amount
+     * ---------------------------------------------------------
+     */
+    if (
+        $coupon->minimum_order_amount > 0
+        &&
+        $totalAmount <
+            $coupon->minimum_order_amount
+    ) {
+        return [
+            'discount' => 0,
+            'matched' => false,
+        ];
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Gift Certificate item-wise discount
+     * ---------------------------------------------------------
+     *
+     * For percentage coupon:
+     *
+     * count_gc_purchase = 1
+     * => Apply coupon percentage to Gift Certificate.
+     */
+    if (
+        (string) $coupon->count_gc_purchase
+        === '1'
+        &&
+        (string) $coupon->type === '1'
+    ) {
+        foreach (
+            $cart as $index => $item
+        ) {
+            if (
+                !$this->isGiftCertificateItem(
+                    $item
+                )
+            ) {
+                continue;
+            }
+
+            $itemAmount =
+                (
+                    (float)
+                    (
+                        $item['Price']
+                        ?? 0
+                    )
+                    *
+                    (int)
+                    (
+                        $item['Qty']
+                        ?? 0
+                    )
+                );
+
+            $itemDiscount =
+                $itemAmount
                 *
                 (
                     (float)
                     $coupon->discount
                     / 100
                 );
-        }
 
-        if (
-            $coupon->minimum_order_amount > 0
-            &&
-            $totalAmount <
-                $coupon->minimum_order_amount
-        ) {
-            return [
-                'discount' => 0,
-                'matched' => false,
-            ];
+            $this->setItemWiseCouponDiscount(
+                $index,
+                $coupon,
+                $itemDiscount
+            );
         }
-
-        return [
-            'discount' =>
-                $discount,
-            'matched' => true,
-        ];
     }
 
+    return [
+        'discount' =>
+            $discount,
+
+        'matched' =>
+            true,
+    ];
+}
+  
     /**
      * Category coupon.
      *
      * Uses the existing ProductsCategory pivot query.
      */
-    protected function applyCategoryCoupon(
-        $coupon,
-        array $excludeSkuList
-    ): array {
-        $categoryIds =
-            $this->csvToArray(
-                $coupon->sku
-            );
+   /**
+ * Category coupon.
+ *
+ * Uses the existing ProductsCategory pivot query.
+ */
+/**
+ * Category coupon.
+ *
+ * Uses the existing ProductsCategory pivot query.
+ */
+protected function applyCategoryCoupon(
+    $coupon,
+    array $excludeSkuList
+): array {
+    $categoryIds =
+        $this->csvToArray(
+            $coupon->sku
+        );
 
-        $activeCategoryIds =
-            Category::where(
-                'status',
-                '1'
-            )
-            ->whereIn(
-                'category_id',
-                $categoryIds
-            )
-            ->pluck(
-                'category_id'
-            )
+    $activeCategoryIds =
+        Category::where(
+            'status',
+            '1'
+        )
+        ->whereIn(
+            'category_id',
+            $categoryIds
+        )
+        ->pluck(
+            'category_id'
+        )
+        ->toArray();
+
+    if (
+        empty($activeCategoryIds)
+    ) {
+        return [
+            'discount' => 0,
+            'matched' => false,
+        ];
+    }
+
+    $cart =
+        Session::get(
+            'ShoppingCart.Cart',
+            []
+        );
+
+    $productIds =
+        collect($cart)
+            ->pluck('ProductID')
+            ->filter()
+            ->unique()
+            ->values()
             ->toArray();
 
+    if (
+        empty($productIds)
+    ) {
+        return [
+            'discount' => 0,
+            'matched' => false,
+        ];
+    }
+
+    $categoryProductIds =
+        ProductsCategory::whereIn(
+            'category_id',
+            $activeCategoryIds
+        )
+        ->whereIn(
+            'products_id',
+            $productIds
+        )
+        ->distinct()
+        ->pluck(
+            'products_id'
+        )
+        ->toArray();
+
+    $matched = false;
+
+    /*
+     * ---------------------------------------------------------
+     * Category eligible amount
+     * ---------------------------------------------------------
+     */
+    $totalAmount = 0.0;
+
+    foreach (
+        $cart as $index => $item
+    ) {
+        /*
+         * Gift Certificate is handled separately using
+         * GiftCertiTotal.
+         */
         if (
-            empty($activeCategoryIds)
+            $this->isGiftCertificateItem(
+                $item
+            )
         ) {
-            return [
-                'discount' => 0,
-                'matched' => false,
-            ];
+            continue;
         }
 
-        $cart =
-            Session::get(
-                'ShoppingCart.Cart',
-                []
+        /*
+         * Normal product must belong to the selected
+         * coupon category.
+         */
+        if (
+            !in_array(
+                $item['ProductID'] ?? null,
+                $categoryProductIds
+            )
+        ) {
+            continue;
+        }
+
+        /*
+         * Excluded SKU.
+         */
+        if (
+            in_array(
+                $item['SKU'] ?? '',
+                $excludeSkuList,
+                true
+            )
+        ) {
+            continue;
+        }
+
+        /*
+         * Deal-product eligibility.
+         */
+        if (
+            !$this->isCouponEligibleDeal(
+                $item,
+                $coupon
+            )
+        ) {
+            continue;
+        }
+
+        $matched = true;
+
+        $itemTotal =
+            (float) (
+                $item['TotPrice']
+                ?? 0
             );
 
-        $productIds =
-            collect($cart)
-                ->pluck('ProductID')
-                ->filter()
-                ->unique()
-                ->values()
-                ->toArray();
+        $totalAmount +=
+            $itemTotal;
+    }
 
-        if (
-            empty($productIds)
-        ) {
-            return [
-                'discount' => 0,
-                'matched' => false,
-            ];
-        }
+    /*
+     * ---------------------------------------------------------
+     * Gift Certificate
+     * ---------------------------------------------------------
+     *
+     * count_gc_purchase = 1
+     * => Include Gift Certificate total.
+     *
+     * count_gc_purchase = 0
+     * => Exclude Gift Certificate total.
+     *
+     * Gift Certificate is handled separately because it
+     * should not need to belong to the coupon category.
+     */
+    $giftCertificateTotal =
+        (float) Session::get(
+            'ShoppingCart.GiftCertiTotal',
+            0
+        );
 
-        $categoryProductIds =
-            ProductsCategory::whereIn(
-                'category_id',
-                $activeCategoryIds
-            )
-            ->whereIn(
-                'products_id',
-                $productIds
-            )
-            ->distinct()
-            ->pluck(
-                'products_id'
-            )
-            ->toArray();
+    if (
+        (string) $coupon->count_gc_purchase
+        === '1'
+    ) {
+        $totalAmount +=
+            $giftCertificateTotal;
+    }
 
-        $matched = false;
-        $totalAmount = 0.0;
+    /*
+     * ---------------------------------------------------------
+     * Count Shipping + Tax
+     * ---------------------------------------------------------
+     *
+     * count_ship_tax = 1
+     * => Include current Shipping + Tax in coupon base.
+     */
+    if (
+        (string) $coupon->count_ship_tax
+        === '1'
+    ) {
+        $shippingCharge =
+            (float) Session::get(
+                'ShoppingCart.Shipping.ShippingCharge',
+                0
+            );
 
-        foreach (
-            $cart as $index => $item
-        ) {
-            if (
-                !in_array(
-                    $item['ProductID'] ?? null,
-                    $categoryProductIds
-                )
-            ) {
-                continue;
-            }
+        $taxValue =
+            (float) Session::get(
+                'ShoppingCart.Tax',
+                0
+            );
 
-            if (
-                in_array(
-                    $item['SKU'] ?? '',
-                    $excludeSkuList,
-                    true
-                )
-            ) {
-                continue;
-            }
+        $totalAmount +=
+            $shippingCharge
+            + $taxValue;
+    }
 
-            if (
-                !$this->isCouponEligibleDeal(
-                    $item,
-                    $coupon
-                )
-            ) {
-                continue;
-            }
+    /*
+     * ---------------------------------------------------------
+     * No eligible category product
+     * ---------------------------------------------------------
+     *
+     * Gift Certificate alone must NOT make a Category
+     * Coupon matched.
+     */
+    if (
+        !$matched
+    ) {
+        return [
+            'discount' => 0,
+            'matched' => false,
+        ];
+    }
 
-            $matched = true;
+    /*
+     * ---------------------------------------------------------
+     * Minimum order amount
+     * ---------------------------------------------------------
+     */
+    if (
+        $coupon->minimum_order_amount > 0
+        &&
+        $totalAmount <
+            (float) $coupon->minimum_order_amount
+    ) {
+        return [
+            'discount' => 0,
+            'matched' => false,
+        ];
+    }
 
-            $totalAmount +=
+    /*
+     * ---------------------------------------------------------
+     * Percentage / fixed discount
+     * ---------------------------------------------------------
+     */
+    if (
+        (string) $coupon->type === '1'
+    ) {
+        $discount =
+            $totalAmount
+            *
+            (
                 (float)
-                (
-                    $item['TotPrice']
-                    ?? 0
-                );
+                $coupon->discount
+                / 100
+            );
+    } else {
+        $discount =
+            (float)
+            $coupon->discount;
+    }
 
+    /*
+     * ---------------------------------------------------------
+     * Item-wise coupon discount
+     * ---------------------------------------------------------
+     *
+     * Normal products:
+     *   Must belong to coupon category.
+     *
+     * Gift Certificate:
+     *   count_gc_purchase = 1
+     *   => eligible for item-wise coupon discount.
+     *
+     * Gift Certificate:
+     *   count_gc_purchase = 0
+     *   => skipped.
+     *
+     * Shipping and Tax:
+     *   Never written into item-wise product discount.
+     */
+    foreach (
+        $cart as $index => $item
+    ) {
+        /*
+         * -----------------------------------------------------
+         * Gift Certificate
+         * -----------------------------------------------------
+         */
+        if (
+            $this->isGiftCertificateItem(
+                $item
+            )
+        ) {
+            /*
+             * count_gc_purchase = 0
+             * => Do not apply coupon to Gift Certificate.
+             */
             if (
-                (string)
-                $coupon->type === '1'
+                (string) $coupon->count_gc_purchase
+                === '0'
+            ) {
+                continue;
+            }
+
+            /*
+             * count_gc_purchase = 1
+             * => Apply coupon to Gift Certificate.
+             */
+            if (
+                (string) $coupon->type === '1'
             ) {
                 $itemDiscount =
                     (
@@ -1366,473 +1747,824 @@ class CouponService
                     $itemDiscount
                 );
             }
+
+            continue;
         }
 
+        /*
+         * -----------------------------------------------------
+         * Normal category product
+         * -----------------------------------------------------
+         */
         if (
-            !$matched
+            !in_array(
+                $item['ProductID'] ?? null,
+                $categoryProductIds
+            )
         ) {
-            return [
-                'discount' => 0,
-                'matched' => false,
-            ];
+            continue;
         }
 
+        /*
+         * Excluded SKU.
+         */
         if (
-            $coupon->minimum_order_amount > 0
-            &&
-            $totalAmount <
-                $coupon->minimum_order_amount
+            in_array(
+                $item['SKU'] ?? '',
+                $excludeSkuList,
+                true
+            )
         ) {
-            return [
-                'discount' => 0,
-                'matched' => false,
-            ];
+            continue;
         }
 
+        /*
+         * Deal-product eligibility.
+         */
         if (
-            (string)
-            $coupon->type === '1'
+            !$this->isCouponEligibleDeal(
+                $item,
+                $coupon
+            )
         ) {
-            $discount =
-                $totalAmount
+            continue;
+        }
+
+        /*
+         * Percentage coupon.
+         */
+        if (
+            (string) $coupon->type === '1'
+        ) {
+            $itemDiscount =
+                (
+                    (float)
+                    (
+                        $item['Price']
+                        ?? 0
+                    )
+                    *
+                    (int)
+                    (
+                        $item['Qty']
+                        ?? 0
+                    )
+                )
                 *
                 (
                     (float)
                     $coupon->discount
                     / 100
                 );
-        } else {
-            $discount =
-                (float)
-                $coupon->discount;
-        }
 
-        return [
-            'discount' =>
-                $discount,
-            'matched' => true,
-        ];
+            $this->setItemWiseCouponDiscount(
+                $index,
+                $coupon,
+                $itemDiscount
+            );
+        }
     }
 
-    /**
+    return [
+        'discount' =>
+            $discount,
+
+        'matched' =>
+            true,
+    ];
+}
+
+   /**
      * Free shipping coupon.
      */
-    protected function applyFreeShippingCoupon(
-        $coupon,
-        float $subTotal,
-        float $grandTotal,
-        float $grandTotalSale,
-        float $giftCertificateTotal,
-        float $totalDealPrice,
-        array $excludeSkuList
-    ): array {
-        /*
-         * The coupon may still carry a discount.
-         * Preserve normal order-amount eligibility.
-         */
-        $saleTotal =
-		$subTotal
-		- (
-			(string) $coupon->count_gc_purchase === '0'
-				? $giftCertificateTotal
-				: 0.0
-		)
-		- $totalDealPrice;
+ 
+protected function applyFreeShippingCoupon(
+    $coupon,
+    float $subTotal,
+    float $grandTotal,
+    float $grandTotalSale,
+    float $giftCertificateTotal,
+    float $totalDealPrice,
+    array $excludeSkuList
+): array {
+    /*
+     * Preserve old free-shipping coupon behavior.
+     */
 
-        $discount = 0.0;
+    $cart =
+        Session::get(
+            'ShoppingCart.Cart',
+            []
+        );
+
+    /*
+     * Calculate eligible item quantity.
+     *
+     * Excluded SKU and pocket perfume products
+     * must not count toward free-shipping quantity.
+     */
+    $totalItemCount = 0;
+
+    foreach ($cart as $item) {
+
+        $sku =
+            trim(
+                (string) ($item['SKU'] ?? '')
+            );
 
         if (
-            $saleTotal >=
-                (float)
-                $coupon->minimum_order_amount
+            in_array(
+                $sku,
+                $excludeSkuList,
+                true
+            )
         ) {
-            if (
-                (string)
-                $coupon->type === '1'
-            ) {
-                $discount =
-                    $saleTotal
-                    *
-                    (
-                        (float)
-                        $coupon->discount
-                        / 100
-                    );
-            } else {
-                $discount =
-                    (float)
-                    $coupon->discount;
-            }
+            continue;
         }
 
-        return [
-            'discount' =>
-                $discount,
-
-            'free_shipping' =>
-                (
-                    $coupon->allow_free_shipping ===
-                    'Yes'
-                    &&
-                    $coupon->free_shipping_value !== ''
-                    &&
-                    (
-                        $discount > 0
-                        ||
-                        (
-                            (float)
-                            $coupon->discount === 0.0
-                        )
-                    )
-                ),
-        ];
+        $totalItemCount +=
+            (int) ($item['Qty'] ?? 0);
     }
 
-    /**
-     * Product brand coupon.
+    $freeShipping = false;
+
+    /*
+     * Shipping method configured on the
+     * Free Shipping coupon.
      */
-    protected function applyBrandCoupon(
-        $coupon,
-        array $excludeSkuList
-    ): array {
-        $brandIds =
-            $this->csvToArray(
-                $coupon->sku
-            );
+    $shippingId =
+        trim(
+            (string) $coupon->sku
+        );
 
-        $activeBrandIds =
-            Manufacture::where(
-                'status',
-                '1'
-            )
-            ->whereIn(
-                'imanufactureid',
-                $brandIds
-            )
-            ->pluck(
-                'imanufactureid'
-            )
-            ->toArray();
-
+    /*
+     * Preserve minimum-order and
+     * quantity eligibility.
+     */
+    if (
+        (float) $coupon->minimum_order_amount == 0.0
+    ) {
         if (
-            empty($activeBrandIds)
+            $totalItemCount >=
+            (int) $coupon->total_free_shipping
         ) {
-            return [
-                'discount' => 0,
-                'matched' => false,
-            ];
+            $freeShipping = true;
+        }
+        
+    }
+    elseif (
+        $subTotal >=
+        (float) $coupon->minimum_order_amount
+    ) {
+        if (
+            $totalItemCount >=
+            (int) $coupon->total_free_shipping
+        ) {
+            $freeShipping = true;
         }
 
-        $cart =
-            Session::get(
-                'ShoppingCart.Cart',
-                []
-            );
+    }
 
-        $productIds =
-            collect($cart)
-                ->pluck('ProductID')
-                ->filter()
-                ->unique()
-                ->values()
-                ->toArray();
+    /*
+     * Preserve coupon discount calculation.
+     */
+    $saleTotal =
+        $subTotal
+        -
+        (
+            (string) $coupon->count_gc_purchase === '0'
+                ? $giftCertificateTotal
+                : 0.0
+        )
+        -
+        $totalDealPrice;
 
-        if (
-            empty($productIds)
-        ) {
-            return [
-                'discount' => 0,
-                'matched' => false,
-            ];
-        }
+    /*
+     * Excluded SKU / pocket perfume value
+     * must not participate in coupon discount.
+     */
+    if (
+        !empty($excludeSkuList)
+    ) {
+        foreach ($cart as $item) {
 
-        /*
-         * Existing Products brand query.
-         */
-        $brandProductIds =
-            Products::whereIn(
-                'imanufactureid',
-                $activeBrandIds
-            )
-            ->whereIn(
-                'products_id',
-                $productIds
-            )
-            ->distinct()
-            ->pluck(
-                'products_id'
-            )
-            ->toArray();
-
-        $matched = false;
-        $totalAmount = 0.0;
-
-        foreach (
-            $cart as $index => $item
-        ) {
-            if (
-                !in_array(
-                    $item['ProductID'] ?? null,
-                    $brandProductIds
-                )
-            ) {
-                continue;
-            }
+            $sku =
+                trim(
+                    (string) ($item['SKU'] ?? '')
+                );
 
             if (
                 in_array(
-                    $item['SKU'] ?? '',
+                    $sku,
                     $excludeSkuList,
                     true
                 )
             ) {
-                continue;
-            }
-
-            if (
-                !$this->isCouponEligibleDeal(
-                    $item,
-                    $coupon
-                )
-            ) {
-                continue;
-            }
-
-            $matched = true;
-
-            $totalAmount +=
-                (float)
-                (
-                    $item['TotPrice']
-                    ?? 0
-                );
-
-            if (
-                (string)
-                $coupon->type === '1'
-            ) {
-                $itemDiscount =
-                    (
-                        (float)
-                        (
-                            $item['Price']
-                            ?? 0
-                        )
-                        *
-                        (int)
-                        (
-                            $item['Qty']
-                            ?? 0
-                        )
-                    )
-                    *
-                    (
-                        (float)
-                        $coupon->discount
-                        / 100
-                    );
-
-                $this->setItemWiseCouponDiscount(
-                    $index,
-                    $coupon,
-                    $itemDiscount
-                );
+                $saleTotal -=
+                    (float) ($item['TotPrice'] ?? 0);
             }
         }
+    }
 
-        if (
-            !$matched
-        ) {
-            return [
-                'discount' => 0,
-                'matched' => false,
-            ];
-        }
+    $saleTotal =
+        max(
+            0,
+            $saleTotal
+        );
 
+    $discount = 0.0;
+
+    
+
+    /*
+     * Apply actual Free Shipping session state.
+     */
+    if ($freeShipping) {
+
+        Session::put(
+            'ShoppingCart.PromoCoupon.FreeShipping',
+            'Yes'
+        );
+
+        Session::put(
+            'ShoppingCart.PromoCoupon.FreeShippingModeID',
+            $shippingId
+        );
+
+        /*
+         * Preserve additional free-shipping
+         * configuration.
+         */
         if (
-            $coupon->minimum_order_amount > 0
+            $coupon->allow_free_shipping === 'Yes'
             &&
-            $totalAmount <
-                $coupon->minimum_order_amount
+            $coupon->free_shipping_value !== ''
         ) {
-            return [
-                'discount' => 0,
-                'matched' => false,
-            ];
+            Session::put(
+                'ShoppingCart.PromoCoupon.FreeShippingCouponModeID',
+                explode(
+                    ',',
+                    $coupon->free_shipping_value
+                )
+            );
+
+            Session::put(
+                'ShoppingCart.PromoCoupon.FreeShippingCouponModeIDFlag',
+                'Yes'
+            );
+        }
+    }
+    else {
+        Session::put(
+            'ShoppingCart.PromoCoupon.FreeShipping',
+            'No'
+        );
+    }
+
+    return [
+        'discount' =>
+            $discount,
+
+        'free_shipping' =>
+            $freeShipping,
+    ];
+}
+   /**
+     * Product brand coupon.
+     */
+ 
+	protected function applyBrandCoupon(
+    $coupon,
+    array $excludeSkuList
+): array {
+    $brandIds =
+        $this->csvToArray(
+            $coupon->sku
+        );
+
+    $activeBrandIds =
+        Manufacture::where(
+            'status',
+            '1'
+        )
+        ->whereIn(
+            'imanufactureid',
+            $brandIds
+        )
+        ->pluck(
+            'imanufactureid'
+        )
+        ->toArray();
+
+    if (
+        empty($activeBrandIds)
+    ) {
+        return [
+            'discount' => 0,
+            'matched' => false,
+        ];
+    }
+
+    $cart =
+        Session::get(
+            'ShoppingCart.Cart',
+            []
+        );
+
+    $productIds =
+        collect($cart)
+            ->pluck('ProductID')
+            ->filter()
+            ->unique()
+            ->values()
+            ->toArray();
+
+    if (
+        empty($productIds)
+    ) {
+        return [
+            'discount' => 0,
+            'matched' => false,
+        ];
+    }
+
+    /*
+     * Existing Products brand query.
+     */
+    $brandProductIds =
+        Products::whereIn(
+            'imanufactureid',
+            $activeBrandIds
+        )
+        ->whereIn(
+            'products_id',
+            $productIds
+        )
+        ->distinct()
+        ->pluck(
+            'products_id'
+        )
+        ->toArray();
+
+    $matched = false;
+    $totalAmount = 0.0;
+
+    foreach (
+        $cart as $index => $item
+    ) {
+        /*
+         * Gift Certificate is handled separately
+         * using count_gc_purchase.
+         */
+        if (
+            $this->isGiftCertificateItem(
+                $item
+            )
+        ) {
+            continue;
         }
 
+        /*
+         * Brand matching.
+         */
+        if (
+            !in_array(
+                $item['ProductID'] ?? null,
+                $brandProductIds
+            )
+        ) {
+            continue;
+        }
+
+        /*
+         * Excluded SKU must not receive
+         * coupon discount.
+         */
+        if (
+            in_array(
+                $item['SKU'] ?? '',
+                $excludeSkuList,
+                true
+            )
+        ) {
+            continue;
+        }
+
+        /*
+         * Preserve existing deal eligibility.
+         */
+        if (
+            !$this->isCouponEligibleDeal(
+                $item,
+                $coupon
+            )
+        ) {
+            continue;
+        }
+
+        $matched = true;
+
+        $totalAmount +=
+            (float)
+            (
+                $item['TotPrice']
+                ?? 0
+            );
+
+        /*
+         * Percentage coupon item-wise discount.
+         */
         if (
             (string)
             $coupon->type === '1'
         ) {
-            $discount =
-                $totalAmount
+            $itemDiscount =
+                (
+                    (float)
+                    (
+                        $item['Price']
+                        ?? 0
+                    )
+                    *
+                    (int)
+                    (
+                        $item['Qty']
+                        ?? 0
+                    )
+                )
                 *
                 (
                     (float)
                     $coupon->discount
                     / 100
                 );
-        } else {
-            $discount =
-                (float)
-                $coupon->discount;
-        }
 
+            $this->setItemWiseCouponDiscount(
+                $index,
+                $coupon,
+                $itemDiscount
+            );
+        }
+    }
+
+    /*
+     * Gift Certificate Total.
+     *
+     * count_gc_purchase = 1
+     * => include Gift Certificate in coupon calculation.
+     */
+    $giftCertificateTotal =
+        (float)
+        Session::get(
+            'ShoppingCart.GiftCertiTotal',
+            0
+        );
+
+    if (
+        (string)
+        $coupon->count_gc_purchase === '1'
+    ) {
+        $totalAmount +=
+            $giftCertificateTotal;
+    }
+
+    /*
+     * Include Shipping + Tax when configured.
+     *
+     * Same behavior as SKU / Category coupons:
+     * only percentage coupons include these
+     * additional amounts in the coupon base.
+     */
+    if (
+        (string)
+        $coupon->count_ship_tax === '1'
+        &&
+        (string)
+        $coupon->type === '1'
+    ) {
+        $shippingCharge =
+            (float)
+            Session::get(
+                'ShoppingCart.Shipping.ShippingCharge',
+                0
+            );
+
+        $taxValue =
+            (float)
+            Session::get(
+                'ShoppingCart.Tax',
+                0
+            );
+
+        $totalAmount +=
+            $shippingCharge
+            + $taxValue;
+    }
+
+    /*
+     * Actual brand product must match.
+     *
+     * Gift Certificate / Shipping / Tax alone
+     * must not make a Brand coupon valid.
+     */
+    if (
+        !$matched
+    ) {
         return [
-            'discount' =>
-                $discount,
-            'matched' => true,
+            'discount' => 0,
+            'matched' => false,
         ];
     }
 
+    /*
+     * Minimum order validation must use
+     * the final coupon calculation amount.
+     */
+    if (
+        $coupon->minimum_order_amount > 0
+        &&
+        $totalAmount <
+            (float)
+            $coupon->minimum_order_amount
+    ) {
+        return [
+            'discount' => 0,
+            'matched' => false,
+        ];
+    }
+
+    /*
+     * Calculate final coupon discount.
+     */
+    if (
+        (string)
+        $coupon->type === '1'
+    ) {
+        $discount =
+            $totalAmount
+            *
+            (
+                (float)
+                $coupon->discount
+                / 100
+            );
+    } else {
+        $discount =
+            (float)
+            $coupon->discount;
+    }
+
+    /*
+     * Gift Certificate item-wise discount.
+     *
+     * count_gc_purchase = 1
+     * => apply percentage coupon discount
+     * to the Gift Certificate item as well.
+     */
+    if (
+        (string)
+        $coupon->count_gc_purchase === '1'
+        &&
+        (string)
+        $coupon->type === '1'
+    ) {
+        foreach (
+            $cart as $index => $item
+        ) {
+            if (
+                !$this->isGiftCertificateItem(
+                    $item
+                )
+            ) {
+                continue;
+            }
+
+            $itemAmount =
+                (float)
+                (
+                    $item['Price']
+                    ?? 0
+                )
+                *
+                (int)
+                (
+                    $item['Qty']
+                    ?? 0
+                );
+
+            $itemDiscount =
+                $itemAmount
+                *
+                (
+                    (float)
+                    $coupon->discount
+                    / 100
+                );
+
+            $this->setItemWiseCouponDiscount(
+                $index,
+                $coupon,
+                $itemDiscount
+            );
+        }
+    }
+
+    return [
+        'discount' =>
+            $discount,
+
+        'matched' =>
+            true,
+    ];
+}
+ 
     /**
      * Serialized / case 7 coupon.
      */
-    protected function applySerializedSkuCoupon(
-        $coupon,
-        array $excludeSkuList
-    ): array {
-        $skuList =
-            $this->csvToArray(
-                $coupon->sku
-            );
+   protected function applySerializedSkuCoupon(
+    $coupon,
+    array $excludeSkuList
+): array {
+    $skuList =
+        trim((string) $coupon->sku);
 
-        $cart =
-            Session::get(
-                'ShoppingCart.Cart',
-                []
-            );
+    $skuData =
+        @unserialize($skuList);
 
-        $matched = false;
-        $totalAmount = 0.0;
-
-        foreach (
-            $cart as $index => $item
-        ) {
-            if (
-                !in_array(
-                    $item['SKU'] ?? '',
-                    $skuList,
-                    true
-                )
-            ) {
-                continue;
-            }
-
-            if (
-                in_array(
-                    $item['SKU'] ?? '',
-                    $excludeSkuList,
-                    true
-                )
-            ) {
-                continue;
-            }
-
-            if (
-                !$this->isCouponEligibleDeal(
-                    $item,
-                    $coupon
-                )
-            ) {
-                continue;
-            }
-
-            $matched = true;
-
-            $totalAmount +=
-                (float)
-                (
-                    $item['TotPrice']
-                    ?? 0
-                );
-
-            if (
-                (string)
-                $coupon->type === '1'
-            ) {
-                $itemDiscount =
-                    (
-                        (float)
-                        (
-                            $item['Price']
-                            ?? 0
-                        )
-                        *
-                        (int)
-                        (
-                            $item['Qty']
-                            ?? 0
-                        )
-                    )
-                    *
-                    (
-                        (float)
-                        $coupon->discount
-                        / 100
-                    );
-
-                $this->setItemWiseCouponDiscount(
-                    $index,
-                    $coupon,
-                    $itemDiscount
-                );
-            }
-        }
-
-        if (
-            !$matched
-        ) {
-            return [
-                'discount' => 0,
-                'free_gift_sku' => null,
-            ];
-        }
-
-        if (
-            $coupon->minimum_order_amount > 0
-            &&
-            $totalAmount <
-                $coupon->minimum_order_amount
-        ) {
-            return [
-                'discount' => 0,
-                'free_gift_sku' => null,
-            ];
-        }
-
-        if (
-            (string)
-            $coupon->type === '1'
-        ) {
-            $discount =
-                $totalAmount
-                *
-                (
-                    (float)
-                    $coupon->discount
-                    / 100
-                );
-        } else {
-            $discount =
-                (float)
-                $coupon->discount;
-        }
-
+    if (
+        !is_array($skuData)
+    ) {
         return [
-            'discount' =>
-                $discount,
-
-            'free_gift_sku' =>
-                !empty(
-                    $coupon->freegift_product_sku
-                )
-                    ? $coupon->freegift_product_sku
-                    : null,
+            'discount' => 0,
+            'free_gift_sku' => null,
         ];
     }
 
+    $skuDiscounts = [];
+
+    foreach ($skuData as $skuItem) {
+        if (
+            !empty($skuItem['sku'])
+        ) {
+            $skuDiscounts[
+                trim($skuItem['sku'])
+            ] =
+                (float)
+                ($skuItem['discount'] ?? 0);
+        }
+    }
+
+    if (
+        empty($skuDiscounts)
+    ) {
+        return [
+            'discount' => 0,
+            'free_gift_sku' => null,
+        ];
+    }
+
+    $cart =
+        Session::get(
+            'ShoppingCart.Cart',
+            []
+        );
+
+    $matched = false;
+    $couponDiscount = 0.0;
+    $matchedItemTotal = 0.0;
+
+    foreach (
+        $cart as $index => $item
+    ) {
+        $sku =
+            trim(
+                (string)
+                ($item['SKU'] ?? '')
+            );
+
+        /*
+         * SKU must match serialized coupon.
+         */
+        if (
+            !isset($skuDiscounts[$sku])
+        ) {
+            continue;
+        }
+
+        /*
+         * Excluded SKU must not receive
+         * item-wise or main discount.
+         */
+        if (
+            in_array(
+                $sku,
+                $excludeSkuList,
+                true
+            )
+        ) {
+            continue;
+        }
+
+        /*
+         * Preserve existing deal eligibility.
+         */
+        if (
+            !$this->isCouponEligibleDeal(
+                $item,
+                $coupon
+            )
+        ) {
+            continue;
+        }
+
+        $matched = true;
+
+        $itemTotal =
+            (float)
+            ($item['Price'] ?? 0)
+            *
+            (int)
+            ($item['Qty'] ?? 0);
+
+        $matchedItemTotal +=
+            $itemTotal;
+
+        /*
+         * Serialized SKU has its OWN
+         * discount percentage.
+         */
+        $itemDiscount =
+            $itemTotal
+            *
+            (
+                $skuDiscounts[$sku] / 100
+            );
+
+        $itemDiscount =
+            NumberFormat(
+                $itemDiscount
+            );
+
+        /*
+         * Main coupon discount is the SUM
+         * of item-wise discounts.
+         */
+        $couponDiscount +=
+            $itemDiscount;
+
+        /*
+         * Store item-wise discount.
+         */
+        $this->setItemWiseCouponDiscount(
+            $index,
+            $coupon,
+            $itemDiscount
+        );
+    }
+
+    /*
+     * No eligible SKU matched.
+     */
+    if (
+        !$matched
+    ) {
+        return [
+            'discount' => 0,
+            'free_gift_sku' => null,
+        ];
+    }
+
+    /*
+     * Minimum order validation uses the
+     * matched serialized SKU amount.
+     */
+    if (
+        $coupon->minimum_order_amount > 0
+        &&
+        $matchedItemTotal <
+            (float)
+            $coupon->minimum_order_amount
+    ) {
+        return [
+            'discount' => 0,
+            'free_gift_sku' => null,
+        ];
+    }
+
+    return [
+        'discount' =>
+            NumberFormat(
+                $couponDiscount
+            ),
+
+        'free_gift_sku' =>
+            !empty(
+                $coupon->freegift_product_sku
+            )
+                ? $coupon->freegift_product_sku
+                : null,
+    ];
+}
     /**
      * Order amount item-wise distribution.
      */
