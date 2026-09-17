@@ -31,70 +31,97 @@ class CheckoutCartController extends Controller
      * CartService owns stock/product/cart business logic.
      * Controller only validates HTTP input and returns JSON.
      */
-    public function add(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'product_id' => ['required', 'integer', 'min:1'],
-            'qty' => ['nullable', 'integer', 'min:1'],
-            'order_type' => ['nullable', 'string'],
-            'cookie' => ['nullable', 'string'],
-            'gift_wrap' => ['nullable', 'string'],
-            'free_gift' => ['nullable', 'boolean'],
-            'free_product_id' => ['nullable', 'integer', 'min:0'],
-            'free_gift_one' => ['nullable', 'boolean'],
+  public function add(Request $request): JsonResponse
+{
+    /*
+     * jQuery form POST can send boolean values as strings.
+     * Normalize them before Laravel boolean validation.
+     */
+    if ($request->has('free_gift')) {
+        $request->merge([
+            'free_gift' => filter_var(
+                $request->input('free_gift'),
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            ),
         ]);
+    }
 
-        /*
-         * Free Gift popup selection uses the SAME new checkout
-         * /cart/add route.
-         *
-         * The old Free Gift popup/template remains unchanged.
-         * The selected product is inserted through FreeGiftService
-         * instead of being treated as a normal paid cart product.
-         */
-        if (
-            ($validated['free_gift'] ?? false) === true
-        ) {
-            $message =
-                $this->freeGiftService->addGift(
-                    (int) $validated['product_id'],
-                    (int) ($validated['free_product_id'] ?? 0),
-                    ($validated['free_gift_one'] ?? false)
-                        ? 'Yes'
-                        : 'No'
-                );
+    if ($request->has('free_gift_one')) {
+        $request->merge([
+            'free_gift_one' => filter_var(
+                $request->input('free_gift_one'),
+                FILTER_VALIDATE_BOOLEAN,
+                FILTER_NULL_ON_FAILURE
+            ),
+        ]);
+    }
 
-            $result = [
-                'success' => $message === '',
-                'status' => $message === ''
-                    ? 'success'
-                    : 'error',
-                'message' => $message,
+    $validated = $request->validate([
+        'product_id' => ['required', 'integer', 'min:1'],
+        'qty' => ['nullable', 'integer', 'min:1'],
+        'order_type' => ['nullable', 'string'],
+        'cookie' => ['nullable', 'string'],
+        'gift_wrap' => ['nullable', 'string'],
+        'free_gift' => ['nullable', 'boolean'],
+        'free_product_id' => ['nullable', 'integer', 'min:0'],
+        'free_gift_one' => ['nullable', 'boolean'],
+    ]);
+
+    /*
+     * =========================================================
+     * FREE GIFT
+     * =========================================================
+     */
+    if (($validated['free_gift'] ?? false) === true) {
+
+        $message =
+            $this->freeGiftService->addGift(
+                (int) $validated['product_id'],
+                (int) ($validated['free_product_id'] ?? 0),
+                ($validated['free_gift_one'] ?? false)
+                    ? 'Yes'
+                    : 'No'
+            );
+
+        $result = [
+            'success' => $message === '',
+            'status' => $message === ''
+                ? 'success'
+                : 'error',
+            'message' => $message,
+        ];
+
+        if ($message === '') {
+
+            $result['checkout'] =
+                $this->checkoutService
+                    ->refresh('cart');
+
+            $result['cart'] =
+                $this->cartService
+                    ->getCart();
+
+            $result['freeGift'] = [
+                'status' => 'selected',
+                'shouldPopup' => false,
+                'shouldAutoAdd' => false,
+                'eligibleGifts' => [],
+                'remainingCount' => 0,
+                'cart' => $result['cart'],
             ];
-
-            if ($message === '') {
-                $result['checkout'] =
-                    $this->checkoutService
-                        ->refresh('cart');
-
-                $result['cart'] =
-                    $this->cartService
-                        ->getCart();
-
-                $result['freeGift'] = [
-                    'status' => 'selected',
-                    'shouldPopup' => false,
-                    'shouldAutoAdd' => false,
-                    'eligibleGifts' => [],
-                    'remainingCount' => 0,
-                    'cart' => $result['cart'],
-                ];
-            }
-
-            return response()->json($result);
         }
 
-        $result = $this->cartService->addByProductId(
+        return response()->json($result);
+    }
+
+    /*
+     * =========================================================
+     * NORMAL PRODUCT
+     * =========================================================
+     */
+    $result =
+        $this->cartService->addByProductId(
             (int) $validated['product_id'],
             (int) ($validated['qty'] ?? 1),
             $validated['order_type'] ?? 'Website',
@@ -102,37 +129,23 @@ class CheckoutCartController extends Controller
             $validated['gift_wrap'] ?? 'No'
         );
 
-        if (($result['success'] ?? false) === true) {
-            $result['checkout'] =
-                $this->checkoutService
-                    ->refresh('cart');
+    if (($result['success'] ?? false) === true) {
 
-            $result['freeGift'] =
-                $this->resolveFreeGiftAfterCartChange();
+        $result['checkout'] =
+            $this->checkoutService
+                ->refresh('cart');
 
-            /*
-             * Truth Mode:
-             * Keep response.cart unchanged.
-             *
-             * The existing checkout.js quantity flow expects
-             * response.cart for the product that was updated, while
-             * the final Free Gift cart is exposed inside
-             * response.freeGift.cart.
-             *
-             * Do NOT promote freeGift.cart to response.cart.
-             * That previously changed the response contract and
-             * caused the existing Qty 7 behaviour to stop working.
-             */
-            $result['freeGift'] =
-                $this->attachFinalFreeGiftCart(
-                    $result['freeGift']
-                );
+        $result['freeGift'] =
+            $this->resolveFreeGiftAfterCartChange();
 
-        }
-
-        return response()->json($result);
+        $result['freeGift'] =
+            $this->attachFinalFreeGiftCart(
+                $result['freeGift']
+            );
     }
 
+    return response()->json($result);
+}
     /**
      * Update existing cart item quantity.
      */
@@ -330,13 +343,39 @@ class CheckoutCartController extends Controller
         return $freeGift;
     }
 
-protected function resolveFreeGiftAfterCartChange(): array
+public function resolveFreeGiftAfterCartChange(): array
 {
     /*
      * =========================================================
      * CURRENT CART
      * =========================================================
      */
+    Log::info('FREE GIFT PAGE/CHANGE RESOLVE START', [
+        'url' => request()->fullUrl(),
+        'method' => request()->method(),
+
+        'subtotal' => Session::get(
+            'ShoppingCart.SubTotal',
+            null
+        ),
+
+        'cart_session' => Session::get(
+            'ShoppingCart.Cart',
+            null
+        ),
+
+        'freegift_flag' => config('Settings.FREEGIFTFLAG'),
+
+        'checkout_shipping_cart' => config(
+            'Settings.CHECKOUT_SHOIPPINGCART'
+        ),
+
+        'user_type' => Session::get('eusertype'),
+        'dropshipper' => Session::get('is_dropshipper'),
+
+        'store_auth' => Auth::guard('store')->check(),
+    ]);
+
     $shoppingCart =
         $this->cartService->getCart();
 
@@ -351,6 +390,11 @@ protected function resolveFreeGiftAfterCartChange(): array
                     : []
             );
 
+    /*
+     * =========================================================
+     * EMPTY CART
+     * =========================================================
+     */
     if (empty($cart)) {
         return [
             'status' => 'no_rule',
@@ -369,31 +413,13 @@ protected function resolveFreeGiftAfterCartChange(): array
      * EXISTING FREE GIFTS
      * =========================================================
      *
-     * IMPORTANT:
-     *
-     * Do NOT depend only on FreeGiftAutoAdded.
-     *
-     * Old checkout Free Gifts can have:
-     *
-     * IS_Free_Gift = Yes
-     *
-     * without:
-     *
-     * FreeGiftAutoAdded = Yes
-     *
-     * Therefore detect the actual Free Gift line first.
-     *
-     * Free Samples are excluded.
+     * Free Sample is NOT a Free Gift.
      */
     $existingGiftCount = 0;
-
     $existingFreeGiftRuleIds = [];
-
     $existingFreeGiftIndexes = [];
 
-    foreach (
-        $cart as $index => $item
-    ) {
+    foreach ($cart as $index => $item) {
 
         if (
             ($item['IS_Free_Gift'] ?? 'No') !== 'Yes'
@@ -407,53 +433,30 @@ protected function resolveFreeGiftAfterCartChange(): array
             continue;
         }
 
-        /*
-         * Count the actual Free Gift quantity.
-         */
-        $existingGiftCount +=
-            max(
-                1,
-                (int) (
-                    $item['Qty'] ?? 1
-                )
-            );
+        $existingGiftCount += max(
+            1,
+            (int) ($item['Qty'] ?? 1)
+        );
 
-        /*
-         * Keep the exact cart index.
-         *
-         * This is used only if the existing Free Gift
-         * needs to be removed because the rule changed.
-         */
         $existingFreeGiftIndexes[] =
             $index;
 
-        /*
-         * Existing rule ID.
-         *
-         * Support both current and legacy key names.
-         */
-        $ruleId =
-            (int) (
-                $item['freeproductsid']
-                ??
-                $item['FreeGiftRuleId']
-                ??
-                0
-            );
+        $ruleId = (int) (
+            $item['freeproductsid']
+            ??
+            $item['FreeGiftRuleId']
+            ??
+            0
+        );
 
-        if (
-            $ruleId > 0
-        ) {
-
-            $existingFreeGiftRuleIds[
-                $ruleId
-            ] = true;
+        if ($ruleId > 0) {
+            $existingFreeGiftRuleIds[$ruleId] = true;
         }
     }
 
     /*
      * =========================================================
-     * FREE GIFT RULE MUST USE SUBTOTAL
+     * CURRENT PURCHASE VALUE
      * =========================================================
      */
     $totalValue =
@@ -485,10 +488,24 @@ protected function resolveFreeGiftAfterCartChange(): array
      * =========================================================
      * RESOLVE CURRENT RULE
      * =========================================================
-     *
-     * Existing gift count is passed only for determining
-     * how many gifts are already selected/available.
      */
+    Log::info(
+        'FREE GIFT RESOLVE INPUT',
+        [
+            'subtotal' =>
+                $totalValue,
+
+            'cart_count' =>
+                count($cart),
+
+            'existingGiftCount' =>
+                $existingGiftCount,
+
+            'cart' =>
+                $cart,
+        ]
+    );
+
     $decision =
         $this->freeGiftService
             ->resolveEligibleGifts(
@@ -504,26 +521,45 @@ protected function resolveFreeGiftAfterCartChange(): array
             ?? 0
         );
 
+    Log::info(
+        'FREE GIFT RESOLVE OUTPUT',
+        [
+            'status' =>
+                $decision['status']
+                ?? null,
+
+            'rule' =>
+                $decision['rule']
+                ?? null,
+
+            'eligibleGifts' =>
+                $decision['eligibleGifts']
+                ?? [],
+
+            'remainingCount' =>
+                $decision['remainingCount']
+                ?? null,
+
+            'shouldPopup' =>
+                $decision['shouldPopup']
+                ?? null,
+
+            'shouldAutoAdd' =>
+                $decision['shouldAutoAdd']
+                ?? null,
+
+            'popupHtmlExists' =>
+                !empty(
+                    $decision['popupHtml']
+                    ?? ''
+                ),
+        ]
+    );
+
     /*
      * =========================================================
      * RULE CHANGE DETECTION
      * =========================================================
-     *
-     * Example:
-     *
-     * Qty 8
-     * $400
-     * Rule = 280-400
-     *
-     * Qty 9
-     * $450
-     * Rule = 401-500
-     *
-     * Existing Free Gift exists.
-     *
-     * New Rule ID is not the existing Rule ID.
-     *
-     * Therefore old Free Gift must be removed.
      */
     $ruleChanged =
         $newRuleId > 0
@@ -531,33 +567,26 @@ protected function resolveFreeGiftAfterCartChange(): array
         $existingGiftCount > 0
         &&
         (
-            empty(
-                $existingFreeGiftRuleIds
-            )
+            empty($existingFreeGiftRuleIds)
             ||
             !isset(
-                $existingFreeGiftRuleIds[
-                    $newRuleId
-                ]
+                $existingFreeGiftRuleIds[$newRuleId]
             )
         );
 
-    /*
-     * =========================================================
-     * REMOVE OLD FREE GIFT WHEN RULE CHANGES
-     * =========================================================
-     */
     $removedFreeGiftCount = 0;
 
-    if (
-        $ruleChanged
-    ) {
+    /*
+     * =========================================================
+     * RULE CHANGED
+     * =========================================================
+     */
+    if ($ruleChanged) {
 
         /*
-         * First use the existing FreeGiftService removal
-         * logic.
-         *
-         * This preserves the existing new-checkout behavior.
+         * -----------------------------------------------------
+         * REMOVE OLD AUTO-ADDED FREE GIFT
+         * -----------------------------------------------------
          */
         $removedFreeGiftCount =
             $this->freeGiftService
@@ -565,25 +594,13 @@ protected function resolveFreeGiftAfterCartChange(): array
 
         /*
          * -----------------------------------------------------
-         * LEGACY FREE GIFT FALLBACK
+         * FALLBACK FOR LEGACY FREE GIFT
          * -----------------------------------------------------
-         *
-         * If the service did not remove anything, the old
-         * Free Gift may be a legacy cart item that does not
-         * have FreeGiftAutoAdded = Yes.
-         *
-         * Old CartTrait removes the existing IS_Free_Gift
-         * item when the selected rule changes.
-         *
-         * Therefore remove ONLY the old rule Free Gift
-         * indexes captured above.
          */
         if (
             $removedFreeGiftCount === 0
             &&
-            !empty(
-                $existingFreeGiftIndexes
-            )
+            !empty($existingFreeGiftIndexes)
         ) {
 
             $currentCart =
@@ -593,152 +610,47 @@ protected function resolveFreeGiftAfterCartChange(): array
             if (
                 is_array($currentCart)
                 &&
-                isset(
-                    $currentCart['Cart']
-                )
+                isset($currentCart['Cart'])
                 &&
-                is_array(
-                    $currentCart['Cart']
-                )
+                is_array($currentCart['Cart'])
             ) {
                 $currentCart =
                     $currentCart['Cart'];
             }
 
-            $filteredCart = [];
-
-            foreach (
-                $currentCart as $item
-            ) {
-
-                $isFreeGift =
-                    (
-                        ($item['IS_Free_Gift'] ?? 'No')
-                        === 'Yes'
-                    );
-
-                $isFreeSample =
-                    (
-                        ($item['Is_Free_Sample'] ?? 'No')
-                        === 'Yes'
-                    );
-
-                if (
-                    !$isFreeGift
-                    ||
-                    $isFreeSample
-                ) {
-
-                    $filteredCart[] =
-                        $item;
-
-                    continue;
-                }
-
-                /*
-                 * Identify the legacy Free Gift by its
-                 * previous rule ID.
-                 */
-                $itemRuleId =
-                    (int) (
-                        $item['freeproductsid']
-                        ??
-                        $item['FreeGiftRuleId']
-                        ??
-                        0
-                    );
-
-                /*
-                 * Only remove when:
-                 *
-                 * - it belongs to one of the old rule IDs
-                 * - OR there was exactly one existing Free Gift
-                 *   and its rule ID was not available
-                 *
-                 * The second condition supports the legacy cart
-                 * structure where the rule ID is stored outside
-                 * the cart line.
-                 */
-                $removeLegacyGift = false;
-
-                if (
-                    $itemRuleId > 0
-                    &&
-                    isset(
-                        $existingFreeGiftRuleIds[
-                            $itemRuleId
-                        ]
-                    )
-                ) {
-
-                    $removeLegacyGift = true;
-                }
-
-                if (
-                    $itemRuleId === 0
-                    &&
-                    count(
-                        $existingFreeGiftIndexes
-                    ) === 1
-                    &&
-                    empty(
-                        $existingFreeGiftRuleIds
-                    )
-                ) {
-
-                    $removeLegacyGift = true;
-                }
-
-                if (
-                    $removeLegacyGift
-                ) {
-
-                    $removedFreeGiftCount++;
-
-                    Log::info(
-                        'Legacy Free Gift Removed On Rule Change',
-                        [
-                            'productId' =>
-                                $item['ProductID']
-                                ?? null,
-
-                            'sku' =>
-                                $item['SKU']
-                                ?? null,
-
-                            'freeproductsid' =>
-                                $item[
-                                    'freeproductsid'
-                                ]
-                                ?? null,
-
-                            'FreeGiftRuleId' =>
-                                $item[
-                                    'FreeGiftRuleId'
-                                ]
-                                ?? null,
-
-                            'newRuleId' =>
-                                $newRuleId,
-                        ]
-                    );
-
-                    continue;
-                }
-
-                $filteredCart[] =
-                    $item;
+            if (!is_array($currentCart)) {
+                $currentCart = [];
             }
 
-            /*
-             * Save the legacy-cleaned cart.
-             */
+            $filteredCart = [];
+
+            foreach ($currentCart as $item) {
+
+                $isFreeGift =
+                    ($item['IS_Free_Gift'] ?? 'No')
+                    === 'Yes';
+
+                $isFreeSample =
+                    ($item['Is_Free_Sample'] ?? 'No')
+                    === 'Yes';
+
+                if (
+                    $isFreeGift
+                    &&
+                    !$isFreeSample
+                ) {
+                    continue;
+                }
+
+                $filteredCart[] = $item;
+            }
+
             Session::put(
                 'ShoppingCart.Cart',
-                array_values(
-                    $filteredCart
-                )
+                array_values($filteredCart)
             );
+
+            $removedFreeGiftCount = 1;
         }
 
         /*
@@ -746,19 +658,13 @@ protected function resolveFreeGiftAfterCartChange(): array
          * OLD GIFT REMOVED
          * -----------------------------------------------------
          */
-        if (
-            $removedFreeGiftCount > 0
-        ) {
+        if ($removedFreeGiftCount > 0) {
 
-            /*
-             * Refresh totals after the old Free Gift
-             * has actually been removed from Session.
-             */
             $this->checkoutService
                 ->refresh('cart');
 
             /*
-             * Read FINAL cart again.
+             * Get latest cart after removal.
              */
             $shoppingCart =
                 $this->cartService
@@ -766,12 +672,10 @@ protected function resolveFreeGiftAfterCartChange(): array
 
             $cart =
                 is_array($shoppingCart)
-                && isset(
-                    $shoppingCart['Cart']
-                )
-                && is_array(
-                    $shoppingCart['Cart']
-                )
+                &&
+                isset($shoppingCart['Cart'])
+                &&
+                is_array($shoppingCart['Cart'])
                     ? $shoppingCart['Cart']
                     : (
                         is_array($shoppingCart)
@@ -780,9 +684,7 @@ protected function resolveFreeGiftAfterCartChange(): array
                     );
 
             /*
-             * Read SUBTOTAL again.
-             *
-             * Free Gift rules always use SUBTOTAL.
+             * Re-read subtotal.
              */
             $totalValue =
                 (float) Session::get(
@@ -790,33 +692,10 @@ protected function resolveFreeGiftAfterCartChange(): array
                     0
                 );
 
-            Log::info(
-                'Free Gift Rule Re-Resolve After Old Gift Removal',
-                [
-                    'subtotal' =>
-                        $totalValue,
-
-                    'removedFreeGiftCount' =>
-                        $removedFreeGiftCount,
-
-                    'newRuleIdBeforeReResolve' =>
-                        $newRuleId,
-
-                    'cartCount' =>
-                        count($cart),
-                ]
-            );
-
             /*
              * -------------------------------------------------
              * RE-RESOLVE NEW RULE
              * -------------------------------------------------
-             *
-             * Old gift is already gone.
-             *
-             * Therefore:
-             *
-             * existingGiftCount = 0
              */
             $decision =
                 $this->freeGiftService
@@ -827,25 +706,191 @@ protected function resolveFreeGiftAfterCartChange(): array
                         0
                     );
 
-            $decision[
-                'ruleChanged'
-            ] = true;
+            $decision['ruleChanged'] =
+                true;
 
-            $decision[
-                'removedFreeGiftCount'
-            ] =
+            $decision['removedFreeGiftCount'] =
                 $removedFreeGiftCount;
+
+            Log::info(
+                'Free Gift Rule AFTER Old Gift Removal',
+                [
+                    'subtotal' =>
+                        $totalValue,
+
+                    'removedFreeGiftCount' =>
+                        $removedFreeGiftCount,
+
+                    'status' =>
+                        $decision['status']
+                        ?? null,
+
+                    'rule' =>
+                        $decision['rule']
+                        ?? null,
+
+                    'eligibleGifts' =>
+                        $decision['eligibleGifts']
+                        ?? [],
+
+                    'remainingCount' =>
+                        $decision['remainingCount']
+                        ?? null,
+
+                    'shouldAutoAdd' =>
+                        $decision['shouldAutoAdd']
+                        ?? null,
+
+                    'shouldPopup' =>
+                        $decision['shouldPopup']
+                        ?? null,
+                ]
+            );
+
+            /*
+             * =================================================
+             * NEW RULE - AUTO ADD
+             * =================================================
+             */
+            if (
+                ($decision['status'] ?? '') === 'auto_add'
+                &&
+                !empty(
+                    $decision['eligibleGifts'][0]
+                )
+            ) {
+
+                $gift =
+                    $decision['eligibleGifts'][0];
+
+                $giftProductId =
+                    (int) (
+                        $gift['products_id']
+                        ?? 0
+                    );
+
+                $giftRuleId =
+                    (int) (
+                        $decision['rule']['id']
+                        ?? $gift['free_gift_products_id']
+                        ?? 0
+                    );
+
+                Log::info(
+                    'FREE GIFT NEW RULE AUTO ADD START',
+                    [
+                        'products_id' =>
+                            $giftProductId,
+
+                        'freeproductsid' =>
+                            $giftRuleId,
+
+                        'rule' =>
+                            $decision['rule']
+                            ?? null,
+
+                        'gift' =>
+                            $gift,
+                    ]
+                );
+
+                if ($giftProductId > 0) {
+
+                    $message =
+                        $this->freeGiftService
+                            ->addGift(
+                                $giftProductId,
+                                $giftRuleId,
+                                'No'
+                            );
+
+                    if ($message === '') {
+
+                        $decision['status'] =
+                            'auto_added';
+
+                        $decision['shouldAutoAdd'] =
+                            false;
+
+                        $decision['shouldPopup'] =
+                            false;
+
+                        $decision['autoAddedProductId'] =
+                            $giftProductId;
+
+                        $decision['message'] =
+                            '';
+
+                        $this->checkoutService
+                            ->refresh('cart');
+
+                        $finalCart =
+                            $this->cartService
+                                ->getCart();
+
+                        if (
+                            is_array($finalCart)
+                            &&
+                            isset(
+                                $finalCart['Cart']
+                            )
+                            &&
+                            is_array(
+                                $finalCart['Cart']
+                            )
+                        ) {
+
+                            $finalCart =
+                                $finalCart['Cart'];
+                        }
+
+                        $decision['cart'] =
+                            is_array($finalCart)
+                                ? $finalCart
+                                : [];
+
+                    } else {
+
+                        $decision['status'] =
+                            'auto_add_failed';
+
+                        $decision['shouldAutoAdd'] =
+                            false;
+
+                        $decision['shouldPopup'] =
+                            false;
+
+                        $decision['autoAddError'] =
+                            $message
+                            ??
+                            'Unable to add free gift.';
+                    }
+
+                } else {
+
+                    $decision['status'] =
+                        'auto_add_failed';
+
+                    $decision['shouldAutoAdd'] =
+                        false;
+
+                    $decision['shouldPopup'] =
+                        false;
+
+                    $decision['autoAddError'] =
+                        'Invalid free gift product.';
+                }
+            }
         }
     }
 
     /*
      * =========================================================
-     * QUALIFICATION LOST
+     * NO RULE / QUALIFICATION LOST
      * =========================================================
      */
     if (
-        ($decision['status'] ?? '')
-            === 'no_rule'
+        ($decision['status'] ?? '') === 'no_rule'
         &&
         $existingGiftCount > 0
         &&
@@ -868,12 +913,10 @@ protected function resolveFreeGiftAfterCartChange(): array
         );
 
         $removed =
-            $this->freeGiftService
-                ->removeAutoAddedFreeGifts();
+    $this->freeGiftService
+        ->removeAllFreeGifts();
 
-        if (
-            $removed > 0
-        ) {
+        if ($removed > 0) {
 
             $this->checkoutService
                 ->refresh('cart');
@@ -885,40 +928,28 @@ protected function resolveFreeGiftAfterCartChange(): array
             if (
                 is_array($finalCart)
                 &&
-                isset(
-                    $finalCart['Cart']
-                )
+                isset($finalCart['Cart'])
                 &&
-                is_array(
-                    $finalCart['Cart']
-                )
+                is_array($finalCart['Cart'])
             ) {
 
                 $finalCart =
                     $finalCart['Cart'];
             }
 
-            $decision[
-                'status'
-            ] =
+            $decision['status'] =
                 'qualification_lost';
 
-            $decision[
-                'shouldAutoAdd'
-            ] = false;
+            $decision['shouldAutoAdd'] =
+                false;
 
-            $decision[
-                'shouldPopup'
-            ] = false;
+            $decision['shouldPopup'] =
+                false;
 
-            $decision[
-                'removedFreeGiftCount'
-            ] =
+            $decision['removedFreeGiftCount'] =
                 $removed;
 
-            $decision[
-                'cart'
-            ] =
+            $decision['cart'] =
                 is_array($finalCart)
                     ? $finalCart
                     : [];
@@ -927,33 +958,200 @@ protected function resolveFreeGiftAfterCartChange(): array
 
     /*
      * =========================================================
-     * POPUP HTML
+     * POPUP
      * =========================================================
      */
     if (
-        ($decision['status'] ?? '')
-            === 'popup'
+        ($decision['status'] ?? '') === 'popup'
         &&
         !empty(
             $decision['eligibleGifts']
         )
     ) {
 
+        /*
+         * IMPORTANT:
+         *
+         * Always get the LATEST cart here.
+         *
+         * This is critical after a Free Gift has been removed
+         * because the old $cart variable may contain the previous
+         * Free Gift.
+         */
+        $latestShoppingCart =
+            $this->cartService
+                ->getCart();
+
+        $latestCart =
+            is_array($latestShoppingCart)
+            &&
+            isset($latestShoppingCart['Cart'])
+            &&
+            is_array($latestShoppingCart['Cart'])
+                ? $latestShoppingCart['Cart']
+                : (
+                    is_array($latestShoppingCart)
+                        ? $latestShoppingCart
+                        : []
+                );
+
+        /*
+         * -----------------------------------------------------
+         * EXISTING FREE GIFT PRODUCT IDS
+         * -----------------------------------------------------
+         */
+        $existingFreeGiftProductIds = [];
+
+        /*
+         * -----------------------------------------------------
+         * EXISTING FREE GIFT SKUS
+         * -----------------------------------------------------
+         */
+        $existingFreeGiftSkus = [];
+
+        foreach (
+            $latestCart
+            as $cartItem
+        ) {
+
+            if (
+                !is_array($cartItem)
+            ) {
+                continue;
+            }
+
+            /*
+             * ONLY actual Free Gifts.
+             */
+            if (
+                ($cartItem['IS_Free_Gift'] ?? 'No')
+                !== 'Yes'
+            ) {
+                continue;
+            }
+
+            /*
+             * Free Sample is NOT a Free Gift.
+             */
+            if (
+                ($cartItem['Is_Free_Sample'] ?? 'No')
+                === 'Yes'
+            ) {
+                continue;
+            }
+
+            /*
+             * Product ID.
+             */
+            $cartProductId =
+                (int) (
+                    $cartItem['ProductID']
+                    ??
+                    $cartItem['products_id']
+                    ??
+                    $cartItem['product_id']
+                    ??
+                    0
+                );
+
+            if (
+                $cartProductId > 0
+            ) {
+
+                $existingFreeGiftProductIds[
+                    $cartProductId
+                ] = true;
+            }
+
+            /*
+             * ORGSKU.
+             */
+            $cartOrgSku =
+                strtoupper(
+                    trim(
+                        (string) (
+                            $cartItem['ORGSKU']
+                            ??
+                            $cartItem['orgsku']
+                            ??
+                            ''
+                        )
+                    )
+                );
+
+            if (
+                $cartOrgSku !== ''
+            ) {
+
+                $existingFreeGiftSkus[
+                    $cartOrgSku
+                ] = true;
+            }
+
+            /*
+             * SKU.
+             *
+             * Example:
+             * GIFT-UP8411061251706
+             *
+             * becomes:
+             * UP8411061251706
+             */
+            $cartSku =
+                strtoupper(
+                    trim(
+                        (string) (
+                            $cartItem['SKU']
+                            ??
+                            $cartItem['sku']
+                            ??
+                            ''
+                        )
+                    )
+                );
+
+            if (
+                str_starts_with(
+                    $cartSku,
+                    'GIFT-'
+                )
+            ) {
+
+                $cartSku =
+                    substr(
+                        $cartSku,
+                        5
+                    );
+            }
+
+            if (
+                $cartSku !== ''
+            ) {
+
+                $existingFreeGiftSkus[
+                    $cartSku
+                ] = true;
+            }
+        }
+
+        /*
+         * -----------------------------------------------------
+         * PREPARE POPUP GIFTS
+         * -----------------------------------------------------
+         */
         $popupGifts =
             is_array(
-                $decision[
-                    'eligibleGifts'
-                ]
+                $decision['eligibleGifts']
             )
-                ? $decision[
-                    'eligibleGifts'
-                ]
+                ? $decision['eligibleGifts']
                 : [];
 
         $popupGifts =
             array_map(
                 function ($gift) use (
-                    $decision
+                    $decision,
+                    $existingFreeGiftProductIds,
+                    $existingFreeGiftSkus
                 ) {
 
                     $gift =
@@ -961,126 +1159,212 @@ protected function resolveFreeGiftAfterCartChange(): array
                             ? $gift
                             : [];
 
+                    /*
+                     * =================================================
+                     * PRODUCT ID
+                     * =================================================
+                     */
                     $productId =
                         (int) (
-                            $gift[
-                                'products_id'
-                            ]
+                            $gift['products_id']
                             ??
-                            $gift[
-                                'product_id'
-                            ]
+                            $gift['product_id']
                             ??
-                            $gift[
-                                'ProductID'
-                            ]
+                            $gift['ProductID']
                             ??
                             0
                         );
 
-                    $gift[
-                        'products_id'
-                    ] =
+                    $gift['products_id'] =
                         $productId;
 
-                    $gift[
-                        'product_name'
-                    ] =
-                        $gift[
-                            'product_name'
-                        ]
-                        ??
-                        $gift[
-                            'ProductName'
-                        ]
-                        ??
-                        $gift[
-                            'name'
-                        ]
-                        ??
-                        '';
+                    /*
+                     * =================================================
+                     * SKU
+                     * =================================================
+                     */
+                    $giftSku =
+                        strtoupper(
+                            trim(
+                                (string) (
+                                    $gift['sku']
+                                    ??
+                                    $gift['SKU']
+                                    ??
+                                    ''
+                                )
+                            )
+                        );
 
-                    $gift['sku'] =
-                        $gift['sku']
-                        ??
-                        $gift['SKU']
-                        ??
-                        '';
+                    /*
+                     * Normalize GIFT- prefix.
+                     */
+                    if (
+                        str_starts_with(
+                            $giftSku,
+                            'GIFT-'
+                        )
+                    ) {
 
-                    $gift[
-                        'short_description'
-                    ] =
-                        $gift[
-                            'short_description'
-                        ]
-                        ??
-                        $gift[
-                            'ProductName_description'
-                        ]
-                        ??
-                        '';
+                        $giftSku =
+                            substr(
+                                $giftSku,
+                                5
+                            );
+                    }
+
+                    /*
+                     * =================================================
+                     * FOUND SKU
+                     * =================================================
+                     *
+                     * IMPORTANT:
+                     *
+                     * Do NOT trust FoundSku from the FreeGiftService.
+                     *
+                     * Calculate it ONLY from the CURRENT cart.
+                     *
+                     * Existing Free Gift:
+                     *     Yes
+                     *
+                     * Not in cart:
+                     *     No
+                     */
+                    $foundInCart =
+                        (
+                            $productId > 0
+                            &&
+                            isset(
+                                $existingFreeGiftProductIds[
+                                    $productId
+                                ]
+                            )
+                        )
+                        ||
+                        (
+                            $giftSku !== ''
+                            &&
+                            isset(
+                                $existingFreeGiftSkus[
+                                    $giftSku
+                                ]
+                            )
+                        );
 
                     $gift['FoundSku'] =
-                        $gift['FoundSku']
-                        ??
-                        'No';
+                        $foundInCart
+                            ? 'Yes'
+                            : 'No';
 
-                    $gift[
-                        'free_gift_products_id'
-                    ] =
+                    /*
+                     * =================================================
+                     * PRODUCT NAME
+                     * =================================================
+                     */
+                    $gift['product_name'] =
+                        $gift['product_name']
+                        ??
+                        $gift['ProductName']
+                        ??
+                        $gift['name']
+                        ??
+                        '';
+
+                    /*
+                     * =================================================
+                     * DESCRIPTION
+                     * =================================================
+                     */
+                    $gift['short_description'] =
+                        $gift['short_description']
+                        ??
+                        $gift['ProductName_description']
+                        ??
+                        '';
+
+                    /*
+                     * =================================================
+                     * FREE GIFT RULE ID
+                     * =================================================
+                     */
+                    $gift['free_gift_products_id'] =
                         (int) (
-                            $gift[
-                                'free_gift_products_id'
-                            ]
+                            $gift['free_gift_products_id']
                             ??
-                            $gift[
-                                'freeproductsid'
-                            ]
+                            $gift['freeproductsid']
                             ??
-                            $gift[
-                                'FreeGiftRuleId'
-                            ]
+                            $gift['FreeGiftRuleId']
                             ??
-                            $decision[
-                                'rule'
-                            ]['id']
+                            $decision['rule']['id']
                             ??
                             0
                         );
 
-                    $gift[
-                        'freegift_add_count'
-                    ] =
+                    /*
+                     * =================================================
+                     * FREE GIFT COUNT
+                     * =================================================
+                     */
+                    $gift['freegift_add_count'] =
                         (int) (
-                            $gift[
-                                'freegift_add_count'
-                            ]
+                            $gift['freegift_add_count']
                             ??
-                            $decision[
-                                'rule'
-                            ][
-                                'freegift_add_count'
-                            ]
+                            $decision['rule']['freegift_add_count']
                             ??
-                            $decision[
-                                'remainingCount'
-                            ]
+                            $decision['remainingCount']
                             ??
                             1
                         );
 
                     /*
-                     * Legacy popup expects thumb_image.
+                     * =================================================
+                     * IMAGE
+                     * =================================================
                      */
                     $thumbImage =
-                        $gift[
-                            'thumb_image'
-                        ]
-                        ??
-                        null;
+                        trim(
+                            (string) (
+                                $gift['thumb_image']
+                                ??
+                                ''
+                            )
+                        );
 
                     if (
-                        empty($thumbImage)
+                        $thumbImage !== ''
+                        &&
+                        str_contains(
+                            $thumbImage,
+                            '<img'
+                        )
+                    ) {
+
+                        if (
+                            preg_match(
+                                '/<img[^>]+src=["\']([^"\']*)["\']/i',
+                                $thumbImage,
+                                $matches
+                            )
+                        ) {
+
+                            $thumbImage =
+                                trim(
+                                    (string) (
+                                        $matches[1]
+                                        ??
+                                        ''
+                                    )
+                                );
+
+                        } else {
+
+                            $thumbImage =
+                                '';
+                        }
+                    }
+
+                    if (
+                        $thumbImage === ''
                         &&
                         !empty(
                             $gift['image']
@@ -1088,21 +1372,13 @@ protected function resolveFreeGiftAfterCartChange(): array
                     ) {
 
                         $thumbImage =
-                            rtrim(
-                                (string) config(
-                                    'global.PRD_THUMB_IMG_URL'
-                                ),
-                                '/'
-                            )
-                            . '/'
-                            . ltrim(
-                                (string) $gift['image'],
-                                '/'
+                            trim(
+                                (string) $gift['image']
                             );
                     }
 
                     if (
-                        empty($thumbImage)
+                        $thumbImage === ''
                         &&
                         $productId > 0
                     ) {
@@ -1118,25 +1394,14 @@ protected function resolveFreeGiftAfterCartChange(): array
                                     'image'
                                 );
 
-                            if (
-                                !empty(
-                                    $productImage
-                                )
-                            ) {
-
-                                $thumbImage =
-                                    rtrim(
-                                        (string) config(
-                                            'global.PRD_THUMB_IMG_URL'
-                                        ),
-                                        '/'
+                            $thumbImage =
+                                trim(
+                                    (string) (
+                                        $productImage
+                                        ??
+                                        ''
                                     )
-                                    . '/'
-                                    . ltrim(
-                                        (string) $productImage,
-                                        '/'
-                                    );
-                            }
+                                );
 
                         } catch (
                             \Throwable $e
@@ -1152,13 +1417,55 @@ protected function resolveFreeGiftAfterCartChange(): array
                                         $e->getMessage(),
                                 ]
                             );
+
+                            $thumbImage =
+                                '';
+                        }
+                    }
+
+                    $thumbImage =
+                        trim(
+                            stripslashes(
+                                $thumbImage
+                            )
+                        );
+
+                    if (
+                        $thumbImage !== ''
+                        &&
+                        !empty(
+                            config(
+                                'global.PRD_THUMB_IMG_PATH'
+                            )
+                        )
+                    ) {
+
+                        $thumbnailPath =
+                            rtrim(
+                                (string) config(
+                                    'global.PRD_THUMB_IMG_PATH'
+                                ),
+                                '/'
+                            )
+                            . '/'
+                            . ltrim(
+                                $thumbImage,
+                                '/'
+                            );
+
+                        if (
+                            !file_exists(
+                                $thumbnailPath
+                            )
+                        ) {
+
+                            $thumbImage =
+                                '';
                         }
                     }
 
                     if (
-                        empty(
-                            $thumbImage
-                        )
+                        $thumbImage === ''
                     ) {
 
                         $thumbImage =
@@ -1167,9 +1474,7 @@ protected function resolveFreeGiftAfterCartChange(): array
                             );
                     }
 
-                    $gift[
-                        'thumb_image'
-                    ] =
+                    $gift['thumb_image'] =
                         $thumbImage;
 
                     return $gift;
@@ -1178,30 +1483,25 @@ protected function resolveFreeGiftAfterCartChange(): array
                 $popupGifts
             );
 
+        /*
+         * =========================================================
+         * POPUP HTML
+         * =========================================================
+         */
         $totalListItems =
             (int) (
-                $popupGifts[0][
-                    'freegift_add_count'
-                ]
+                $popupGifts[0]['freegift_add_count']
                 ??
-                $decision[
-                    'rule'
-                ][
-                    'freegift_add_count'
-                ]
+                $decision['rule']['freegift_add_count']
                 ??
-                $decision[
-                    'remainingCount'
-                ]
+                $decision['remainingCount']
                 ??
                 1
             );
 
         try {
 
-            $decision[
-                'popupHtml'
-            ] =
+            $decision['popupHtml'] =
                 view(
                     'popup.freegift-popup'
                 )
@@ -1227,9 +1527,7 @@ protected function resolveFreeGiftAfterCartChange(): array
                         $e->getMessage(),
 
                     'rule' =>
-                        $decision[
-                            'rule'
-                        ]
+                        $decision['rule']
                         ?? null,
 
                     'eligibleGifts' =>
@@ -1237,9 +1535,7 @@ protected function resolveFreeGiftAfterCartChange(): array
                 ]
             );
 
-            $decision[
-                'popupHtml'
-            ] =
+            $decision['popupHtml'] =
                 '';
         }
     }
@@ -1250,123 +1546,85 @@ protected function resolveFreeGiftAfterCartChange(): array
      * =========================================================
      */
     if (
-        ($decision['status'] ?? '')
-            === 'auto_add'
+        ($decision['status'] ?? '') === 'auto_add'
         &&
         !empty(
-            $decision[
-                'eligibleGifts'
-            ]
+            $decision['eligibleGifts']
         )
     ) {
 
         $gift =
-            $decision[
-                'eligibleGifts'
-            ][0];
+            $decision['eligibleGifts'][0];
 
         $message =
             $this->freeGiftService
                 ->addGift(
                     (int) (
-                        $gift[
-                            'products_id'
-                        ]
+                        $gift['products_id']
                         ?? 0
                     ),
                     (int) (
-                        $decision[
-                            'rule'
-                        ]['id']
+                        $decision['rule']['id']
                         ?? 0
                     ),
                     'No'
                 );
 
-        if (
-            $message === ''
-        ) {
+        if ($message === '') {
 
-            $decision[
-                'status'
-            ] =
+            $decision['status'] =
                 'auto_added';
 
-            $decision[
-                'shouldAutoAdd'
-            ] = false;
+            $decision['shouldAutoAdd'] =
+                false;
 
-            $decision[
-                'shouldPopup'
-            ] = false;
+            $decision['shouldPopup'] =
+                false;
 
-            $decision[
-                'autoAddedProductId'
-            ] =
+            $decision['autoAddedProductId'] =
                 (int) (
-                    $gift[
-                        'products_id'
-                    ]
+                    $gift['products_id']
                     ?? 0
                 );
 
-            $decision[
-                'message'
-            ] = '';
+            $decision['message'] =
+                '';
 
             $this->checkoutService
                 ->refresh('cart');
 
-            $decision[
-                'cart'
-            ] =
+            $decision['cart'] =
                 $this->cartService
                     ->getCart();
 
             if (
-                is_array(
-                    $decision['cart']
-                )
+                is_array($decision['cart'])
                 &&
                 isset(
-                    $decision[
-                        'cart'
-                    ]['Cart']
+                    $decision['cart']['Cart']
                 )
                 &&
                 is_array(
-                    $decision[
-                        'cart'
-                    ]['Cart']
+                    $decision['cart']['Cart']
                 )
             ) {
 
-                $decision[
-                    'cart'
-                ] =
-                    $decision[
-                        'cart'
-                    ]['Cart'];
+                $decision['cart'] =
+                    $decision['cart']['Cart'];
             }
 
         } else {
 
-            $decision[
-                'status'
-            ] =
+            $decision['status'] =
                 'auto_add_failed';
 
-            $decision[
-                'shouldAutoAdd'
-            ] = false;
+            $decision['shouldAutoAdd'] =
+                false;
 
-            $decision[
-                'shouldPopup'
-            ] = false;
+            $decision['shouldPopup'] =
+                false;
 
-            $decision[
-                'autoAddError'
-            ] =
+            $decision['autoAddError'] =
                 $message
                 ??
                 'Unable to add free gift.';
@@ -1379,13 +1637,9 @@ protected function resolveFreeGiftAfterCartChange(): array
      * =========================================================
      */
     if (
-        !isset(
-            $decision['cart']
-        )
+        !isset($decision['cart'])
         ||
-        !is_array(
-            $decision['cart']
-        )
+        !is_array($decision['cart'])
     ) {
 
         $finalCart =
@@ -1408,9 +1662,7 @@ protected function resolveFreeGiftAfterCartChange(): array
                 $finalCart['Cart'];
         }
 
-        $decision[
-            'cart'
-        ] =
+        $decision['cart'] =
             is_array($finalCart)
                 ? $finalCart
                 : [];
@@ -1436,64 +1688,61 @@ protected function resolveFreeGiftAfterCartChange(): array
                 ),
 
             'decisionStatus' =>
-                $decision[
-                    'status'
-                ] ?? null,
+                $decision['status']
+                ?? null,
 
             'ruleChanged' =>
-                $decision[
-                    'ruleChanged'
-                ] ?? false,
+                $decision['ruleChanged']
+                ?? false,
 
             'removedFreeGiftCount' =>
-                $decision[
-                    'removedFreeGiftCount'
-                ] ?? 0,
+                $decision['removedFreeGiftCount']
+                ?? 0,
 
             'shouldAutoAdd' =>
-                $decision[
-                    'shouldAutoAdd'
-                ] ?? null,
+                $decision['shouldAutoAdd']
+                ?? null,
 
             'shouldPopup' =>
-                $decision[
-                    'shouldPopup'
-                ] ?? null,
+                $decision['shouldPopup']
+                ?? null,
 
             'rule' =>
-                $decision[
-                    'rule'
-                ] ?? null,
+                $decision['rule']
+                ?? null,
 
             'eligibleGifts' =>
-                $decision[
-                    'eligibleGifts'
-                ] ?? [],
+                $decision['eligibleGifts']
+                ?? [],
 
             'remainingCount' =>
-                $decision[
-                    'remainingCount'
-                ] ?? null,
+                $decision['remainingCount']
+                ?? null,
+
+            'autoAddedProductId' =>
+                $decision['autoAddedProductId']
+                ?? null,
 
             'popupHtmlExists' =>
                 !empty(
-                    $decision[
-                        'popupHtml'
-                    ]
+                    $decision['popupHtml']
+                    ?? ''
                 ),
 
             'popupHtmlLength' =>
                 strlen(
-                    $decision[
-                        'popupHtml'
-                    ] ?? ''
+                    $decision['popupHtml']
+                    ?? ''
                 ),
+
+            'finalCart' =>
+                $decision['cart']
+                ?? [],
         ]
     );
 
     return $decision;
 }
-
 public function freeSamplePopup(Request $request)
 {
     /*
@@ -1560,6 +1809,97 @@ public function freeSamplePopup(Request $request)
 
     /*
      * =========================================================
+     * Free Gift has priority over Free Sample
+     *
+     * If a normal Free Gift rule is currently eligible,
+     * Free Sample popup must NOT be shown.
+     *
+     * Free Gift price-range eligibility uses
+     * ShoppingCart.SubTotal.
+     * =========================================================
+     */
+    if (
+        config('Settings.FREEGIFTFLAG') == 'Yes'
+        &&
+        !Auth::guard('store')->check()
+        &&
+        strtolower(
+            trim(
+                Session::get(
+                    'eusertype',
+                    ''
+                )
+            )
+        ) != 'wholesaler'
+        &&
+        trim(
+            Session::get(
+                'is_dropshipper',
+                ''
+            )
+        ) != 'Yes'
+    ) {
+
+        $freeGiftTotalValue =
+            (float) Session::get(
+                'ShoppingCart.SubTotal',
+                0
+            );
+
+
+        $freeGiftDecision =
+            $this->freeGiftService
+                ->resolveEligibleGifts(
+                    $cart,
+                    $freeGiftTotalValue,
+                    0,
+                    0
+                );
+
+
+        $eligibleFreeGifts =
+            $freeGiftDecision['eligibleGifts']
+            ?? [];
+
+
+        if (
+            !empty($eligibleFreeGifts)
+        ) {
+
+            Log::info(
+                'FreeSamplePopupBlockedByFreeGift',
+                [
+                    'reason' =>
+                        'FREE_GIFT_HAS_PRIORITY',
+
+                    'subtotal' =>
+                        $freeGiftTotalValue,
+
+                    'eligibleFreeGiftCount' =>
+                        count(
+                            $eligibleFreeGifts
+                        ),
+
+                    'freeGiftStatus' =>
+                        $freeGiftDecision['status']
+                        ?? null,
+
+                    'freeGiftRule' =>
+                        $freeGiftDecision['rule']
+                        ?? null,
+                ]
+            );
+
+            return response()->json([
+                'status' => 'success',
+                'html' => '',
+            ]);
+        }
+    }
+
+
+    /*
+     * =========================================================
      * Free Gift conflict
      *
      * Preserve existing behavior:
@@ -1578,6 +1918,7 @@ public function freeSamplePopup(Request $request)
             &&
             $cartItem['IS_Free_Gift'] == 'Yes'
         ) {
+
             return response()->json([
                 'status' => 'success',
                 'html' => '',
@@ -1634,12 +1975,15 @@ public function freeSamplePopup(Request $request)
      *
      * Do NOT subtract GiftCertiTotal again here.
      */
-    $totalValue =
-        max(
-            0,
-            $subTotal
-            - $actualDiscount
-        );
+    $subTotal = (float) Session::get(
+    'ShoppingCart.SubTotal',
+    0
+	);
+
+	$totalValue = max(
+		0,
+		$subTotal
+	);
 
 
     Log::info(
@@ -1704,8 +2048,10 @@ public function freeSamplePopup(Request $request)
                 'is_dropshipper',
                 ''
             )
-        ) == 'Yes'
+        )
+        == 'Yes'
     ) {
+
         return response()->json([
             'status' => 'success',
             'html' => '',
@@ -1818,6 +2164,7 @@ public function freeSamplePopup(Request $request)
         if (
             $totalFreeSampleItems > 0
         ) {
+
             $this->freeSampleService
                 ->removeSamples();
         }
@@ -1845,6 +2192,7 @@ public function freeSamplePopup(Request $request)
             ]
             ?? 0
         );
+
 
     $currentRuleEnd =
         (float) (
@@ -2126,7 +2474,6 @@ public function freeSamplePopup(Request $request)
         'html' => '',
     ]);
 }
-
 public function freeSampleAdd(Request $request)
 {
     $productsId = $request->input('products_id');

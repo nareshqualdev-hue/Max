@@ -1896,7 +1896,14 @@
     '#section-delivery input[name="shipping"]',
     function (event, changeOptions) {
       updateOnTimeDeliveryRate();
+	  $('#section-delivery .shipping-option')
+            .removeClass('active selected');
 
+       $(this)
+            .closest('.shipping-option')
+            .addClass('active selected');
+
+	
       const shippingMethodId = parseInt($(this).val(), 10);
 
       if (!shippingMethodId) {
@@ -1932,7 +1939,7 @@
      * Restore server-side Insurance/Signature state
      * BEFORE shipping methods / totals AJAX starts.
      */
-    restoreCheckoutAddonState();
+    restoreCheckoutAddonState(); 
 
     const address = getShippingAddress();
 
@@ -1940,6 +1947,7 @@
       loadShippingMethods();
     }
     loadDropshipperDetails();
+    checkFreeGiftOnPageLoad();
     checkFreeSamplePopup();
   });
 
@@ -2692,7 +2700,7 @@
      * Backend owns Free Gift add/remove.
      * Frontend only renders final backend state.
      */
-    appendFreeGiftCartItems(uiResponse);
+   // appendFreeGiftCartItems(uiResponse);
 
     handleFreeGiftResponse(uiResponse);
 
@@ -3315,153 +3323,252 @@ function updateQty(btn, delta) {
 }
 
  function handleFreeGiftResponse(response) {
-    response = response || {};
+  response = response || {};
 
-    const freeGift = response.freeGift || response.free_gift || null;
+  const freeGift =
+    response.freeGift ||
+    response.free_gift ||
+    null;
 
-    /*
-     * =====================================================
-     * FINAL BACKEND CART
-     * =====================================================
-     */
-    let cart = [];
+  /*
+   * =====================================================
+   * FINAL CART
+   * =====================================================
+   *
+   * For Free Gift processing the backend returns:
+   *
+   * response.freeGift.cart
+   *
+   * This is the FINAL cart after:
+   *
+   * 1. Old Free Gift removal
+   * 2. New rule resolution
+   * 3. New Free Gift auto-add
+   *
+   * Backend remains the source of truth.
+   */
+  let cart = [];
 
-    if (Array.isArray(response.cart)) {
-      cart = response.cart;
-    } else if (response.cart && Array.isArray(response.cart.Cart)) {
-      cart = response.cart.Cart;
-    }
-
-    /*
-     * =====================================================
-     * FREE GIFT STATUS
-     * =====================================================
-     */
-    const status = String(
-      freeGift && freeGift.status ? freeGift.status : "",
-    ).toLowerCase();
-
-    const removedFreeGiftCount = parseInt(
-      freeGift && freeGift.removedFreeGiftCount
-        ? freeGift.removedFreeGiftCount
-        : 0,
-      10,
-    );
-
-    /*
-     * =====================================================
-     * REMOVE OLD FREE GIFT FROM UI FIRST
-     * =====================================================
-     *
-     * IMPORTANT:
-     *
-     * Rule change:
-     *
-     * $400
-     * -> old Free Gift
-     *
-     * $450
-     * -> old Free Gift removed by backend
-     * -> new rule popup
-     *
-     * Backend can return:
-     *
-     * status = popup
-     * removedFreeGiftCount = 1
-     *
-     * Therefore we MUST remove the old UI gift
-     * BEFORE opening the popup.
-     */
-    if (removedFreeGiftCount > 0) {
-      document
-        .querySelectorAll('.order-item-row[data-free-gift="1"]')
-        .forEach(function (row) {
-          row.remove();
-        });
-
-      document
-        .querySelectorAll(
-          '.cart-drawer-body .order-item-row[data-free-gift="1"]',
-        )
-        .forEach(function (row) {
-          row.remove();
-        });
-
-      if (typeof updateCartItemCountAfterChange === "function") {
-        updateCartItemCountAfterChange(cart);
-      }
-    }
-
-    /*
-     * =====================================================
-     * MULTIPLE FREE GIFT POPUP
-     * =====================================================
-     *
-     * IMPORTANT:
-     *
-     * This now happens AFTER old Free Gift UI removal.
-     */
-    if (status === "popup" && freeGift) {
-      openFreeGiftPopup(freeGift);
-
-      return;
-    }
-
-    /*
-     * =====================================================
-     * FREE GIFT REMOVED / NO RULE
-     * =====================================================
-     */
-    const freeGiftRemoved =
-      status === "removed" ||
-      status === "no_rule" ||
-      status === "none" ||
-      status === "qualification_lost";
-
-    if (freeGiftRemoved) {
-      /*
-       * In case backend says removed but did not provide
-       * removedFreeGiftCount, still clean stale UI.
-       */
-      document
-        .querySelectorAll('.order-item-row[data-free-gift="1"]')
-        .forEach(function (row) {
-          row.remove();
-        });
-
-      document
-        .querySelectorAll(
-          '.cart-drawer-body .order-item-row[data-free-gift="1"]',
-        )
-        .forEach(function (row) {
-          row.remove();
-        });
-
-      if (typeof updateCartItemCountAfterChange === "function") {
-        updateCartItemCountAfterChange(cart);
-      }
-
-      return;
-    }
-
-    /*
-     * =====================================================
-     * NO FREE GIFT RESPONSE
-     * =====================================================
-     */
-    if (!freeGift) {
-      return;
-    }
-
-    /*
-     * =====================================================
-     * AUTOMATIC SINGLE GIFT
-     * =====================================================
-     */
-    if (status === "auto_add" || status === "auto_added") {
-      return;
-    }
+  if (Array.isArray(response.cart)) {
+    cart = response.cart;
+  } else if (
+    response.cart &&
+    Array.isArray(response.cart.Cart)
+  ) {
+    cart = response.cart.Cart;
   }
+
+  if (
+    freeGift &&
+    Array.isArray(freeGift.cart)
+  ) {
+    cart = freeGift.cart;
+  } else if (
+    freeGift &&
+    freeGift.cart &&
+    Array.isArray(freeGift.cart.Cart)
+  ) {
+    cart = freeGift.cart.Cart;
+  }
+
+  /*
+   * =====================================================
+   * STATUS
+   * =====================================================
+   */
+  const status = String(
+    freeGift && freeGift.status
+      ? freeGift.status
+      : ""
+  ).toLowerCase();
+
+  const removedFreeGiftCount = parseInt(
+    freeGift && freeGift.removedFreeGiftCount
+      ? freeGift.removedFreeGiftCount
+      : 0,
+    10
+  );
+
+  /*
+   * =====================================================
+   * REMOVE ALL OLD FREE GIFT UI FIRST
+   * =====================================================
+   *
+   * This is required when:
+   *
+   * Rule 524
+   *     ↓
+   * Qty changed
+   *     ↓
+   * Rule 524 no longer applies
+   *     ↓
+   * Old Gift removed
+   *     ↓
+   * Rule 523 applies
+   *     ↓
+   * New Gift added
+   *
+   * We remove the old UI BEFORE rendering
+   * the new backend Free Gift.
+   *
+   * IMPORTANT:
+   *
+   * Do NOT remove normal products.
+   */
+  if (
+    removedFreeGiftCount > 0 ||
+    [
+        "auto_added",
+        "auto_add",
+        "removed",
+        "no_rule",
+        "none",
+        "qualification_lost"
+    ].includes(status)
+) {
+    document
+        .querySelectorAll('.order-item-row[data-free-gift="1"]')
+        .forEach(function (row) {
+            row.remove();
+        });
+}
+
+  /*
+   * =====================================================
+   * NO FREE GIFT
+   * =====================================================
+   */
+  if (!freeGift) {
+    updateCartItemCountAfterChange(cart);
+
+    return;
+  }
+
+  /*
+   * =====================================================
+   * NO RULE / REMOVED / QUALIFICATION LOST
+   * =====================================================
+   */
+  if (
+    status === "removed" ||
+    status === "no_rule" ||
+    status === "none" ||
+    status === "qualification_lost"
+  ) {
+    updateCartItemCountAfterChange(cart);
+
+    return;
+  }
+
+  /*
+   * =====================================================
+   * MULTIPLE ELIGIBLE GIFTS
+   * =====================================================
+   *
+   * Backend wants customer selection.
+   *
+   * Old Free Gift has already been removed above.
+   */
+  if (
+    status === "popup"
+  ) {
+    openFreeGiftPopup(freeGift);
+
+    updateCartItemCountAfterChange(cart);
+
+    return;
+  }
+
+  /*
+   * =====================================================
+   * AUTO ADDED / AUTO ADD
+   * =====================================================
+   *
+   * Backend has ALREADY added the Free Gift.
+   *
+   * DO NOT call:
+   *
+   * refreshFreeGiftCartUI()
+   *
+   * DO NOT call:
+   *
+   * addFreeGiftFromCheckout()
+   *
+   * Just render the Free Gift from:
+   *
+   * freeGift.cart
+   */
+  if (
+  status === "auto_add" ||
+  status === "auto_added"
+) {
+
+  const freeGifts =
+    Array.isArray(cart)
+      ? cart.filter(function (item) {
+
+          if (!item) {
+            return false;
+          }
+
+          return (
+            String(
+              item.IS_Free_Gift ||
+              item.Is_Free_Gift ||
+              ""
+            ).toLowerCase() === "yes"
+          );
+        })
+      : [];
+
+  /*
+   * Backend is the source of truth.
+   *
+   * Render every Free Gift returned in final cart.
+   */
+  freeGifts.forEach(function (gift) {
+
+    appendNewFreeGiftCartItem(
+      gift
+    );
+  });
+
+  updateCartItemCountAfterChange(
+    cart
+  );
+
+  return;
+}
+
+  /*
+   * =====================================================
+   * FALLBACK
+   * =====================================================
+   *
+   * If backend gives a Free Gift cart but status is
+   * not one of the known states, still render the
+   * backend Free Gift.
+   */
+  const freeGifts = cart.filter(function (item) {
+    if (!item) {
+      return false;
+    }
+
+    return (
+      String(
+        item.IS_Free_Gift ||
+        item.Is_Free_Gift ||
+        ""
+      ).toLowerCase() === "yes"
+    );
+  });
+
+  freeGifts.forEach(function (gift) {
+    appendNewFreeGiftCartItem(gift);
+  });
+
+  updateCartItemCountAfterChange(cart);
+}
   function addFreeGiftFromCheckout(productId, freeProductId, oneGift) {
     productId = parseInt(productId || 0, 10);
 
@@ -3493,11 +3600,16 @@ function updateQty(btn, delta) {
 
       gift_wrap: "No",
 
-      free_gift: true,
+      free_gift:
+    1,
 
-      free_product_id: freeProductId,
+	free_product_id:
+		freeProductId,
 
-      free_gift_one: oneGift !== false,
+	free_gift_one:
+		oneGift !== false
+			? 1
+			: 0
     })
       .done(function (response) {
         if (
@@ -3560,8 +3672,68 @@ function updateQty(btn, delta) {
   /*
    * Load Free Sample popup from backend.
    */
+ 
+ function checkFreeGiftOnPageLoad() {
 
-  function checkFreeSamplePopup() {
+    const freeGiftUrl =
+        "/checkoutnew/free-gift/resolve";
+
+    console.log(
+        "FREE GIFT PAGE LOAD REQUEST",
+        freeGiftUrl
+    );
+
+    $.ajax({
+        type: "POST",
+        url: freeGiftUrl,
+
+        headers: {
+            "X-CSRF-TOKEN": csrfToken
+        },
+
+        dataType: "json"
+    })
+    .done(function (response) {
+
+        console.log(
+            "FREE GIFT PAGE LOAD RESPONSE",
+            response
+        );
+
+        if (!response) {
+            console.error(
+                "FREE GIFT EMPTY RESPONSE"
+            );
+            return;
+        }
+
+        console.log(
+            "FREE GIFT STATUS:",
+            response.status
+        );
+
+        console.log(
+            "FREE GIFT POPUP HTML LENGTH:",
+            response.popupHtml
+                ? response.popupHtml.length
+                : 0
+        );
+
+        handleFreeGiftResponse({
+            freeGift: response,
+            cart: response.cart || []
+        });
+    })
+    .fail(function (xhr) {
+
+        console.error(
+            "FREE GIFT PAGE LOAD FAILED",
+            xhr.status,
+            xhr.responseJSON || xhr.responseText
+        );
+    });
+}
+   function checkFreeSamplePopup() {
   const popupUrl =
     urls.freeSamplePopup ||
     "/checkoutnew/free-sample/popup";
@@ -3717,6 +3889,10 @@ function updateQty(btn, delta) {
      * No gift selected.
      */
     if (!selectedProducts.length) {
+		    alert(
+        'Please select Free Gift products.'
+    );
+
       return;
     }
 
@@ -3740,43 +3916,30 @@ function updateQty(btn, delta) {
      * FreeGiftService will NOT remove
      * the previously selected gift.
      */
-    let requests = [];
+    let sequence = $.Deferred().resolve().promise();
 
-    selectedProducts.forEach(function (productId) {
-      requests.push(addFreeGiftFromCheckout(productId, freeProductId, false));
-    });
+selectedProducts.forEach(function (productId) {
+  sequence = sequence.then(function () {
+    return addFreeGiftFromCheckout(
+      productId,
+      freeProductId,
+      false
+    );
+  });
+});
 
-    $.when
-      .apply($, requests)
-      .done(function () {
-        /*
-         * Close the existing old popup.
-         */
-        const popup = document.querySelector("#FreeGiftViewPopup");
-
-        if (popup) {
-          if (typeof $(popup).modal === "function") {
-            $(popup).modal("hide");
-          } else {
-            popup.style.display = "none";
-
-            popup.classList.remove("show");
-          }
-        }
-
-        /*
-         * Refresh checkout UI from backend
-         * source of truth.
-         */
-        refreshFreeGiftCartUI();
-
-        /*
-         * Refresh totals/cart state once.
-         */
-        if (typeof loadShippingMethods === "function") {
-          loadShippingMethods();
-        }
-      })
+sequence
+  .done(function () {
+    window.location.reload();
+  })
+  .fail(function (xhr) {
+    console.error(
+      "Free Gift popup add failed:",
+      xhr && xhr.responseJSON
+        ? xhr.responseJSON
+        : xhr
+    );
+  })
       .fail(function (xhr) {
         console.error(
           "Free Gift popup add failed:",
@@ -5989,65 +6152,7 @@ drawerBody.querySelectorAll(".order-item-row").forEach(function (row) {
      * updateCartItemCountAfterChange() logic.
      */
   }
-  function refreshFreeGiftCartUI() {
-    const cartSummaryUrl = urls.cartSummary;
-
-    if (!cartSummaryUrl) {
-      console.error("Free Gift: cartSummary URL is not configured.");
-
-      return;
-    }
-
-    $.ajax({
-      type: "POST",
-      url: cartSummaryUrl,
-      dataType: "json",
-      headers: {
-        "X-CSRF-TOKEN": csrfToken,
-      },
-    })
-      .done(function (response) {
-        if (
-          !response ||
-          response.success !== true ||
-          !Array.isArray(response.cart)
-        ) {
-          return;
-        }
-
-        /*
-         * Find only Free Gift items.
-         */
-        const freeGifts = response.cart.filter(function (item) {
-          return (
-            item &&
-            (String(item.IS_Free_Gift || "").toLowerCase() === "yes" ||
-              String(item.Is_Free_Gift || "").toLowerCase() === "yes")
-          );
-        });
-
-        if (!freeGifts.length) {
-          return;
-        }
-
-        /*
-         * Append only newly added Free Gift rows.
-         */
-        freeGifts.forEach(function (gift) {
-          appendNewFreeGiftCartItem(gift);
-        });
-
-        /*
-         * Keep existing count logic.
-         */
-        updateCartItemCountAfterChange(response.cart);
-      })
-      .fail(function (xhr) {
-        console.error("Free Gift cart refresh failed:", xhr.responseJSON || {});
-      });
-  }
-
-  function loadDropshipperDetails()
+ function loadDropshipperDetails()
   {
     $.ajax({
       type: "POST",

@@ -11,7 +11,7 @@ $selectedShippingCountry =
 $SelectedShippingCountry ?? 'US';
 $selectedShippingState =
 $SelectedShippingState ?? '';
-
+$method = $method ?? '';
 /*
 * Current One Page Checkout state.
 * Backend/services remain the source of truth.
@@ -49,8 +49,7 @@ $checkoutNetTotal = (float) ($totals['NetTotal'] ?? 0);
 $NetTotal = (float) ($totals['NetTotal'] ?? 0);
 $CartAttr = $checkoutState['cartAttributes'];
 
-//$DropShipperDetails = $checkout['dropshipperDetails'];
-$CartAttr["IsPaypalExpressCheckout"] = "Yes";
+$CartAttr["IsPaypalExpressCheckout"] = $checkoutState['paymentAvailability']['IsPaypalExpressCheckout']??'No';
 $CartAttr["Amazon_pay_Checkout"] = "Yes";
 $Is_Afterpay_Checkout = "Yes";
 
@@ -345,6 +344,7 @@ is_string($image)
     <!-- ── LEFT COLUMN ──────────────────────────────────────── -->
     <div class="checkout-form-col">
 
+      @if($method != 'afterpay')
       <!-- ══ 1. EXPRESS CHECKOUT ══════════════════════════════ -->
       <section class="express-section" aria-labelledby="express-heading">
         <div class="express-header">
@@ -381,7 +381,7 @@ is_string($image)
           <span>or continue with email</span>
         </div>
       </section>
-
+      @endif
       <!-- ══ 2. CONTACT INFORMATION ════════════════════════════ -->
       <section class="checkout-section" aria-labelledby="contact-heading" id="section-contact">
         <div class="checkout-section-head">
@@ -637,6 +637,7 @@ is_string($image)
 
       </section>
 
+      @if($method != 'afterpay')
       <!-- ══ 3. SHIPPING ADDRESS ══════════════════════════════ -->
       <section class="checkout-section" aria-labelledby="shipping-heading" id="section-shipping">
         <div class="checkout-section-head">
@@ -1178,7 +1179,69 @@ is_string($image)
           </div>
         </div>
       </section>
+      @endif
 
+      @if($method == 'afterpay')
+        <div id="afterpay-widget-container"></div>
+          <input type="hidden" name="pschecksum" id="pschecksum" value="" aria-hidden="true">
+          <script>
+              // Ensure this function is defined before loading afterpay.js
+              function createAfterpayWidget () {
+                  window.afterpayWidget = new AfterPay.Widgets.PaymentSchedule({
+                      token: '{{Session::get("ShoppingCart.AfterPay.Checkout_Token")}}',
+                      target: '#afterpay-widget-container',
+                      locale: 'en-US',
+                      onReady: function (event) {
+                      var paymentScheduleChecksum;
+                      paymentScheduleChecksum = event.data.paymentScheduleChecksum;
+                          afterpayWidget.update({
+                              amount: { amount: "{{$NetTotal}}", currency: "USD" },
+                          })
+                          $("#pschecksum").val(paymentScheduleChecksum);
+                          if($("#ap_psChecksum").length > 0){
+                              $("#ap_psChecksum").val(paymentScheduleChecksum);
+                          }
+                      },
+                      onChange: function (event) {
+                          // Fires after each update and on any other state changes.
+                          // See "Getting the widget's state" for more details.
+                          // console.log(event);
+                          var paymentScheduleChecksum;
+                          if(event.data.isValid == true){
+                              $("#alert_order").html("");
+                              $("#alert_ap").hide();
+                              $("#checkout_widget_ap").show();
+
+                              paymentScheduleChecksum = event.data.paymentScheduleChecksum;
+                              $("#pschecksum").val(paymentScheduleChecksum);
+                              if($("#ap_psChecksum").length > 0){
+                                  $("#ap_psChecksum").val(paymentScheduleChecksum);
+                              }
+                          }else{
+                              //issue
+                              // console.log(event);
+                              $("#alert_order").html("AfterPay is disabled because of amount range limit reached.");
+                              $("#alert_ap").show();
+                              $("#checkout_widget_ap").hide();
+                          }
+                      },
+                      onError: function (event) {
+                      // See "Handling widget errors" for more details.
+                          // console.log(event);
+                          $("#alert_order").html("AfterPay is disabled because of amount range limit reached.");
+                          $("#alert_ap").show();
+                          $("#checkout_widget_ap").hide();
+
+                          // if($("#net_total_amt").data("amt") >= $("#net_total_amt").data("minap") && $("#net_total_amt").data("amt") < $("#net_total_amt").data("maxap")){
+                              //code here
+                          // }
+                          // $("#ap_checkoutwidget").hide();
+                      },
+                  })
+              }
+          </script>
+          <script src="{{$token_js_url}}" async onload="createAfterpayWidget()"> </script>
+      @endif
       <!-- ══ 7. ORDER REVIEW + PLACE ORDER ════════════════════ -->
       <section class="place-order-section" aria-labelledby="review-heading">
         <h2 class="step-title" id="review-heading" style="margin-bottom: var(--space-5);">Review your order</h2>
@@ -1468,7 +1531,7 @@ is_string($image)
                       @if($isFreeGift || $isFreeSample)
 
                         <span>Qty :{{ $quantity }}</span>
-                    
+
                        <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
                       @else
                       @if(($item['IsGiftCertificateItem'] ?? 'No') === 'No')
@@ -2049,7 +2112,7 @@ is_string($image)
 	  $item['BogoDiscountMessage'] ?? '';
 	  $isFreeSample =
 					!empty($item['Is_Free_Sample'])
-					&& strtolower((string) $item['Is_Free_Sample']) === 'yes';	
+					&& strtolower((string) $item['Is_Free_Sample']) === 'yes';
       @endphp
 
       <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-free-gift="{{ $isFreeGift ? '1' : '0' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
@@ -2150,7 +2213,9 @@ is_string($image)
 </script>
   @include("newcheckout.paypal")
   @include("newcheckout.amazon")
-  @include("newcheckout.afterpay")
+  @if($method != 'afterpay')
+    @include("newcheckout.afterpay")
+  @endif
   <script>
     /* ============================================================
    MaxAroma Checkout — Interaction Layer

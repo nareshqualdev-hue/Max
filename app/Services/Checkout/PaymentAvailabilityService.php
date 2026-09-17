@@ -4,6 +4,7 @@ namespace App\Services\Checkout;
 
 use App\Models\PaymentMethod;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Facades\Auth;
 
 class PaymentAvailabilityService
 {
@@ -79,33 +80,17 @@ class PaymentAvailabilityService
          * the selected payment method.
          * ---------------------------------------------------------
          */
-        $hasPayPalToken =
-            Session::has(
-                'PayPalToken'
-            )
-            &&
-            Session::get(
-                'PayPalToken'
-            ) !== '';
+        $hasPayPalToken = Session::has('PayPalToken') && Session::get('PayPalToken') !== '';
 
-        if (
-            $selectedMethod === 'paypal'
-            ||
-            $hasPayPalToken
-        ) {
-            $result['SelMethod'] =
-                'PAYMENT_PAYPALEC';
-
-            $result['is_paypal'] =
-                'yes';
-
+        if ($selectedMethod === 'paypal' || $hasPayPalToken)
+        {
+            $result['SelMethod'] = 'PAYMENT_PAYPALEC';
+            $result['is_paypal'] ='yes';
             /*
              * Existing flow replaces the allowed payment
              * option with PayPal Express.
              */
-            $result['allowpaymentoption'] = [
-                'PAYMENT_PAYPALEC',
-            ];
+            $result['allowpaymentoption'] = ['PAYMENT_PAYPALEC'];
         } else {
             /*
              * Existing default payment options from checkout.
@@ -128,23 +113,17 @@ class PaymentAvailabilityService
          * Session::get('PayPalToken') == ''
          * ---------------------------------------------------------
          */
-        if (
-            $paymentMethods->isNotEmpty()
-            &&
-            !$hasPayPalToken
-        ) {
-            foreach (
-                $paymentMethods as $paymentMethod
-            ) {
+        if($paymentMethods->isNotEmpty() && !$hasPayPalToken)
+        {
+            foreach($paymentMethods as $paymentMethod)
+            {
                 /*
                  * -------------------------------------------------
                  * Pay With Amazon
                  * -------------------------------------------------
                  */
-                if (
-                    $paymentMethod->pm_group_name
-                    === 'PAYMENT_PAYWITHAMAZON'
-                ) {
+                if($paymentMethod->pm_group_name === 'PAYMENT_PAYWITHAMAZON')
+                {
                     $this->configureAmazon(
                         $paymentMethod,
                         $result
@@ -156,10 +135,8 @@ class PaymentAvailabilityService
                  * PayPal Express
                  * -------------------------------------------------
                  */
-                if (
-                    $paymentMethod->pm_group_name
-                    === 'PAYMENT_PAYPALEC'
-                ) {
+                if($paymentMethod->pm_group_name === 'PAYMENT_PAYPALEC')
+                {
                     /*
                      * Existing logic:
                      *
@@ -171,16 +148,11 @@ class PaymentAvailabilityService
                      * The actual helper is intentionally kept
                      * behind this method.
                      */
-                    if (
-                        $this->isWholeSalerAllowed()
-                    ) {
-                        $result[
-                            'IsPaypalExpressCheckout'
-                        ] = 'Yes';
+                    if($this->isWholeSalerAllowed())
+                    {
+                        $result['IsPaypalExpressCheckout'] = 'Yes';
                     } else {
-                        $result[
-                            'IsPaypalExpressCheckout'
-                        ] = 'No';
+                        $result['IsPaypalExpressCheckout'] = 'No';
                     }
                 }
             }
@@ -427,7 +399,7 @@ class PaymentAvailabilityService
      * Replace the implementation with the existing helper
      * adapter when the old trait is removed.
      */
-    protected function isWholeSalerAllowed(): bool
+    protected function isWholeSalerAllowed($is_set_msg = false): bool
     {
         /*
          * The source confirms that PayPal availability depends
@@ -438,6 +410,30 @@ class PaymentAvailabilityService
          *
          * Therefore the safer value is false.
          */
-        return false;
+        $normaluser = Auth::user();
+		if (Auth::guard('store')->check()) {
+			$normaluser = Auth::guard('web')->user();
+		}
+		//if(Auth::user() && Auth::user()->is_dropshipper != 'Yes' && strtolower(Auth::user()->eusertype ?? '') == 'wholesaler')
+		if($normaluser && $normaluser->is_dropshipper != 'Yes' && strtolower($normaluser->eusertype ?? '') == 'wholesaler')
+		{
+			if(Session::has('ShoppingCart.Cart') && count(Session::get('ShoppingCart.Cart')) > 0)
+			{
+				$order_sub_total  = Session::get('ShoppingCart.SubTotal');
+				$w_min_order_amt  = NumberFormat(config('Settings.WHOLESALER_MIN_ORDER_AMOUNT'));
+				if($order_sub_total < $w_min_order_amt)
+				{
+					if($is_set_msg == true)
+					{
+						$msg = "For wholesaler minimum order amount should be ".$this->Make_Price($w_min_order_amt,true);
+						Session::flash('CartError',$msg);
+					}
+					return false;
+				}else{
+					return true;
+				}
+			}
+		}
+		return true;
     }
 }

@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Services\Discount;
-
+use App\Constants\CheckoutConstants;
 use App\Models\Products;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -172,10 +172,11 @@ class FreeGiftService
      * - empty string when successfully added
      */
     public function addGift(
-        $productsId,
-        $freeProductsId = 0,
-        $oneGift = 'No'
-    ): ?string {
+    $productsId,
+    $freeProductsId = 0,
+    $oneGift = 'No',
+    $autoAdded = false
+): ?string {
         $outOfStockMessage = '';
         $skuList = '';
 
@@ -374,22 +375,26 @@ class FreeGiftService
         ) {
             return null;
         }
+		
 
+		
         /*
          * ---------------------------------------------------------
          * Add each requested product.
          * ---------------------------------------------------------
          */
+         
         foreach (
             $products as $product
         ) {
             $result =
-                $this->addProductToCart(
-                    $product,
-                    $freeProductsId,
-                    $skuList,
-                    $cart
-                );
+    $this->addProductToCart(
+        $product,
+        $freeProductsId,
+        $skuList,
+        $cart,
+        $autoAdded
+    );
 
             if (
                 $result['added']
@@ -490,7 +495,8 @@ class FreeGiftService
         $product,
         $freeProductsId,
         string $skuList,
-        array $cart
+        array $cart,
+        bool $autoAdded = false
     ): array {
         /*
          * ---------------------------------------------------------
@@ -761,11 +767,11 @@ class FreeGiftService
         $item['Prod_URL'] =
             '';
 
-        $item['IS_Free_Gift'] =
+       $item['IS_Free_Gift'] =
     'Yes';
 
 $item['FreeGiftAutoAdded'] =
-    'Yes';
+    $autoAdded ? 'Yes' : 'No';
         /*
          * Important:
          * Existing FreeGiftInsertProductValue()
@@ -1325,117 +1331,202 @@ public function removeAutoAddedFreeGifts(): int
      *
      * @return array
      */
-    public function resolveEligibleGifts(
-        array $cart,
-        float $totalValue,
-        int $totalFreeGiftItems = 0,
-        int $freeGiftProductId = 0
-    ): array {
-        if (!$this->isEligibleCustomer()) {
-            return [
-                'status' => 'disabled',
-                'rule' => null,
-                'eligibleGifts' => [],
-                'existingGiftCount' => $totalFreeGiftItems,
-                'remainingCount' => 0,
-            ];
-        }
+     
+public function resolveEligibleGifts(
+    array $cart,
+    float $totalValue,
+    int $totalFreeGiftItems = 0,
+    int $freeGiftProductId = 0
+): array {
+
+    /*
+     * =========================================================
+     * CUSTOMER ELIGIBILITY
+     * =========================================================
+     */
+    if (!$this->isEligibleCustomer()) {
+        return [
+            'status' => 'disabled',
+            'rule' => null,
+            'eligibleGifts' => [],
+            'existingGiftCount' => $totalFreeGiftItems,
+            'remainingCount' => 0,
+        ];
+    }
+
+    /*
+     * =========================================================
+     * CHECKOUT / TOTAL CHECK
+     * =========================================================
+     */
+    if (
+        config('Settings.CHECKOUT_SHOIPPINGCART') !== 'Yes'
+        ||
+        $totalValue <= 0
+    ) {
+        return [
+            'status' => 'no_rule',
+            'rule' => null,
+            'eligibleGifts' => [],
+            'existingGiftCount' => $totalFreeGiftItems,
+            'remainingCount' => 0,
+        ];
+    }
+
+    $today = date('Y-m-d');
+
+    /*
+     * =========================================================
+     * BUILD REAL PURCHASE TOTALS
+     * =========================================================
+     *
+     * Free Gift / Free Sample / Deal products do not
+     * participate in Free Gift rule calculation.
+     */
+    $brandTotals = [];
+    $categoryTotals = [];
+    $brandCategoryTotals = [];
+    $purchaseTotal = 0.0;
+
+    foreach ($cart as $item) {
 
         if (
-            config('Settings.CHECKOUT_SHOIPPINGCART') !== 'Yes'
-            || $totalValue <= 0
+            ($item['IS_Free_Gift'] ?? 'No') === 'Yes'
+            ||
+            ($item['Is_Free_Sample'] ?? 'No') === 'Yes'
+            ||
+            ($item['IsDealProducts'] ?? 'No') === 'Yes'
         ) {
-            return [
-                'status' => 'no_rule',
-                'rule' => null,
-                'eligibleGifts' => [],
-                'existingGiftCount' => $totalFreeGiftItems,
-                'remainingCount' => 0,
-            ];
+            continue;
         }
 
-        $today = date('Y-m-d');
-
-        /*
-         * Build real purchase totals only.
-         */
-        $brandTotals = [];
-        $categoryTotals = [];
-        $brandCategoryTotals = [];
-        $purchaseTotal = 0.0;
-
-        foreach ($cart as $item) {
-            if (
-                ($item['IS_Free_Gift'] ?? 'No') === 'Yes'
-                || ($item['Is_Free_Sample'] ?? 'No') === 'Yes'
-                || ($item['IsDealProducts'] ?? 'No') === 'Yes'
-            ) {
-                continue;
-            }
-
-            $lineTotal = (float) ($item['TotPrice'] ?? 0);
-            if ($lineTotal <= 0) {
-                continue;
-            }
-
-            $purchaseTotal += $lineTotal;
-
-            $brandId = (string) (
-                $item['ImanufactureID']
-                ?? $item['imanufactureid']
-                ?? ''
+        $lineTotal =
+            (float) (
+                $item['TotPrice'] ?? 0
             );
 
-            $categoryId = (string) (
-                $item['CategoryID']
-                ?? $item['category_id']
-                ?? ''
-            );
+        if ($lineTotal <= 0) {
+            continue;
+        }
 
-            if ($brandId !== '') {
-                $brandTotals[$brandId] =
-                    ($brandTotals[$brandId] ?? 0) + $lineTotal;
-            }
+        $purchaseTotal += $lineTotal;
 
-            if ($categoryId !== '') {
-                $categoryTotals[$categoryId] =
-                    ($categoryTotals[$categoryId] ?? 0) + $lineTotal;
-            }
+        $brandId = (string) (
+            $item['ImanufactureID']
+            ??
+            $item['imanufactureid']
+            ??
+            ''
+        );
 
-            if ($brandId !== '' && $categoryId !== '') {
-                $key = $brandId . '_' . $categoryId;
-                $brandCategoryTotals[$key] =
-                    ($brandCategoryTotals[$key] ?? 0) + $lineTotal;
-            }
+        $categoryId = (string) (
+            $item['CategoryID']
+            ??
+            $item['category_id']
+            ??
+            ''
+        );
+
+        if ($brandId !== '') {
+
+            $brandTotals[$brandId] =
+                ($brandTotals[$brandId] ?? 0)
+                +
+                $lineTotal;
+        }
+
+        if ($categoryId !== '') {
+
+            $categoryTotals[$categoryId] =
+                ($categoryTotals[$categoryId] ?? 0)
+                +
+                $lineTotal;
         }
 
         /*
-         * Use the already-calculated discounted cart value when supplied.
-         * The legacy caller passes SubTotal - TotalDiscount.
+         * Keep this existing total available.
+         *
+         * It is not used for the new Brand,Category
+         * qualification logic below, but keeping it avoids
+         * disturbing other existing calculations.
          */
-        $purchaseTotal =
-            $totalValue > 0
-                ? (float) $totalValue
-                : $purchaseTotal;
+        if (
+            $brandId !== ''
+            &&
+            $categoryId !== ''
+        ) {
 
-        $queryBase = DB::table('pu_free_gift_product')
+            $key =
+                $brandId
+                . '_'
+                .
+                $categoryId;
+
+            $brandCategoryTotals[$key] =
+                ($brandCategoryTotals[$key] ?? 0)
+                +
+                $lineTotal;
+        }
+    }
+
+    /*
+     * =========================================================
+     * USE DISCOUNTED VALUE
+     * =========================================================
+     *
+     * Existing caller passes:
+     *
+     * SubTotal - TotalDiscount
+     */
+    $purchaseTotal =
+        $totalValue > 0
+            ? (float) $totalValue
+            : $purchaseTotal;
+
+    /*
+     * =========================================================
+     * ACTIVE RULE QUERY
+     * =========================================================
+     */
+    $queryBase =
+        DB::table('pu_free_gift_product')
             ->where('status', '1')
-            ->whereDate('start_date', '<=', $today)
-            ->whereDate('end_date', '>=', $today);
+            ->whereDate(
+                'start_date',
+                '<=',
+                $today
+            )
+            ->whereDate(
+                'end_date',
+                '>=',
+                $today
+            );
 
-        $queries = [];
+    $queries = [];
 
-        /*
-         * Price/general rule.
-         */
-        $queries[] = (clone $queryBase)
-            ->where('flag_range', '');
+    /*
+     * =========================================================
+     * PRICE / GENERAL RULE
+     * =========================================================
+     */
+    $queries[] =
+        (clone $queryBase)
+            ->where(
+                'flag_range',
+                ''
+            );
 
-        /*
-         * Brand rule.
-         */
-        $brandQuery = (clone $queryBase)
-            ->where('flag_range', 'Brand')
+    /*
+     * =========================================================
+     * BRAND RULE
+     * =========================================================
+     */
+    $brandQuery =
+        (clone $queryBase)
+            ->where(
+                'flag_range',
+                'Brand'
+            )
             ->join(
                 'pu_freegift_brand as b',
                 'pu_free_gift_product.products_id',
@@ -1443,24 +1534,36 @@ public function removeAutoAddedFreeGifts(): int
                 'b.products_id'
             );
 
-        if (!empty($brandTotals)) {
-            $brandQuery->whereIn(
-                'b.imanufactureid',
-                array_keys($brandTotals)
-            );
-        } else {
-            $brandQuery->whereRaw('1 = 0');
-        }
+    if (!empty($brandTotals)) {
 
-        $queries[] = $brandQuery->select(
+        $brandQuery->whereIn(
+            'b.imanufactureid',
+            array_keys($brandTotals)
+        );
+
+    } else {
+
+        $brandQuery->whereRaw(
+            '1 = 0'
+        );
+    }
+
+    $queries[] =
+        $brandQuery->select(
             'pu_free_gift_product.*'
         );
 
-        /*
-         * Category rule.
-         */
-        $categoryQuery = (clone $queryBase)
-            ->where('flag_range', 'Category')
+    /*
+     * =========================================================
+     * CATEGORY RULE
+     * =========================================================
+     */
+    $categoryQuery =
+        (clone $queryBase)
+            ->where(
+                'flag_range',
+                'Category'
+            )
             ->join(
                 'pu_freegift_category as c',
                 'pu_free_gift_product.products_id',
@@ -1468,25 +1571,46 @@ public function removeAutoAddedFreeGifts(): int
                 'c.products_id'
             );
 
-        if (!empty($categoryTotals)) {
-            $categoryQuery->whereIn(
-                'c.categoryid',
-                array_keys($categoryTotals)
-            );
-        } else {
-            $categoryQuery->whereRaw('1 = 0');
-        }
+    if (!empty($categoryTotals)) {
 
-        $queries[] = $categoryQuery->select(
+        $categoryQuery->whereIn(
+            'c.categoryid',
+            array_keys($categoryTotals)
+        );
+
+    } else {
+
+        $categoryQuery->whereRaw(
+            '1 = 0'
+        );
+    }
+
+    $queries[] =
+        $categoryQuery->select(
             'pu_free_gift_product.*'
         );
 
-        /*
-         * Brand + Category rule.
-         * Both mappings must match.
-         */
-        $comboQuery = (clone $queryBase)
-            ->where('flag_range', 'Brand,Category')
+    /*
+     * =========================================================
+     * BRAND + CATEGORY RULE
+     * =========================================================
+     *
+     * BOTH mappings must exist for the rule itself.
+     *
+     * Qualification amount is calculated below as:
+     *
+     * matching Brand total
+     * +
+     * matching Category total
+     *
+     * Same cart line is counted only once.
+     */
+    $comboQuery =
+        (clone $queryBase)
+            ->where(
+                'flag_range',
+                'Brand,Category'
+            )
             ->join(
                 'pu_freegift_brand as b',
                 'pu_free_gift_product.products_id',
@@ -1500,138 +1624,424 @@ public function removeAutoAddedFreeGifts(): int
                 'c.products_id'
             );
 
-        if (!empty($brandTotals)) {
-            $comboQuery->whereIn(
-                'b.imanufactureid',
-                array_keys($brandTotals)
-            );
-        } else {
-            $comboQuery->whereRaw('1 = 0');
-        }
+    if (!empty($brandTotals)) {
 
-        if (!empty($categoryTotals)) {
-            $comboQuery->whereIn(
-                'c.categoryid',
-                array_keys($categoryTotals)
-            );
-        } else {
-            $comboQuery->whereRaw('1 = 0');
-        }
+        $comboQuery->whereIn(
+            'b.imanufactureid',
+            array_keys($brandTotals)
+        );
 
-        $queries[] = $comboQuery->select(
+    } else {
+
+        $comboQuery->whereRaw(
+            '1 = 0'
+        );
+    }
+
+    if (!empty($categoryTotals)) {
+
+        $comboQuery->whereIn(
+            'c.categoryid',
+            array_keys($categoryTotals)
+        );
+
+    } else {
+
+        $comboQuery->whereRaw(
+            '1 = 0'
+        );
+    }
+
+    $queries[] =
+        $comboQuery->select(
             'pu_free_gift_product.*'
         );
 
-        /*
-         * Union all candidates and keep highest range first.
-         * Rule priority is applied explicitly below.
-         */
-        $combined = array_shift($queries);
-        foreach ($queries as $query) {
-            $combined = $combined->unionAll($query);
-        }
+    /*
+     * =========================================================
+     * COMBINE CANDIDATES
+     * =========================================================
+     */
+    $combined =
+        array_shift($queries);
 
-        $candidates = DB::query()
-            ->fromSub($combined, 'fg')
-            ->orderByDesc('price_end_range')
+    foreach ($queries as $query) {
+
+        $combined =
+            $combined->unionAll($query);
+    }
+
+    $candidates =
+        DB::query()
+            ->fromSub(
+                $combined,
+                'fg'
+            )
+            ->orderByDesc(
+                'price_start_range'
+            )
+            ->orderByDesc(
+                'price_end_range'
+            )
             ->get();
 
-        if ($candidates->isEmpty()) {
-            return [
-                'status' => 'no_rule',
-                'rule' => null,
-                'eligibleGifts' => [],
-                'existingGiftCount' => $totalFreeGiftItems,
-                'remainingCount' => 0,
-            ];
-        }
+    /*
+     * =========================================================
+     * NO CANDIDATES
+     * =========================================================
+     */
+    if ($candidates->isEmpty()) {
 
-        $candidateIds = $candidates
+        return [
+            'status' => 'no_rule',
+            'rule' => null,
+            'eligibleGifts' => [],
+            'existingGiftCount' =>
+                $totalFreeGiftItems,
+            'remainingCount' => 0,
+        ];
+    }
+
+    /*
+     * =========================================================
+     * RULE MAPPINGS
+     * =========================================================
+     */
+    $candidateIds =
+        $candidates
             ->pluck('products_id')
             ->unique()
             ->values()
             ->all();
 
-        $brandMap = DB::table('pu_freegift_brand')
-            ->whereIn('products_id', $candidateIds)
+    $brandMap =
+        DB::table('pu_freegift_brand')
+            ->whereIn(
+                'products_id',
+                $candidateIds
+            )
             ->get()
-            ->groupBy('products_id');
+            ->groupBy(
+                'products_id'
+            );
 
-        $categoryMap = DB::table('pu_freegift_category')
-            ->whereIn('products_id', $candidateIds)
+    $categoryMap =
+        DB::table('pu_freegift_category')
+            ->whereIn(
+                'products_id',
+                $candidateIds
+            )
             ->get()
-            ->groupBy('products_id');
+            ->groupBy(
+                'products_id'
+            );
+
+    /*
+     * =========================================================
+     * RULE TYPE PRIORITY
+     * =========================================================
+     *
+     * ONLY used when price_start_range is the same.
+     *
+     * Old checkout behaviour:
+     *
+     * Brand + Category
+     *      >
+     * Brand
+     *      >
+     * Category
+     *      >
+     * Price
+     */
+    $priority = [
+        'Brand,Category' => 4,
+        'Brand' => 3,
+        'Category' => 2,
+        '' => 1,
+    ];
+
+    $selectedRule = null;
+    $selectedQualifyingTotal = 0.0;
+    $selectedPriority = -1;
+    $selectedStart = -1.0;
+    $selectedEnd = -1.0;
+
+    /*
+     * =========================================================
+     * FIND BEST VALID RULE
+     * =========================================================
+     */
+    foreach ($candidates as $candidate) {
+
+        $flag =
+            trim(
+                (string) $candidate->flag_range
+            );
+
+        $qualifyingTotal = 0.0;
+
+        $ruleBrands =
+            $brandMap->get(
+                $candidate->products_id,
+                collect()
+            );
+
+        $ruleCategories =
+            $categoryMap->get(
+                $candidate->products_id,
+                collect()
+            );
 
         /*
-         * Highest priority first:
-         * Brand+Category > Brand > Category > Price.
-         *
-         * Within a rule type, higher price_end_range wins.
+         * -----------------------------------------------------
+         * PRICE RULE
+         * -----------------------------------------------------
          */
-        $priority = [
-            'Brand,Category' => 4,
-            'Brand' => 3,
-            'Category' => 2,
-            '' => 1,
-        ];
+        if ($flag === '') {
 
-        $selectedRule = null;
-        $selectedQualifyingTotal = 0.0;
-        $selectedPriority = -1;
+            $qualifyingTotal =
+                $purchaseTotal;
+        }
 
-        foreach ($candidates as $candidate) {
-            $flag = trim((string) $candidate->flag_range);
-            $qualifyingTotal = 0.0;
+        /*
+         * -----------------------------------------------------
+         * BRAND RULE
+         * -----------------------------------------------------
+         */
+        elseif ($flag === 'Brand') {
 
-            $ruleBrands = $brandMap->get(
-                $candidate->products_id,
-                collect()
-            );
+            foreach ($ruleBrands as $brand) {
 
-            $ruleCategories = $categoryMap->get(
-                $candidate->products_id,
-                collect()
-            );
+                $id =
+                    (string)
+                    $brand->imanufactureid;
 
-            if ($flag === '') {
-                $qualifyingTotal = $purchaseTotal;
-            } elseif ($flag === 'Brand') {
-                foreach ($ruleBrands as $brand) {
-                    $id = (string) $brand->imanufactureid;
-                    $qualifyingTotal +=
-                        (float) ($brandTotals[$id] ?? 0);
+                $qualifyingTotal +=
+                    (float) (
+                        $brandTotals[$id]
+                        ?? 0
+                    );
+            }
+        }
+
+        /*
+         * -----------------------------------------------------
+         * CATEGORY RULE
+         * -----------------------------------------------------
+         */
+        elseif ($flag === 'Category') {
+
+            foreach ($ruleCategories as $category) {
+
+                $id =
+                    (string)
+                    $category->categoryid;
+
+                $qualifyingTotal +=
+                    (float) (
+                        $categoryTotals[$id]
+                        ?? 0
+                    );
+            }
+        }
+
+        /*
+         * -----------------------------------------------------
+         * BRAND + CATEGORY RULE
+         * -----------------------------------------------------
+         *
+         * NEW LOGIC:
+         *
+         * Matching Brand products
+         * +
+         * Matching Category products
+         *
+         * are counted together.
+         *
+         * If one product matches both Brand and Category,
+         * it is counted only once.
+         */
+        elseif ($flag === 'Brand,Category') {
+
+            /*
+             * -------------------------------------------------
+             * Find rule Brand IDs
+             * -------------------------------------------------
+             */
+            $ruleBrandIds =
+                $ruleBrands
+                    ->pluck(
+                        'imanufactureid'
+                    )
+                    ->map(
+                        fn ($id) =>
+                            (string) $id
+                    )
+                    ->unique()
+                    ->values()
+                    ->all();
+
+            /*
+             * -------------------------------------------------
+             * Find rule Category IDs
+             * -------------------------------------------------
+             */
+            $ruleCategoryIds =
+                $ruleCategories
+                    ->pluck(
+                        'categoryid'
+                    )
+                    ->map(
+                        fn ($id) =>
+                            (string) $id
+                    )
+                    ->unique()
+                    ->values()
+                    ->all();
+
+            /*
+             * -------------------------------------------------
+             * Track already counted cart lines.
+             * -------------------------------------------------
+             */
+            $matchedIndexes = [];
+
+            foreach (
+                $cart as $index => $item
+            ) {
+
+                /*
+                 * Skip Free Gift.
+                 */
+                if (
+                    ($item['IS_Free_Gift'] ?? 'No')
+                    === 'Yes'
+                ) {
+                    continue;
                 }
-            } elseif ($flag === 'Category') {
-                foreach ($ruleCategories as $category) {
-                    $id = (string) $category->categoryid;
-                    $qualifyingTotal +=
-                        (float) ($categoryTotals[$id] ?? 0);
+
+                /*
+                 * Skip Free Sample.
+                 */
+                if (
+                    ($item['Is_Free_Sample'] ?? 'No')
+                    === 'Yes'
+                ) {
+                    continue;
                 }
-            } elseif ($flag === 'Brand,Category') {
-                foreach ($ruleBrands as $brand) {
-                    foreach ($ruleCategories as $category) {
-                        $key =
-                            $brand->imanufactureid
-                            . '_'
-                            . $category->categoryid;
+
+                /*
+                 * Skip Deal Product.
+                 */
+                if (
+                    ($item['IsDealProducts'] ?? 'No')
+                    === 'Yes'
+                ) {
+                    continue;
+                }
+
+                $lineTotal =
+                    (float) (
+                        $item['TotPrice'] ?? 0
+                    );
+
+                if ($lineTotal <= 0) {
+                    continue;
+                }
+
+                $brandId =
+                    (string) (
+                        $item['ImanufactureID']
+                        ??
+                        $item['imanufactureid']
+                        ??
+                        ''
+                    );
+
+                $categoryId =
+                    (string) (
+                        $item['CategoryID']
+                        ??
+                        $item['category_id']
+                        ??
+                        ''
+                    );
+
+                /*
+                 * -------------------------------------------------
+                 * Check Brand match.
+                 * -------------------------------------------------
+                 */
+                $matchesBrand =
+                    in_array(
+                        $brandId,
+                        $ruleBrandIds,
+                        true
+                    );
+
+                /*
+                 * -------------------------------------------------
+                 * Check Category match.
+                 * -------------------------------------------------
+                 */
+                $matchesCategory =
+                    in_array(
+                        $categoryId,
+                        $ruleCategoryIds,
+                        true
+                    );
+
+                /*
+                 * -------------------------------------------------
+                 * Brand OR Category match.
+                 *
+                 * Same line counted only once.
+                 * -------------------------------------------------
+                 */
+                if (
+                    $matchesBrand
+                    ||
+                    $matchesCategory
+                ) {
+
+                    if (
+                        !isset(
+                            $matchedIndexes[$index]
+                        )
+                    ) {
 
                         $qualifyingTotal +=
-                            (float) (
-                                $brandCategoryTotals[$key] ?? 0
-                            );
+                            $lineTotal;
+
+                        $matchedIndexes[$index] =
+                            true;
                     }
                 }
             }
+        }
 
-            /*
-             * Per-rule exclusions.
-             */
-            $excludeSkus = array_values(
+        /*
+         * Unknown rule type.
+         */
+        else {
+
+            continue;
+        }
+
+        /*
+         * =====================================================
+         * EXCLUDE SKU
+         * =====================================================
+         *
+         * Old checkout uses # separator.
+         */
+        $excludeSkus =
+            array_values(
                 array_filter(
                     array_map(
                         'trim',
                         explode(
-                            ',',
+                            '#',
                             (string) (
                                 $candidate->exclude_sku
                                 ?? ''
@@ -1642,24 +2052,70 @@ public function removeAutoAddedFreeGifts(): int
                 )
             );
 
-            $excludePocket =
+        /*
+         * Also support comma separated values without
+         * changing existing # behaviour.
+         */
+        if (
+            empty($excludeSkus)
+            &&
+            !empty(
                 trim(
                     (string) (
-                        $candidate->exclude_pocketperfume
+                        $candidate->exclude_sku
                         ?? ''
                     )
-                ) === 'Yes';
+                )
+            )
+        ) {
 
-            if (
-                !empty($excludeSkus)
-                || $excludePocket
-            ) {
-                /*
-                 * Recalculate this rule from cart so exclusions are
-                 * applied only to this candidate. This preserves the
-                 * legacy per-rule exclusion behavior.
-                 */
-                $qualifyingTotal = $this->calculateRuleTotal(
+            $excludeSkus =
+                array_values(
+                    array_filter(
+                        array_map(
+                            'trim',
+                            explode(
+                                ',',
+                                (string) (
+                                    $candidate->exclude_sku
+                                    ?? ''
+                                )
+                            )
+                        ),
+                        'strlen'
+                    )
+                );
+        }
+
+        /*
+         * =====================================================
+         * EXCLUDE POCKET PERFUME
+         * =====================================================
+         */
+        $excludePocket =
+            trim(
+                (string) (
+                    $candidate->exclude_pocketperfume
+                    ?? ''
+                )
+            ) === 'Yes';
+
+        /*
+         * =====================================================
+         * APPLY PER-RULE EXCLUSIONS
+         * =====================================================
+         *
+         * calculateRuleTotal() contains the same
+         * Brand,Category logic.
+         */
+        if (
+            !empty($excludeSkus)
+            ||
+            $excludePocket
+        ) {
+
+            $qualifyingTotal =
+                $this->calculateRuleTotal(
                     $cart,
                     $flag,
                     $ruleBrands,
@@ -1668,374 +2124,737 @@ public function removeAutoAddedFreeGifts(): int
                     $excludeSkus,
                     $excludePocket
                 );
-            }
-
-            if (
-                $qualifyingTotal
-                <
-                (float) ($candidate->price_start_range ?? 0)
-            ) {
-                continue;
-            }
-
-            $candidatePriority =
-                $priority[$flag] ?? 0;
-
-            if (
-                $candidatePriority > $selectedPriority
-                ||
-                (
-                    $candidatePriority === $selectedPriority
-                    &&
-                    (float) ($candidate->price_end_range ?? 0)
-                    >
-                    (float) (
-                        $selectedRule->price_end_range ?? 0
-                    )
-                )
-            ) {
-                $selectedRule = $candidate;
-                $selectedQualifyingTotal = $qualifyingTotal;
-                $selectedPriority = $candidatePriority;
-            }
         }
 
-        if (!$selectedRule) {
-            return [
-                'status' => 'no_rule',
-                'rule' => null,
-                'eligibleGifts' => [],
-                'existingGiftCount' => $totalFreeGiftItems,
-                'remainingCount' => 0,
-            ];
-        }
+        $qualifyingTotal =
+            (float) $qualifyingTotal;
+
+        $start =
+            (float) (
+                $candidate->price_start_range
+                ?? 0
+            );
+
+        $end =
+            (float) (
+                $candidate->price_end_range
+                ?? 0
+            );
 
         /*
- * =========================================================
- * GET ACTUAL FREE GIFT PRODUCTS
- * =========================================================
- *
- * IMPORTANT:
- * pu_free_gift_product.products_id is the FREE GIFT RULE ID.
- *
- * The actual gift products are identified by the rule's
- * SKU field.
- *
- * This preserves legacy GetFreeCouponPopup() behaviour.
- */
-$freeGiftSkus = [];
+         * =====================================================
+         * RANGE CHECK
+         * =====================================================
+         *
+         * Preserve existing behaviour:
+         *
+         * qualifyingTotal must reach start range.
+         *
+         * Do not change upper-bound behaviour here.
+         */
+        if (
+            $qualifyingTotal < $start
+        ) {
 
-if (
-    isset($selectedRule->sku) &&
-    trim((string) $selectedRule->sku) !== ''
-) {
-    $freeGiftSkus =
-        array_values(
-            array_filter(
-                array_map(
-                    'trim',
-                    explode(
-                        '#',
-                        (string) $selectedRule->sku
-                    )
-                ),
-                'strlen'
-            )
-        );
-}
-
-if (empty($freeGiftSkus)) {
-    return [
-        'status' => 'no_rule',
-        'rule' => [
-            'id' =>
-                (int) $selectedRule->products_id,
-            'flag_range' =>
-                (string) $selectedRule->flag_range,
-            'freegift_add_count' =>
-                (int) (
-                    $selectedRule
-                        ->freegift_add_count ?? 1
-                ),
-            'qualifyingTotal' =>
-                round(
-                    $selectedQualifyingTotal,
-                    2
-                ),
-        ],
-        'eligibleGifts' => [],
-        'existingGiftCount' =>
-            $totalFreeGiftItems,
-        'remainingCount' =>
-            max(
-                0,
-                (int) (
-                    $selectedRule
-                        ->freegift_add_count ?? 1
-                ) -
-                $totalFreeGiftItems
-            ),
-    ];
-}
-
-/*
- * Actual gift products.
- *
- * Same as legacy:
- * Products::whereIn('sku', $FreeGiftValue)
- *     ->where('is_free_gift_products', 'Yes')
- *     ->where('status', '1')
- */
-$eligibleProducts =
-    Products::whereIn(
-        'sku',
-        $freeGiftSkus
-    )
-    ->where(
-        'is_free_gift_products',
-        'Yes'
-    )
-    ->where(
-        'status',
-        '1'
-    )
-    ->get()
-    ->filter(
-        function ($product) {
-            return $this->isStockValidForGift(
-                $product
-            );
+            continue;
         }
-    )
-    ->values();
 
-if ($eligibleProducts->isEmpty()) {
-    return [
-        'status' => 'no_rule',
-        'rule' => [
-            'id' =>
-                (int) $selectedRule->products_id,
-            'flag_range' =>
-                (string) $selectedRule->flag_range,
-            'freegift_add_count' =>
-                (int) (
-                    $selectedRule
-                        ->freegift_add_count ?? 1
+        $candidatePriority =
+            $priority[$flag] ?? 0;
+
+        /*
+         * =====================================================
+         * SELECT RULE
+         * =====================================================
+         *
+         * 1. Highest start range wins.
+         *
+         * 2. Same start:
+         *    Brand+Category
+         *    Brand
+         *    Category
+         *    Price
+         *
+         * 3. Same priority:
+         *    Higher end range wins.
+         */
+        $shouldSelect = false;
+
+        if (
+            $start > $selectedStart
+        ) {
+
+            $shouldSelect = true;
+
+        } elseif (
+            $start == $selectedStart
+            &&
+            $candidatePriority > $selectedPriority
+        ) {
+
+            $shouldSelect = true;
+
+        } elseif (
+            $start == $selectedStart
+            &&
+            $candidatePriority == $selectedPriority
+            &&
+            $end > $selectedEnd
+        ) {
+
+            $shouldSelect = true;
+        }
+
+        if ($shouldSelect) {
+
+            $selectedRule =
+                $candidate;
+
+            $selectedQualifyingTotal =
+                $qualifyingTotal;
+
+            $selectedPriority =
+                $candidatePriority;
+
+            $selectedStart =
+                $start;
+
+            $selectedEnd =
+                $end;
+        }
+    }
+
+    /*
+     * =========================================================
+     * NO VALID RULE
+     * =========================================================
+     */
+    if (!$selectedRule) {
+
+        return [
+            'status' => 'no_rule',
+            'rule' => null,
+            'eligibleGifts' => [],
+            'existingGiftCount' =>
+                $totalFreeGiftItems,
+            'remainingCount' => 0,
+        ];
+    }
+
+    /*
+     * =========================================================
+     * FREE GIFT RULE ID
+     * =========================================================
+     */
+    $selectedRuleId =
+        (int) (
+            $selectedRule->products_id
+            ?? 0
+        );
+
+    /*
+     * =========================================================
+     * FREE GIFT SKU LIST
+     * =========================================================
+     */
+    $freeGiftSkus = [];
+
+    if (
+        isset($selectedRule->sku)
+        &&
+        trim(
+            (string) $selectedRule->sku
+        ) !== ''
+    ) {
+
+        $freeGiftSkus =
+            array_values(
+                array_filter(
+                    array_map(
+                        'trim',
+                        explode(
+                            '#',
+                            (string) $selectedRule->sku
+                        )
+                    ),
+                    'strlen'
+                )
+            );
+    }
+
+    /*
+     * =========================================================
+     * NO FREE GIFT SKU
+     * =========================================================
+     */
+    if (empty($freeGiftSkus)) {
+
+        return [
+            'status' => 'no_rule',
+
+            'rule' => [
+                'id' =>
+                    $selectedRuleId,
+
+                'flag_range' =>
+                    (string)
+                    $selectedRule->flag_range,
+
+                'freegift_add_count' =>
+                    (int) (
+                        $selectedRule
+                            ->freegift_add_count
+                        ?? 1
+                    ),
+
+                'qualifyingTotal' =>
+                    round(
+                        $selectedQualifyingTotal,
+                        2
+                    ),
+            ],
+
+            'eligibleGifts' => [],
+
+            'existingGiftCount' =>
+                $totalFreeGiftItems,
+
+            'remainingCount' =>
+                max(
+                    0,
+                    (int) (
+                        $selectedRule
+                            ->freegift_add_count
+                        ?? 1
+                    )
+                    -
+                    $totalFreeGiftItems
                 ),
-            'qualifyingTotal' =>
-                round(
+        ];
+    }
+
+    /*
+     * =========================================================
+     * GET ACTUAL FREE GIFT PRODUCTS
+     * =========================================================
+     */
+    $productRes =
+        Products::whereIn(
+            'sku',
+            $freeGiftSkus
+        )
+        ->where(
+            'is_free_gift_products',
+            'Yes'
+        )
+        ->where(
+            'status',
+            '1'
+        )
+        ->get();
+
+    /*
+     * =========================================================
+     * STOCK FILTER
+     * =========================================================
+     */
+    $eligibleProducts =
+        $productRes
+            ->filter(
+                function ($product) {
+
+                    return $this->isStockValidForGift(
+                        $product
+                    );
+                }
+            )
+            ->values();
+
+    /*
+     * =========================================================
+     * NO STOCK
+     * =========================================================
+     */
+    if (
+        $eligibleProducts->isEmpty()
+    ) {
+
+        return [
+            'status' => 'no_rule',
+
+            'rule' => [
+                'id' =>
+                    $selectedRuleId,
+
+                'flag_range' =>
+                    (string)
+                    $selectedRule->flag_range,
+
+                'freegift_add_count' =>
+                    (int) (
+                        $selectedRule
+                            ->freegift_add_count
+                        ?? 1
+                    ),
+
+                'qualifyingTotal' =>
+                    round(
+                        $selectedQualifyingTotal,
+                        2
+                    ),
+            ],
+
+            'eligibleGifts' => [],
+
+            'existingGiftCount' =>
+                $totalFreeGiftItems,
+
+            'remainingCount' =>
+                max(
+                    0,
+                    (int) (
+                        $selectedRule
+                            ->freegift_add_count
+                        ?? 1
+                    )
+                    -
+                    $totalFreeGiftItems
+                ),
+        ];
+    }
+
+    /*
+     * =========================================================
+     * BUILD ELIGIBLE GIFT RESPONSE
+     * =========================================================
+     */
+    $eligibleGifts =
+        $eligibleProducts
+            ->map(
+                function ($product) use (
+                    $selectedRule,
                     $selectedQualifyingTotal,
-                    2
-                ),
-        ],
-        'eligibleGifts' => [],
-        'existingGiftCount' =>
-            $totalFreeGiftItems,
-        'remainingCount' =>
-            max(
-                0,
-                (int) (
-                    $selectedRule
-                        ->freegift_add_count ?? 1
-                ) -
-                $totalFreeGiftItems
-            ),
-    ];
-}
-        $eligibleGifts = $eligibleProducts
-            ->map(function ($product) use (
-                $selectedRule,
-                $selectedQualifyingTotal
-            ) {
-                return [
-                    'products_id' =>
-                        (int) $product->products_id,
-                    'free_gift_products_id' =>
-                        (int) (
-                            $selectedRule->free_gift_products_id
-                            ?? 0
-                        ),
-                    'freegift_add_count' =>
-                        (int) (
-                            $selectedRule->freegift_add_count
-                            ?? 1
-                        ),
-                    'flag_range' =>
-                        (string) $selectedRule->flag_range,
-                    'price_start_range' =>
-                        (float) (
-                            $selectedRule->price_start_range
-                            ?? 0
-                        ),
-                    'price_end_range' =>
-                        (float) (
-                            $selectedRule->price_end_range
-                            ?? 0
-                        ),
-                    'qualifyingTotal' =>
-                        round($selectedQualifyingTotal, 2),
-                    'sku' =>
-                        $product->sku,
-                    'product_name' =>
-                        $product->product_name,
-                    'prod_image' =>
-                        $product->prod_image ?? '',
-                    'billing_image' =>
-                        $product->billing_image ?? '',
-                ];
-            })
+                    $selectedRuleId
+                ) {
+
+                    return [
+
+                        'products_id' =>
+                            (int)
+                            $product->products_id,
+
+                        'free_gift_products_id' =>
+                            $selectedRuleId,
+
+                        'freegift_add_count' =>
+                            (int) (
+                                $selectedRule
+                                    ->freegift_add_count
+                                ?? 1
+                            ),
+
+                        'flag_range' =>
+                            (string)
+                            $selectedRule->flag_range,
+
+                        'price_start_range' =>
+                            (float) (
+                                $selectedRule
+                                    ->price_start_range
+                                ?? 0
+                            ),
+
+                        'price_end_range' =>
+                            (float) (
+                                $selectedRule
+                                    ->price_end_range
+                                ?? 0
+                            ),
+
+                        'qualifyingTotal' =>
+                            round(
+                                $selectedQualifyingTotal,
+                                2
+                            ),
+
+                        'sku' =>
+                            $product->sku,
+
+                        'product_name' =>
+                            $product->product_name,
+
+                        'prod_image' =>
+                            $product->prod_image
+                            ?? '',
+
+                        'billing_image' =>
+                            $product->billing_image
+                            ?? '',
+                    ];
+                }
+            )
             ->values()
             ->all();
 
-        $freeGiftCount = (int) (
-            $selectedRule->freegift_add_count ?? 1
+    /*
+     * =========================================================
+     * FREE GIFT COUNT
+     * =========================================================
+     */
+    $freeGiftCount =
+        (int) (
+            $selectedRule
+                ->freegift_add_count
+            ?? 1
         );
 
-        $decision = $this->getPopupDecision(
+    /*
+     * =========================================================
+     * POPUP / AUTO ADD DECISION
+     * =========================================================
+     */
+    $decision =
+        $this->getPopupDecision(
             $eligibleGifts,
             $totalFreeGiftItems,
             $freeGiftCount
         );
 
-        $existingRuleId = $this->getExistingGiftRuleId($cart);
+    /*
+     * =========================================================
+     * EXISTING RULE ID
+     * =========================================================
+     */
+    $existingRuleId =
+        $this->getExistingGiftRuleId(
+            $cart
+        );
 
-        $selectedRuleId =
-            (int) (
-                $selectedRule->products_id
-                ?? $selectedRule->id
+    /*
+     * =========================================================
+     * FINAL RULE DATA
+     * =========================================================
+     */
+    $decision['rule'] = [
+
+        'id' =>
+            $selectedRuleId,
+
+        'flag_range' =>
+            (string)
+            $selectedRule->flag_range,
+
+        'freegift_add_count' =>
+            $freeGiftCount,
+
+        'price_start_range' =>
+            (float) (
+                $selectedRule
+                    ->price_start_range
                 ?? 0
-            );
+            ),
 
-        $decision['rule'] = [
-            'id' => $selectedRuleId,
-            'flag_range' =>
-                (string) $selectedRule->flag_range,
-            'freegift_add_count' =>
-                $freeGiftCount,
-            'qualifyingTotal' =>
-                round($selectedQualifyingTotal, 2),
-        ];
+        'price_end_range' =>
+            (float) (
+                $selectedRule
+                    ->price_end_range
+                ?? 0
+            ),
 
-        $decision['ruleChanged'] =
-            $existingRuleId > 0
-            && $selectedRuleId > 0
-            && $existingRuleId !== $selectedRuleId;
+        'qualifyingTotal' =>
+            round(
+                $selectedQualifyingTotal,
+                2
+            ),
+    ];
 
-        $decision['qualificationLost'] = false;
+    /*
+     * =========================================================
+     * RULE CHANGED
+     * =========================================================
+     */
+    $decision['ruleChanged'] =
+        $existingRuleId > 0
+        &&
+        $selectedRuleId > 0
+        &&
+        $existingRuleId !== $selectedRuleId;
 
-        return $decision;
-    }
+    $decision['qualificationLost'] =
+        false;
 
-    /**
+    return $decision;
+}
+  /**
      * Calculate a candidate-specific qualifying total with
      * exclude_sku / exclude_pocketperfume applied.
      */
     protected function calculateRuleTotal(
-        array $cart,
-        string $flag,
-        $ruleBrands,
-        $ruleCategories,
-        float $purchaseTotal,
-        array $excludeSkus,
-        bool $excludePocket
-    ): float {
-        $brandIds = $ruleBrands
+    array $cart,
+    string $flag,
+    $ruleBrands,
+    $ruleCategories,
+    float $purchaseTotal,
+    array $excludeSkus,
+    bool $excludePocket
+): float {
+
+    $brandIds =
+        $ruleBrands
             ->pluck('imanufactureid')
-            ->map(fn ($id) => (string) $id)
+            ->map(
+                fn ($id) => (string) $id
+            )
+            ->unique()
+            ->values()
             ->all();
 
-        $categoryIds = $ruleCategories
+    $categoryIds =
+        $ruleCategories
             ->pluck('categoryid')
-            ->map(fn ($id) => (string) $id)
+            ->map(
+                fn ($id) => (string) $id
+            )
+            ->unique()
+            ->values()
             ->all();
 
-        $total = 0.0;
+    $total = 0.0;
 
-        foreach ($cart as $item) {
-            if (
-                ($item['IS_Free_Gift'] ?? 'No') === 'Yes'
-                || ($item['Is_Free_Sample'] ?? 'No') === 'Yes'
-                || ($item['IsDealProducts'] ?? 'No') === 'Yes'
-            ) {
-                continue;
-            }
+    /*
+     * =========================================================
+     * BRAND + CATEGORY SEPARATE TOTALS
+     * =========================================================
+     *
+     * For Brand,Category rule:
+     *
+     * Brand qualifying products
+     * +
+     * Category qualifying products
+     *
+     * are considered.
+     *
+     * A product matching BOTH is counted only ONCE.
+     */
+    $matchedItemIndexes = [];
 
-            $sku = trim(
-                (string) ($item['SKU'] ?? '')
-            );
+    foreach ($cart as $index => $item) {
 
-            if (
-                $sku !== ''
-                && in_array($sku, $excludeSkus, true)
-            ) {
-                continue;
-            }
-
-            if (
-                $excludePocket
-                && $this->isPocketPerfume(
-                    $item['CategoryID'] ?? 0
-                )
-            ) {
-                continue;
-            }
-
-            $brandId = (string) (
-                $item['ImanufactureID']
-                ?? $item['imanufactureid']
-                ?? ''
-            );
-
-            $categoryId = (string) (
-                $item['CategoryID']
-                ?? $item['category_id']
-                ?? ''
-            );
-
-            $matches = match ($flag) {
-                '' =>
-                    true,
-
-                'Brand' =>
-                    in_array(
-                        $brandId,
-                        $brandIds,
-                        true
-                    ),
-
-                'Category' =>
-                    in_array(
-                        $categoryId,
-                        $categoryIds,
-                        true
-                    ),
-
-                'Brand,Category' =>
-                    in_array(
-                        $brandId,
-                        $brandIds,
-                        true
-                    )
-                    &&
-                    in_array(
-                        $categoryId,
-                        $categoryIds,
-                        true
-                    ),
-
-                default =>
-                    false,
-            };
-
-            if ($matches) {
-                $total +=
-                    (float) ($item['TotPrice'] ?? 0);
-            }
+        /*
+         * -----------------------------------------------------
+         * EXCLUDE FREE GIFT / SAMPLE / DEAL
+         * -----------------------------------------------------
+         */
+        if (
+            ($item['IS_Free_Gift'] ?? 'No') === 'Yes'
+            ||
+            ($item['Is_Free_Sample'] ?? 'No') === 'Yes'
+            ||
+            ($item['IsDealProducts'] ?? 'No') === 'Yes'
+        ) {
+            continue;
         }
 
-        return $total;
+        /*
+         * -----------------------------------------------------
+         * LINE TOTAL
+         * -----------------------------------------------------
+         */
+        $lineTotal =
+            (float) (
+                $item['TotPrice'] ?? 0
+            );
+
+        if ($lineTotal <= 0) {
+            continue;
+        }
+
+        /*
+         * -----------------------------------------------------
+         * SKU
+         * -----------------------------------------------------
+         */
+        $sku =
+            trim(
+                (string) (
+                    $item['SKU'] ?? ''
+                )
+            );
+
+        /*
+         * -----------------------------------------------------
+         * EXCLUDE SKU
+         * -----------------------------------------------------
+         */
+        if (
+            $sku !== ''
+            &&
+            in_array(
+                $sku,
+                $excludeSkus,
+                true
+            )
+        ) {
+            continue;
+        }
+
+        /*
+         * -----------------------------------------------------
+         * EXCLUDE POCKET PERFUME
+         * -----------------------------------------------------
+         */
+        if (
+            $excludePocket
+            &&
+            $this->isPocketPerfume(
+                $item['CategoryID'] ?? 0
+            )
+        ) {
+            continue;
+        }
+
+        /*
+         * -----------------------------------------------------
+         * PRODUCT BRAND / CATEGORY
+         * -----------------------------------------------------
+         */
+        $brandId =
+            (string) (
+                $item['ImanufactureID']
+                ??
+                $item['imanufactureid']
+                ??
+                ''
+            );
+
+        $categoryId =
+            (string) (
+                $item['CategoryID']
+                ??
+                $item['category_id']
+                ??
+                ''
+            );
+
+        /*
+         * =====================================================
+         * PRICE / GENERAL RULE
+         * =====================================================
+         */
+        if ($flag === '') {
+
+            $total += $lineTotal;
+
+            continue;
+        }
+
+        /*
+         * =====================================================
+         * BRAND RULE
+         * =====================================================
+         */
+        if ($flag === 'Brand') {
+
+            if (
+                in_array(
+                    $brandId,
+                    $brandIds,
+                    true
+                )
+            ) {
+
+                $total += $lineTotal;
+            }
+
+            continue;
+        }
+
+        /*
+         * =====================================================
+         * CATEGORY RULE
+         * =====================================================
+         */
+        if ($flag === 'Category') {
+
+            if (
+                in_array(
+                    $categoryId,
+                    $categoryIds,
+                    true
+                )
+            ) {
+
+                $total += $lineTotal;
+            }
+
+            continue;
+        }
+
+        /*
+         * =====================================================
+         * BRAND + CATEGORY RULE
+         * =====================================================
+         *
+         * IMPORTANT:
+         *
+         * Brand and Category are evaluated independently.
+         *
+         * Example:
+         *
+         * Anfas product        = $1,520
+         * Skincare product     = $496
+         *
+         * qualifying total     = $2,016
+         *
+         * If the SAME product is both Anfas + Skincare,
+         * it is counted only once.
+         */
+        if (
+            $flag === 'Brand,Category'
+        ) {
+
+            $matchesBrand =
+                in_array(
+                    $brandId,
+                    $brandIds,
+                    true
+                );
+
+            $matchesCategory =
+                in_array(
+                    $categoryId,
+                    $categoryIds,
+                    true
+                );
+
+            if (
+                $matchesBrand
+                ||
+                $matchesCategory
+            ) {
+
+                /*
+                 * Count this cart line only once.
+                 */
+                if (
+                    !isset(
+                        $matchedItemIndexes[$index]
+                    )
+                ) {
+
+                    $total += $lineTotal;
+
+                    $matchedItemIndexes[$index] =
+                        true;
+                }
+            }
+
+            continue;
+        }
     }
 
+    return (float) $total;
+}
     /**
      * Stock-valid gift product for popup.
      */
@@ -2115,26 +2934,117 @@ if ($eligibleProducts->isEmpty()) {
      * CheckoutConstants. If unavailable, no category is treated
      * as pocket perfume rather than inventing IDs.
      */
-    protected function isPocketPerfume(
-        $categoryId
-    ): bool {
-        if (
-            class_exists(
-                \App\Services\Checkout\CheckoutConstants::class
-            )
-        ) {
-            $categories =
-                \App\Services\Checkout\CheckoutConstants::POCKET_PERFUME_CATEGORIES
-                ?? [];
+   /**
+ * Check whether a product category is a Pocket Perfume category.
+ *
+ * Source of truth:
+ * App\Constants\CheckoutConstants
+ */
+	protected function isPocketPerfume(
+		$categoryId
+	): bool {
+		$categories =
+			\App\Constants\CheckoutConstants::POCKET_PERFUME_CATEGORIES;
 
-            return in_array(
-                (int) $categoryId,
-                $categories,
-                true
-            );
-        }
+		return in_array(
+			(int) $categoryId,
+			$categories,
+			true
+		);
+	}
+	/**
+ * Remove ALL Free Gifts from the checkout cart.
+ *
+ * Used when the customer no longer qualifies for
+ * any Free Gift rule.
+ *
+ * Important:
+ * - Normal products are preserved.
+ * - Free Samples are preserved.
+ * - All actual Free Gift lines are removed,
+ *   regardless of FreeGiftAutoAdded value.
+ */
+public function removeAllFreeGifts(): int
+{
+    $cart =
+        Session::get(
+            'ShoppingCart.Cart',
+            []
+        );
 
-        return false;
+    if (
+        !is_array($cart)
+        ||
+        empty($cart)
+    ) {
+        return 0;
     }
 
+    $removed = 0;
+
+    $newCart = [];
+
+    foreach (
+        $cart as $item
+    ) {
+
+        $isFreeGift =
+            ($item['IS_Free_Gift'] ?? 'No')
+            === 'Yes';
+
+        $isFreeSample =
+            ($item['Is_Free_Sample'] ?? 'No')
+            === 'Yes';
+
+        /*
+         * Remove every Free Gift.
+         *
+         * Free Sample is NOT a Free Gift and
+         * must remain in the cart.
+         */
+        if (
+            $isFreeGift
+            &&
+            !$isFreeSample
+        ) {
+
+            $removed++;
+
+            continue;
+        }
+
+        /*
+         * Preserve:
+         * - normal products
+         * - Free Samples
+         */
+        $newCart[] =
+            $item;
+    }
+
+    if (
+        $removed > 0
+    ) {
+
+        Session::put(
+            'ShoppingCart.Cart',
+            array_values(
+                $newCart
+            )
+        );
+
+        Log::info(
+            'Free Gift all removal',
+            [
+                'removedCount' =>
+                    $removed,
+
+                'reason' =>
+                    'qualification_lost',
+            ]
+        );
+    }
+
+    return $removed;
+}
 }

@@ -2187,6 +2187,73 @@ public function syncFreeSamplesAfterCartMutation(
         'ShoppingCart.Cart',
         []
     );
+    
+    /*
+ * =========================================================
+ * Free Sample eligibility restrictions
+ *
+ * Preserve legacy behavior:
+ * - Free Sample setting must be enabled.
+ * - Wholesaler cannot receive Free Samples.
+ * - Dropshipper cannot receive Free Samples.
+ * =========================================================
+ */
+	$freeSampleDisabled =
+		config('Settings.FREESAMPLE_VALUE') !== 'Yes';
+
+	$isWholesaler =
+		strtolower(
+			trim(
+				Session::get(
+					'eusertype',
+					''
+				)
+			)
+		) === 'wholesaler';
+
+	$isDropshipper =
+		trim(
+			Session::get(
+				'is_dropshipper',
+				''
+			)
+		) === 'Yes';
+
+	if (
+		$freeSampleDisabled
+		||
+		$isWholesaler
+		||
+		$isDropshipper
+	) {
+
+		Log::info(
+			'FreeSampleSync STOP: Free Sample Restricted',
+			[
+				'free_sample_setting' =>
+					config(
+						'Settings.FREESAMPLE_VALUE'
+					),
+
+				'is_wholesaler' =>
+					$isWholesaler,
+
+				'is_dropshipper' =>
+					$isDropshipper,
+			]
+		);
+
+		/*
+		 * Remove any existing Free Samples.
+		 */
+		$this->removeSamples();
+
+		/*
+		 * Return true because the cart was changed.
+		 */
+		return true;
+	}
+    
 
     Log::info(
         'FreeSampleSync START',
@@ -2533,12 +2600,15 @@ public function syncFreeSamplesAfterCartMutation(
      * totalValue =
      *     subTotal - actualDiscount
      */
-    $totalValue =
-        max(
-            0,
-            $subTotal
-            - $actualDiscount
-        );
+        $subTotal = (float) Session::get(
+		'ShoppingCart.SubTotal',
+		0
+		);
+
+		$totalValue = max(
+			0,
+			$subTotal
+		);
 
     Log::info(
         'FreeSampleSync: Eligibility Total',

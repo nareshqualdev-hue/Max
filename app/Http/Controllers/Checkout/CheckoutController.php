@@ -56,8 +56,10 @@ class CheckoutController extends Controller
         if (isset($result['redirect'])) {
             return $result['redirect'];
         }
-
+        //dd($result);
         $result['data']['token_js_url'] = "https://portal.sandbox.afterpay.com/afterpay.js";
+        $method = $request->method ?? '';
+        $result['data']['method'] = $method;
         return view('newcheckout.checkout-page')->with($result['data']);
     }
 

@@ -40,6 +40,7 @@ use App\Http\Controllers\Checkout\CheckoutAddressController;
 use App\Http\Controllers\Checkout\CheckoutShippingController;
 use App\Http\Controllers\Checkout\CheckoutDiscountController;
 use App\Http\Controllers\Checkout\CheckoutTotalsController;
+use App\Http\Controllers\Checkout\CheckoutAfterpayController;
 
 //POS End
 /*
@@ -79,6 +80,13 @@ Route::post(
     '/free-sample/add',
     [CheckoutCartController::class, 'freeSampleAdd']
 );
+    Route::post(
+    '/free-gift/check',
+    [
+        CheckoutCartController::class,
+        'resolveFreeGiftAfterCartChange'
+    ]
+)->name('checkoutnew.free-gift.check');
     Route::get('/', [
         CheckoutController::class,
         'index'
@@ -89,6 +97,11 @@ Route::post(
     | Cart
     |--------------------------------------------------------------------------
     */
+
+	Route::post('/free-gift/resolve', [
+    CheckoutCartController::class,
+    'resolveFreeGiftAfterCartChange'
+])->name('checkoutnew.free-gift.resolve');
 
     Route::prefix('cart')->group(function () {
 
@@ -1069,5 +1082,9 @@ Route::get('/checkout/payment/stripe/return',[CheckoutController::class,'stripeR
 Route::post('/checkout/order/create',[CheckoutController::class,'MaxOrder'])->name('checkout.order.create');
 Route::post('/checkout/order/update',[CheckoutController::class,'UpdateOrder'])->name('checkout.order.update');
 Route::post('/checkout/order/dropshipper',[CheckoutController::class,'DropshipperDetails'])->name('checkout.order.dropshipper');
+
+Route::post('/checkout/afterpay/placeorder_express',[CheckoutAfterpayController::class,'SetAfterpay_Express']);
+Route::get('/checkout/afterpay/placeorder_express',[CheckoutAfterpayController::class,'SetAfterpay_Express']);
+Route::get('checkout/afterpay-billing-checkout-express/{status}/{orderToken}',[CheckoutAfterpayController::class,'Billing_Checkout_Express']);
 //New Stripe Integration
 

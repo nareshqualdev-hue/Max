@@ -8,6 +8,7 @@ use App\Services\Cart\CartCalculatorService;
 use Illuminate\Support\Facades\Log;
 
 use App\Models\Customer;
+use App\Services\Cart\CartStockService;
 class CheckoutService
 {
     public function __construct(
@@ -26,6 +27,7 @@ class CheckoutService
 		protected \App\Services\Checkout\GiftCertificateService $giftCertificateService,
 		protected \App\Services\Discount\BogoDiscountService $bogoDiscountService,
 		protected \App\Services\Discount\CouponService $couponService,
+		protected CartStockService $cartStockService,
     ) {
     }
 
@@ -43,7 +45,9 @@ class CheckoutService
         \Illuminate\Http\Request $request
     ): array {
         addLog('CheckoutPrepareStart');
-
+		
+		
+		
         /*
          * Preserve existing Afterpay / Store checkout session rules.
          */
@@ -100,6 +104,27 @@ class CheckoutService
                 'redirect' => redirect('/shoppingcart'),
             ];
         }
+        
+        $skrSKU = $this->cartStockService
+    ->outOfStockItemsRemove();
+
+		if (count($skrSKU) > 0) {
+			$errMsg = "Sorry some of your cart items are out of stock. Please update your cart and then proceed for payment.";
+
+			$log['err_msg'] = $errMsg;
+
+			addLog('CheckoutPage', $log);
+
+			Session::flash(
+				'PlaceOrderError',
+				$errMsg
+			);
+
+			return [
+				'redirect' => redirect('/shoppingcart'),
+			];
+		}
+        
 
         /*
          * ---------------------------------------------------------
@@ -229,7 +254,8 @@ class CheckoutService
          * calculations using the current session state.
          */
         $checkout = $this->refresh('page');
-
+        
+       
         /*
          * The new Blade reads its display values directly from
          * the checkout session. Keep the controller/service
