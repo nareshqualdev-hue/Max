@@ -321,9 +321,9 @@ class ShippingSignatureService
             )
         ));
 
-        if ($country !== 'US') {
+        /*if ($country !== 'US') {
             return false;
-        }
+        }*/
 
         if (Session::get('is_dropshipper') === 'Yes') {
             return (

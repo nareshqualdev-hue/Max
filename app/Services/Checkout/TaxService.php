@@ -458,7 +458,7 @@ class TaxService
                         $taxableSubTotal
                     )
                     ->orderBy(
-                        'amount_from',
+                        'charge_amount',
                         'desc'
                     )
                     ->first();

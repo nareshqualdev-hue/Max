@@ -139,55 +139,69 @@ class CheckoutAfterpayController extends Controller
 					// echo "<pre>";print_r($response);exit;
 					if ($SetToken['isSuccessful'] && isset($response->token) && $response->token != "") {
 						$cst_details = [];
+						$ShippingAddress = [];
 						if(!empty($response->shipping) && isset($response->shipping->name) && $response->shipping->name != ""){
 
 							$name_arr = explode(" ",$response->shipping->name);
 							if(isset($name_arr[0]) && $name_arr[0]!='')
 							{
 								$cst_details['ship_fname'] = $this->afterpay->transliterate($name_arr[0]);
+								$ShippingAddress['first_name'] = $this->afterpay->transliterate($name_arr[0]);
 							}
 							if(isset($name_arr[1]) && $name_arr[1]!='')
 							{
 								$cst_details['ship_lname'] = $this->afterpay->transliterate($name_arr[1]);
+								$ShippingAddress['last_name'] = $this->afterpay->transliterate($name_arr[1]);
 							}
 							if(isset($response->shipping->line1) && $response->shipping->line1!='')
 							{
 								$cst_details['ship_address1'] = $this->afterpay->transliterate($response->shipping->line1);
+								$ShippingAddress['address1'] = $this->afterpay->transliterate($response->shipping->line1);
 							}
+							$ShippingAddress['address2'] = "";
 							if(isset($response->shipping->line2) && $response->shipping->line2!='')
 							{
 								$cst_details['ship_address2'] = $response->shipping->line2;
+								$ShippingAddress['address2'] = $this->afterpay->transliterate($response->shipping->line2);
 							}
 							if(isset($response->shipping->area1) && $response->shipping->area1!='')
 							{
 								$cst_details['ship_city'] = $response->shipping->area1;
+								$ShippingAddress['city'] = $response->shipping->area1;
 							}
 							if(isset($response->shipping->region) && $response->shipping->region!='')
 							{
-							$cst_details['ship_state'] = $response->shipping->region;
+								$cst_details['ship_state'] = $response->shipping->region;
+								$ShippingAddress['state'] = $response->shipping->region;
 							}
 							if(isset($response->shipping->postcode) && $response->shipping->postcode!='')
 							{
-							$cst_details['ship_zip'] = $response->shipping->postcode;
+								$cst_details['ship_zip'] = $response->shipping->postcode;
+								$ShippingAddress['zip'] = $response->shipping->postcode;
 							}
 							if(isset($response->shipping->phoneNumber) && $response->shipping->phoneNumber!='')
 							{
-							$cst_details['ship_phone'] = $response->shipping->phoneNumber;
+								$cst_details['ship_phone'] = $response->shipping->phoneNumber;
+								$ShippingAddress['phone'] = $response->shipping->phoneNumber;
 							}
 							if(isset($response->shipping->countryCode) && $response->shipping->countryCode!='')
 							{
-							$cst_details['ship_country'] = $response->shipping->countryCode;
+								$cst_details['ship_country'] = $response->shipping->countryCode;
+								$ShippingAddress['country'] = $response->shipping->countryCode;
 							}
 
 						}
 
 						if(!empty($response->consumer) && isset($response->consumer->email) && $response->consumer->email != ""){
 							$cst_details['email'] = $response->consumer->email;
+							$ShippingAddress['email'] = $response->consumer->email;
 							$cst_details['fName'] = $response->consumer->givenNames;
 							$cst_details['lName'] = $response->consumer->surname;
 						}
 						if(!empty($cst_details)){
 							Session::put('ShoppingCart.AfterPay.Customer_Details',$cst_details);
+							Session::put('ShoppingCart.ShippingAddress',$ShippingAddress);
+							Session::put('ShoppingCart.BillingAddress',$ShippingAddress);
 						}
 						return redirect('secure-checkout1/afterpay');
 					}else{
@@ -243,11 +257,11 @@ class CheckoutAfterpayController extends Controller
     public function Success(Request $request)
     {
         if ($request->status !== 'SUCCESS' || !$request->filled('orderToken')) {
-            return $this->afterpayDeclined('This transaction has been Declined by User.');
+            return $this->afterpay->afterpayDeclined('This transaction has been Declined by User.');
         }
         $result = $this->afterpay->authorize($request->orderToken);
         if (!$result['success'] || !$result['approved']) {
-            return $this->afterpayDeclined('This transaction has been Declined.', $result);
+            return $this->afterpay->afterpayDeclined('This transaction has been Declined.', $result);
         }
         $response = $result['response'];
         $orderId = Session::get('ShoppingCart.OrderID');

@@ -45,9 +45,7 @@ class CheckoutService
         \Illuminate\Http\Request $request
     ): array {
         addLog('CheckoutPrepareStart');
-		
-		
-		
+
         /*
          * Preserve existing Afterpay / Store checkout session rules.
          */
@@ -104,7 +102,7 @@ class CheckoutService
                 'redirect' => redirect('/shoppingcart'),
             ];
         }
-        
+
         $skrSKU = $this->cartStockService
     ->outOfStockItemsRemove();
 
@@ -124,7 +122,18 @@ class CheckoutService
 				'redirect' => redirect('/shoppingcart'),
 			];
 		}
-        
+
+        if(config('global.SHOPP_STATUS') == 'Close')
+		{
+			Session::forget('ShoppingCart');
+			$err_msg = "Shop status is close.";
+			$log['err_msg'] = $err_msg;
+			addLog('PlaceOrder',$log);
+			Session::flash('PlaceOrderError',$err_msg);
+			return [
+				'redirect' => redirect('/'),
+			];
+		}
 
         /*
          * ---------------------------------------------------------
@@ -187,10 +196,7 @@ class CheckoutService
         if($normalUser)
         {
 
-            $billingAddress = Session::get(
-                'ShoppingCart.BillingAddress',
-                []
-            );
+            $billingAddress = Session::get('ShoppingCart.BillingAddress',[]);
 
             if (empty($billingAddress)) {
                 $billingAddress = [
@@ -231,22 +237,22 @@ class CheckoutService
          * address is preserved; otherwise logged-in customer data
          * is used, and guests get a blank US address.
          */
+
+        // if($request->has('BillingAsShipping'))
+        // {
+        //     Session::put('ShoppingCart.BillingAsShipping',$request->BillingAsShipping);
+        // } elseif(!Session::has('ShoppingCart.BillingAsShipping')){
+        //     Session::put('ShoppingCart.BillingAsShipping','Yes');
+        // }
         $shippingAddress = $this->getShippingAddress($normalUser);
+        //$sameAsShipping = Session::get('ShoppingCart.BillingAsShipping');
+        //$billingAddress = $this->getBillingAddress($request);
 
         /*
          * Preserve BillingAsShipping when it already exists.
          * Default to Yes for the new checkout Blade.
          */
-        if (
-            !Session::has(
-                'ShoppingCart.BillingAsShipping'
-            )
-        ) {
-            Session::put(
-                'ShoppingCart.BillingAsShipping',
-                'Yes'
-            );
-        }
+        //Session::put('ShoppingCart.BillingAsShipping',$sameAsShipping);
 
         /*
          * Refresh the checkout state through the new service
@@ -254,8 +260,7 @@ class CheckoutService
          * calculations using the current session state.
          */
         $checkout = $this->refresh('page');
-        
-       
+
         /*
          * The new Blade reads its display values directly from
          * the checkout session. Keep the controller/service
@@ -273,7 +278,7 @@ class CheckoutService
             'CSSFILES' => [
                 'components.css',
                 'checkout-new.css',
-               
+
             ],
 
             'JSFILES' => [
@@ -285,6 +290,12 @@ class CheckoutService
             'Countries' => $countries,
             'States' => $states,
             'ShippingAddress' => $shippingAddress,
+            // 'BillingAsShipping' =>  $sameAsShipping,
+            // 'BillingAddress' => $billingAddress,
+            // 'SelectedBillingCountry' =>
+            //     $billingAddress['country'] ?? 'US',
+            // 'SelectedBillingState' =>
+            //     $billingAddress['state'] ?? '',
             'SelectedShippingCountry' =>
                 $shippingAddress['country'] ?? 'US',
             'SelectedShippingState' =>
@@ -449,6 +460,40 @@ class CheckoutService
         );
 
         return $shippingAddress;
+    }
+
+    protected function getBillingAddress($request): array
+    {
+        $shippingAddress = Session::get(
+            'ShoppingCart.ShippingAddress'
+        );
+        $SameAsShipping = Session::get('ShoppingCart.BillingAsShipping');
+        if (is_array($shippingAddress)) {
+            return $shippingAddress;
+        }
+        $BillingAddress = [];
+        if($SameAsShipping == 'Yes')
+        {
+            $BillingAddress = $shippingAddress;
+            Session::put('ShoppingCart.BillingAddress',$shippingAddress);
+        } else {
+            $BillingAddress = [
+                'first_name' => $request->billing_first_name ?? '',
+                'last_name' => $request->billing_last_name ?? '',
+                'company' => $request->billing_company_name ?? '',
+                'address1' => $request->billing_address1 ?? '',
+                'address2' => $request->billing_address2 ?? '',
+                'city' => $request->billing_city ?? '',
+                'zip' => $request->billing_zip ?? '',
+                'state' => $request->billing_state ?? '',
+                'country' => $request->billing_country ?: 'US',
+                'phone' => $request->billing_phone ?? '',
+                'email' => $request->billing_email ?? '',
+                'confirm_email' => '',
+            ];
+            Session::put('ShoppingCart.BillingAddress',$BillingAddress);
+        }
+        return $BillingAddress;
     }
 
     /**
@@ -2030,10 +2075,7 @@ protected function resolveOrderTotal(
          * If BillingAsShipping is used, preserve the existing
          * checkout behavior by resolving the address accordingly.
          */
-        $billingAsShipping =
-            Session::get(
-                'ShoppingCart.BillingAsShipping'
-            );
+        $billingAsShipping = Session::get('ShoppingCart.BillingAsShipping');
 
         if (
             $billingAsShipping === 'Yes'

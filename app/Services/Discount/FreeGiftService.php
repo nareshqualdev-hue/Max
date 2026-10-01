@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Session;
-
+use App\Services\Cart\CartStockService;
 class FreeGiftService
 {
 
@@ -24,6 +24,10 @@ class FreeGiftService
      * exact GetFreeCouponPopup/CheckFreeGiftInCart implementation is
      * migrated into this service.
      */
+    public function __construct(
+        protected CartStockService $cartStockService
+    ) {
+    } 
     public function isEligibleCustomer(): bool
     {
         if (config('Settings.FREEGIFTFLAG') !== 'Yes') {
@@ -171,323 +175,861 @@ class FreeGiftService
      * - Out of stock message
      * - empty string when successfully added
      */
-    public function addGift(
+ 
+/**
+ * Insert the Free Gift configured on the coupon record.
+ *
+ * Legacy source of truth:
+ * CartTrait::FreeGiftInsertWithCoupon($products_sku)
+ *
+ * The caller passes the coupon table's freegift_product_sku.
+ */
+public function insertWithCoupon(string $productValue): array
+{
+    $productValue = trim($productValue);
+
+    if ($productValue === '') {
+        return [
+            'success' => false,
+            'message' => 'Free gift product is not configured.',
+        ];
+    }
+
+    $cart = Session::get(
+        'ShoppingCart.Cart',
+        []
+    );
+
+    if (
+        !is_array($cart)
+        ||
+        count($cart) === 0
+    ) {
+        return [
+            'success' => false,
+            'message' =>
+                'Free gift cannot be added because the cart is empty.',
+        ];
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Coupon can contain one or more SKUs.
+     * ---------------------------------------------------------
+     */
+    $skus = array_values(
+        array_filter(
+            array_map(
+                'trim',
+                explode(',', $productValue)
+            ),
+            static fn ($sku) => $sku !== ''
+        )
+    );
+
+    if (empty($skus)) {
+        return [
+            'success' => false,
+            'message' =>
+                'Free gift product is not configured.',
+        ];
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Find active products by configured coupon SKU.
+     * ---------------------------------------------------------
+     */
+    $products = Products::query()
+        ->whereIn('sku', $skus)
+        ->where('status', '1')
+        ->get();
+
+    if ($products->isEmpty()) {
+
+        addLog(
+            'FreeGiftInsertWithCouponProductNotFound',
+            [
+                'products_sku' => $productValue,
+                'skus' => $skus,
+            ]
+        );
+
+        return [
+            'success' => false,
+            'message' =>
+                'Free gift product is not available.',
+        ];
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * IMPORTANT:
+     *
+     * If the configured coupon Free Gift is ALREADY in cart,
+     * keep it.
+     *
+     * This is required because CheckoutService can re-apply
+     * the active coupon during checkout refresh.
+     *
+     * Do NOT remove the existing coupon gift and recreate it.
+     * ---------------------------------------------------------
+     */
+    foreach ($cart as $item) {
+
+        if (
+            isset($item['FreeGiftCoupon'])
+            &&
+            $item['FreeGiftCoupon'] === 'Yes'
+            &&
+            isset($item['IS_Free_Gift'])
+            &&
+            $item['IS_Free_Gift'] === 'Yes'
+        ) {
+
+            $existingGiftSku =
+                trim(
+                    (string) (
+                        $item['ProductSKU']
+                        ??
+                        $item['products_sku']
+                        ??
+                        $item['SKU']
+                        ??
+                        ''
+                    )
+                );
+
+            /*
+             * The cart SKU for a Free Gift can be stored as
+             * GIFT-{product sku}.
+             *
+             * Therefore compare both the normal SKU and
+             * GIFT-{SKU}.
+             */
+            foreach ($skus as $configuredSku) {
+
+                $configuredSku =
+                    trim($configuredSku);
+
+                $giftSku =
+                    'GIFT-' . $configuredSku;
+
+                if (
+                    $existingGiftSku ===
+                        $configuredSku
+                    ||
+                    $existingGiftSku ===
+                        $giftSku
+                ) {
+
+                    addLog(
+                        'FreeGiftInsertWithCouponAlreadyExists',
+                        [
+                            'products_sku' =>
+                                $productValue,
+
+                            'configured_sku' =>
+                                $configuredSku,
+
+                            'existing_sku' =>
+                                $existingGiftSku,
+
+                            'ProductID' =>
+                                $item['ProductID']
+                                ?? null,
+                        ]
+                    );
+
+                    return [
+                        'success' => true,
+
+                        'message' =>
+                            'Free gift already exists.',
+
+                        'cart_item' =>
+                            $item,
+
+                        'cart_items' =>
+                            [$item],
+                    ];
+                }
+            }
+        }
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * IMPORTANT:
+     *
+     * We may have an OLD / automatic Free Gift in cart.
+     *
+     * Remove only a normal Free Gift.
+     *
+     * NEVER remove:
+     * - Free Sample
+     * - Coupon Free Gift
+     * - Normal cart product
+     * ---------------------------------------------------------
+     */
+    foreach ($cart as $index => $item) {
+
+        $isFreeGift =
+            isset($item['IS_Free_Gift'])
+            &&
+            $item['IS_Free_Gift'] === 'Yes';
+
+        $isFreeSample =
+            isset($item['Is_Free_Sample'])
+            &&
+            $item['Is_Free_Sample'] === 'Yes';
+
+        $isCouponGift =
+            isset($item['FreeGiftCoupon'])
+            &&
+            $item['FreeGiftCoupon'] === 'Yes';
+
+        if (
+            $isFreeGift
+            &&
+            !$isFreeSample
+            &&
+            !$isCouponGift
+        ) {
+            unset($cart[$index]);
+        }
+    }
+
+    $cart = array_values($cart);
+
+    /*
+     * ---------------------------------------------------------
+     * Try each configured SKU.
+     * ---------------------------------------------------------
+     */
+    $addedItems = [];
+    $outOfStockSku = '';
+
+    foreach ($products as $rawProduct) {
+
+        /*
+         * -----------------------------------------------------
+         * Resolve stock/vendor information BEFORE building
+         * the Free Gift cart item.
+         * -----------------------------------------------------
+         */
+        $stock = $this->cartStockService->checkStock(
+            (int) $rawProduct->products_id,
+            1,
+            'insert',
+            'No',
+            'Website'
+        );
+
+        if (
+            ($stock['StockInfo'] ?? 1111) !== 3333
+            ||
+            empty($stock['ProdInfo'])
+        ) {
+
+            $outOfStockSku =
+                $rawProduct->sku;
+
+            addLog(
+                'FreeGiftInsertWithCouponStockFailed',
+                [
+                    'products_sku' =>
+                        $rawProduct->sku,
+
+                    'products_id' =>
+                        $rawProduct->products_id,
+
+                    'StockInfo' =>
+                        $stock['StockInfo'] ?? null,
+                ]
+            );
+
+            continue;
+        }
+
+        /*
+         * Use the stock-resolved product.
+         */
+        $product =
+            $stock['ProdInfo'];
+
+        /*
+         * -----------------------------------------------------
+         * Build the Free Gift using existing New Checkout
+         * Free Gift builder.
+         * -----------------------------------------------------
+         */
+        $result =
+            $this->addProductToCart(
+                $product,
+                $product->products_id,
+                '',
+                $cart
+            );
+
+        if (
+            !is_array($result)
+            ||
+            !($result['added'] ?? false)
+        ) {
+
+            $outOfStockSku =
+                $result['sku']
+                ??
+                $product->sku;
+
+            addLog(
+                'FreeGiftInsertWithCouponBuilderFailed',
+                [
+                    'products_sku' =>
+                        $product->sku,
+
+                    'products_id' =>
+                        $product->products_id,
+
+                    'result' =>
+                        $result,
+                ]
+            );
+
+            continue;
+        }
+
+        /*
+         * -----------------------------------------------------
+         * Get updated cart.
+         * -----------------------------------------------------
+         */
+        $cart =
+            array_values(
+                $result['cart'] ?? $cart
+            );
+
+        /*
+         * -----------------------------------------------------
+         * Find actual inserted Free Gift.
+         * -----------------------------------------------------
+         */
+        $giftIndex = null;
+
+        foreach (
+            $cart as $index => $item
+        ) {
+
+            if (
+                isset($item['ProductID'])
+                &&
+                (string)
+                    $item['ProductID']
+                    ===
+                    (string)
+                    $product->products_id
+                &&
+                isset($item['IS_Free_Gift'])
+                &&
+                $item['IS_Free_Gift'] === 'Yes'
+            ) {
+
+                $giftIndex =
+                    $index;
+
+                break;
+            }
+        }
+
+        if ($giftIndex === null) {
+
+            addLog(
+                'FreeGiftInsertWithCouponCartInsertFailed',
+                [
+                    'products_sku' =>
+                        $product->sku,
+
+                    'products_id' =>
+                        $product->products_id,
+
+                    'result' =>
+                        $result,
+                ]
+            );
+
+            continue;
+        }
+
+        /*
+         * -----------------------------------------------------
+         * Mark this gift as coupon-generated.
+         * -----------------------------------------------------
+         */
+        $cart[$giftIndex]['FreeGiftCoupon'] =
+            'Yes';
+
+        $cart[$giftIndex]['FreeGiftAutoAdded'] =
+            'No';
+
+        /*
+         * Coupon Free Gift is always zero price.
+         */
+        $cart[$giftIndex]['Price'] =
+            0;
+
+        $cart[$giftIndex]['Qty'] =
+            1;
+
+        $cart[$giftIndex]['TotPrice'] =
+            0;
+
+        $addedItems[] =
+            $cart[$giftIndex];
+
+        /*
+         * One valid coupon gift is enough.
+         */
+        break;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Nothing inserted.
+     * ---------------------------------------------------------
+     */
+    if (empty($addedItems)) {
+
+        $message =
+            'The Free bundle is out of stock and cannot be added to your order';
+
+        if ($outOfStockSku !== '') {
+            $message .=
+                ' ' . $outOfStockSku;
+        }
+
+        Session::flash(
+            'OutOfStockBundle',
+            $message
+        );
+
+        addLog(
+            'FreeGiftInsertWithCouponFailed',
+            [
+                'products_sku' =>
+                    $productValue,
+
+                'skus' =>
+                    $skus,
+
+                'out_of_stock_sku' =>
+                    $outOfStockSku,
+            ]
+        );
+
+        return [
+            'success' => false,
+            'message' => $message,
+        ];
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Save final cart.
+     * ---------------------------------------------------------
+     */
+    Session::put(
+        'ShoppingCart.Cart',
+        array_values($cart)
+    );
+
+    addLog(
+        'FreeGiftInsertWithCoupon',
+        [
+            'products_sku' =>
+                $productValue,
+
+            'products_id' =>
+                array_column(
+                    $addedItems,
+                    'ProductID'
+                ),
+
+            'FreeGiftCoupon' =>
+                'Yes',
+        ]
+    );
+
+    return [
+        'success' => true,
+
+        'message' =>
+            'Free gift added successfully.',
+
+        'cart_item' =>
+            $addedItems[0],
+
+        'cart_items' =>
+            $addedItems,
+    ];
+}
+ public function addGift(
     $productsId,
     $freeProductsId = 0,
     $oneGift = 'No',
     $autoAdded = false
 ): ?string {
-        $outOfStockMessage = '';
-        $skuList = '';
+    $outOfStockMessage = '';
+    $skuList = '';
 
-        $log = [
-            'products_id' => $productsId,
-            'freeproductsid' => $freeProductsId,
-            'OneGift' => $oneGift,
-        ];
+    $log = [
+        'products_id' => $productsId,
+        'freeproductsid' => $freeProductsId,
+        'OneGift' => $oneGift,
+    ];
 
-        addLog(
-            'FreeGiftInsertProductValueStart',
-            $log
-        );
-
-        /*
-         * ---------------------------------------------------------
-         * Cart must exist.
-         * ---------------------------------------------------------
-         */
-        if (
-            !Session::has('ShoppingCart.Cart') ||
-            count(
-                Session::get(
-                    'ShoppingCart.Cart',
-                    []
-                )
-            ) <= 0
-        ) {
-            return null;
-        }
-
-        $cart =
-            array_values(
-                Session::get(
-                    'ShoppingCart.Cart',
-                    []
-                )
-            );
-
-        /*
-         * ---------------------------------------------------------
-         * Product IDs.
-         * ---------------------------------------------------------
-         */
-        $productIds =
-            $this->csvToArray(
-                $productsId
-            );
-
-        if (
-            empty($productIds)
-        ) {
-            return null;
-        }
-
-        /*
-         * ---------------------------------------------------------
-         * Existing Product IDs + Free Gift flags.
-         * ---------------------------------------------------------
-         */
-        $productIdValues =
-            array_column(
-                $cart,
-                'ProductID'
-            );
-
-        $isFreeGiftValues =
-            array_column(
-                $cart,
-                'IS_Free_Gift'
-            );
-
-        /*
-         * ---------------------------------------------------------
-         * Same free gift check.
-         *
-         * Existing logic:
-         *
-         * If requested product is already in cart
-         * and a free gift exists in cart:
-         *
-         * "Same free gift product already added"
-         * ---------------------------------------------------------
-         */
-        foreach (
-            $productIds as $productId
-        ) {
-            if (
-                in_array(
-                    $productId,
-                    $productIdValues
-                )
-                &&
-                in_array(
-                    'Yes',
-                    $isFreeGiftValues
-                )
-            ) {
-                $message =
-                    'Same free gift product already added';
-
-                $log['message'] =
-                    $message;
-
-                addLog(
-                    'SameFreeGift',
-                    $log
-                );
-
-                return $message;
-            }
-        }
-
-        /*
-         * ---------------------------------------------------------
-         * Existing FreeGiftCoupon / OneGift behavior.
-         * ---------------------------------------------------------
-         */
-        foreach (
-            $cart as $index => $cartItem
-        ) {
-            /*
-             * Existing coupon-selected gift already exists.
-             *
-             * Do not add another gift.
-             */
-            if (
-                isset(
-                    $cartItem['FreeGiftCoupon']
-                )
-                &&
-                $cartItem['FreeGiftCoupon']
-                    === 'Yes'
-            ) {
-                addLog(
-                    'FreeGiftNull'
-                );
-
-                return null;
-            }
-
-            /*
-             * OneGift = Yes:
-             *
-             * remove existing normal free gifts
-             * before adding the new one.
-             */
-            if (
-                isset(
-                    $cartItem['IS_Free_Gift']
-                )
-                &&
-                $cartItem['IS_Free_Gift']
-                    === 'Yes'
-                &&
-                $oneGift === 'Yes'
-            ) {
-                addLog(
-                    'FreeGiftUnset'
-                );
-
-                unset(
-                    $cart[$index]
-                );
-            }
-        }
-
-        $cart =
-            array_values(
-                $cart
-            );
-
-        Session::put(
-            'ShoppingCart.Cart',
-            $cart
-        );
-
-        /*
-         * ---------------------------------------------------------
-         * Active products.
-         * ---------------------------------------------------------
-         */
-        $products =
-            Products::whereIn(
-                'products_id',
-                $productIds
-            )
-            ->where(
-                'status',
-                '1'
-            )
-            ->get();
-
-        if (
-            $products->count() <= 0
-        ) {
-            return null;
-        }
-		
-
-		
-        /*
-         * ---------------------------------------------------------
-         * Add each requested product.
-         * ---------------------------------------------------------
-         */
-         
-        foreach (
-            $products as $product
-        ) {
-            $result =
-    $this->addProductToCart(
-        $product,
-        $freeProductsId,
-        $skuList,
-        $cart,
-        $autoAdded
+    addLog(
+        'FreeGiftInsertProductValueStart',
+        $log
     );
 
-            if (
-                $result['added']
-            ) {
-                $cart =
-                    $result['cart'];
-            } else {
-                $skuList .=
-                    $result['sku']
-                    . ',';
-            }
-        }
+    /*
+     * ---------------------------------------------------------
+     * Cart must exist.
+     * ---------------------------------------------------------
+     */
+    if (
+        !Session::has('ShoppingCart.Cart') ||
+        count(
+            Session::get(
+                'ShoppingCart.Cart',
+                []
+            )
+        ) <= 0
+    ) {
+        return null;
+    }
 
-        /*
-         * ---------------------------------------------------------
-         * Out-of-stock message.
-         * ---------------------------------------------------------
-         */
+    $cart =
+        array_values(
+            Session::get(
+                'ShoppingCart.Cart',
+                []
+            )
+        );
+
+    /*
+     * ---------------------------------------------------------
+     * Product IDs.
+     * ---------------------------------------------------------
+     */
+    $productIds =
+        $this->csvToArray(
+            $productsId
+        );
+
+    if (
+        empty($productIds)
+    ) {
+        return null;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Existing Product IDs + Free Gift flags.
+     * ---------------------------------------------------------
+     */
+    $productIdValues =
+        array_column(
+            $cart,
+            'ProductID'
+        );
+
+    $isFreeGiftValues =
+        array_column(
+            $cart,
+            'IS_Free_Gift'
+        );
+
+    /*
+     * ---------------------------------------------------------
+     * Same free gift check.
+     *
+     * Existing logic:
+     *
+     * If requested product is already in cart
+     * and a free gift exists in cart:
+     *
+     * "Same free gift product already added"
+     * ---------------------------------------------------------
+     */
+    foreach (
+        $productIds as $productId
+    ) {
         if (
-            $skuList !== ''
+            in_array(
+                $productId,
+                $productIdValues
+            )
+            &&
+            in_array(
+                'Yes',
+                $isFreeGiftValues
+            )
         ) {
-            $skuList =
-                rtrim(
-                    $skuList,
-                    ','
-                );
+            $message =
+                'Same free gift product already added';
 
-            $outOfStockMessage =
-                'The Free bundle is out of stock and cannot be added to your order and out of stock products '
-                . $skuList;
-
-            $log['OutofStockMsg'] =
-                $outOfStockMessage;
+            $log['message'] =
+                $message;
 
             addLog(
-                'FreeGiftInsertProductValueOutofStock',
+                'SameFreeGift',
                 $log
             );
 
-            Session::flash(
-                'OutOfStockBundle',
-                'The Free bundle is out of stock and cannot be added to your order '
-                . $skuList
+            return $message;
+        }
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Existing FreeGiftCoupon / OneGift behavior.
+     * ---------------------------------------------------------
+     */
+    foreach (
+        $cart as $index => $cartItem
+    ) {
+        /*
+         * Existing coupon-selected gift already exists.
+         *
+         * Do not add another gift.
+         */
+        if (
+            isset(
+                $cartItem['FreeGiftCoupon']
+            )
+            &&
+            $cartItem['FreeGiftCoupon']
+                === 'Yes'
+        ) {
+            addLog(
+                'FreeGiftNull'
             );
+
+            return null;
         }
 
         /*
-         * ---------------------------------------------------------
-         * Save cart.
+         * -----------------------------------------------------
+         * FREE GIFT HAS PRIORITY OVER FREE SAMPLE
+         * -----------------------------------------------------
          *
-         * Existing flow only saves the cart when a gift
-         * was successfully added.
-         * ---------------------------------------------------------
+         * When an automatic Free Gift is being added,
+         * remove any existing Free Sample from the cart.
+         *
+         * This gives:
+         *
+         *     Free Gift > Free Sample
+         *
+         * Existing Free Gift logic remains unchanged.
          */
         if (
-            !empty($cart)
+            $autoAdded === true
+            &&
+            isset(
+                $cartItem['Is_Free_Sample']
+            )
+            &&
+            $cartItem['Is_Free_Sample']
+                === 'Yes'
         ) {
-            Session::put(
-                'ShoppingCart.Cart',
-                array_values(
-                    $cart
-                )
+            addLog(
+                'FreeSampleUnsetByFreeGift',
+                [
+                    'ProductID' =>
+                        $cartItem['ProductID'] ?? null,
+
+                    'SKU' =>
+                        $cartItem['SKU'] ?? null,
+                ]
             );
 
-            /*
-             * Existing cart pricing recalculation happens
-             * after cart mutation.
-             *
-             * We intentionally do not duplicate
-             * CalculateSubTotal() here.
-             */
+            unset(
+                $cart[$index]
+            );
+
+            continue;
         }
 
-        addLog(
-            'FreeGiftInsertProductValue',
-            [
-                'products_id' =>
-                    $productsId,
+        /*
+         * -----------------------------------------------------
+         * OneGift = Yes:
+         *
+         * remove existing normal free gifts
+         * before adding the new one.
+         * -----------------------------------------------------
+         */
+        if (
+            isset(
+                $cartItem['IS_Free_Gift']
+            )
+            &&
+            $cartItem['IS_Free_Gift']
+                === 'Yes'
+            &&
+            $oneGift === 'Yes'
+        ) {
+            addLog(
+                'FreeGiftUnset'
+            );
 
-                'freeproductsid' =>
-                    $freeProductsId,
-
-                'OneGift' =>
-                    $oneGift,
-
-                'cart_count' =>
-                    count($cart),
-            ]
-        );
-
-        return $outOfStockMessage;
+            unset(
+                $cart[$index]
+            );
+        }
     }
 
+    $cart =
+        array_values(
+            $cart
+        );
+
+    Session::put(
+        'ShoppingCart.Cart',
+        $cart
+    );
+
+    /*
+     * ---------------------------------------------------------
+     * Active products.
+     * ---------------------------------------------------------
+     */
+    $products =
+        Products::whereIn(
+            'products_id',
+            $productIds
+        )
+        ->where(
+            'status',
+            '1'
+        )
+        ->get();
+
+    if (
+        $products->count() <= 0
+    ) {
+        return null;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Add each requested product.
+     * ---------------------------------------------------------
+     */
+    foreach (
+        $products as $product
+    ) {
+        $result =
+            $this->addProductToCart(
+                $product,
+                $freeProductsId,
+                $skuList,
+                $cart,
+                $autoAdded
+            );
+
+        if (
+            $result['added']
+        ) {
+            $cart =
+                $result['cart'];
+        } else {
+            $skuList .=
+                $result['sku']
+                . ',';
+        }
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Out-of-stock message.
+     * ---------------------------------------------------------
+     */
+    if (
+        $skuList !== ''
+    ) {
+        $skuList =
+            rtrim(
+                $skuList,
+                ','
+            );
+
+        $outOfStockMessage =
+            'The Free bundle is out of stock and cannot be added to your order and out of stock products '
+            . $skuList;
+
+        $log['OutofStockMsg'] =
+            $outOfStockMessage;
+
+        addLog(
+            'FreeGiftInsertProductValueOutofStock',
+            $log
+        );
+
+        Session::flash(
+            'OutOfStockBundle',
+            'The Free bundle is out of stock and cannot be added to your order '
+            . $skuList
+        );
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Save cart.
+     *
+     * Existing flow only saves the cart when a gift
+     * was successfully added.
+     * ---------------------------------------------------------
+     */
+    if (
+        !empty($cart)
+    ) {
+        Session::put(
+            'ShoppingCart.Cart',
+            array_values(
+                $cart
+            )
+        );
+
+        /*
+         * Existing cart pricing recalculation happens
+         * after cart mutation.
+         *
+         * We intentionally do not duplicate
+         * CalculateSubTotal() here.
+         */
+    }
+
+    addLog(
+        'FreeGiftInsertProductValue',
+        [
+            'products_id' =>
+                $productsId,
+
+            'freeproductsid' =>
+                $freeProductsId,
+
+            'OneGift' =>
+                $oneGift,
+
+            'cart_count' =>
+                count($cart),
+        ]
+    );
+
+    return $outOfStockMessage;
+}
     /**
      * Add one product to cart.
      */

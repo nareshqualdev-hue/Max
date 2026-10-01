@@ -17,6 +17,8 @@
   let currentSignatureCharge = null;
   let currentSignatureApplied = null;
 
+  let isGuestCustomer = 'N';
+
   function showLoader(show) {
     //$('#shipping-method-loader').toggle(!!show);
     if (show === true) $(".cart_loader").css("visibility", "visible");
@@ -120,6 +122,7 @@
         shipping_city: { required: true },
         shipping_state: { required: true },
         shipping_zip: { required: true },
+        shipping_phone: { required: true },
       },
       messages: {
         shipping_first_name: { required: "Please enter first name." },
@@ -128,6 +131,7 @@
         shipping_city: { required: "Please enter city." },
         shipping_state: { required: "Please enter state." },
         shipping_zip: { required: "Please enter zip code" },
+        shipping_phone: { required: "Please enter phone" },
       },
       highlight: function (element, errorClass, validClass) {
         // Leave empty so no class is added to the input element
@@ -137,7 +141,7 @@
           var firstErrorElement = validator.errorList[0].element;
           $("html, body").animate(
             {
-              scrollTop: $(firstErrorElement).offset().top, // Offset by 40px for spacing/fixed headers
+              scrollTop: $(firstErrorElement).offset().top - 100, // Offset by 40px for spacing/fixed headers
             },
             500,
             function () {
@@ -147,23 +151,96 @@
         }
       },
     });
+    $("#frmbillingaddress").validate({
+      rules: {
+        billing_first_name: { required: true },
+        billing_last_name: { required: true },
+        billing_address1: { required: true },
+        billing_city: { required: true },
+        billing_state: { required: true },
+        billing_zip: { required: true },
+        billing_phone: { required: true },
+      },
+      messages: {
+        billing_first_name: { required: "Please enter first name." },
+        billing_last_name: { required: "Please enter last name." },
+        billing_address1: { required: "Please enter address." },
+        billing_city: { required: "Please enter city." },
+        billing_state: { required: "Please enter state." },
+        billing_zip: { required: "Please enter zip code" },
+        billing_phone: { required: "Please enter phone" },
+      },
+      highlight: function (element, errorClass, validClass) {
+        // Leave empty so no class is added to the input element
+      },
+      invalidHandler: function (event, validator) {
+        if (validator.errorList.length) {
+          var firstErrorElement = validator.errorList[0].element;
+          $("html, body").animate(
+            {
+              scrollTop: $(firstErrorElement).offset().top - 100, // Offset by 40px for spacing/fixed headers
+            },
+            500,
+            function () {
+              $(firstErrorElement).focus();
+            },
+          );
+        }
+      },
+    });
+    $("#checkout-guest-form").validate({
+        rules: {
+          email: { required: true, email: true }
+        },
+        messages: {
+          email: {
+            required: "Please enter email.",
+            email: "Please enter valid email.",
+          }
+        },
+        highlight: function (element, errorClass, validClass) {
+          // Leave empty so no class is added to the input element
+        },
+        invalidHandler: function (event, validator) {
+          if (validator.errorList.length) {
+            var firstErrorElement = validator.errorList[0].element;
+            $("html, body").animate(
+              {
+                scrollTop: $(firstErrorElement).offset().top - 100, // Offset by 40px for spacing/fixed headers
+              },
+              500,
+              function () {
+                $(firstErrorElement).focus();
+              },
+            );
+          }
+        },
+    });
   }
 
   async function processCardPayment(payment_method_id, OrderID, PayMethod) {
     try {
-      const payment = await StripeCard.pay({
+      var payload = {
         payment_method_id: payment_method_id,
         order_id: OrderID,
-      });
+      }
+
+      const payment = await StripeCard.pay(payload);
       console.log(payment);
-      if (payment.success) {
-        alert("Payment Successfull");
+
+      if(payment.success === true)
+      {
+        //alert("Payment Successfull");
         await setOrderStatus(payment.paymentIntentId, OrderID, PayMethod);
+      } else {
+        window.location=site_url+'secure-checkout1';
+        return false;
       }
     } catch (error) {
-      console.error(error);
-
-      alert(error.message);
+      //console.error(error);
+      //alert(error.message);
+      window.location=site_url+'secure-checkout1';
+      return false;
     } finally {
     }
   }
@@ -171,10 +248,39 @@
   async function createCheckoutOrder() {
     try {
       var PayMethod = $("#selectedPaymentMethod").val();
+      var pschecksum = $("#pschecksum").val() || '';
+      var payload = {};
+      var ShippingData = $("#frmcheckoutaddress").serializeArray();
 
+      if(isGuestCustomer == 'Y')
+      {
+        payload['guest_email'] = $("#checkout-guest-form #email").val();
+        payload['newsletter'] = 'No';
+        if($("#checkout-guest-form #guest_newsletter").prop('checked'))
+        {
+          payload['newsletter'] = 'Yes';
+        }
+      }
+      $.each(ShippingData, function(index, field) {
+        payload[field.name] = field.value;
+      });
+
+      if($("#chksamebill").prop('checked'))
+      {
+        payload['BillingAsShipping'] = 'Yes'
+      } else {
+        payload['BillingAsShipping'] = 'No';
+        var BillingData = $("#frmbillingaddress").serializeArray();
+        $.each(BillingData, function(index, field) {
+          payload[field.name] = field.value;
+        });
+      }
+
+      //payload['shippingAddress'] = $("#frmcheckoutaddress").serializeArray();
       if(PayMethod == 'PAYMENT_STRIPE')
       {
-        var payload = {'payment_type' : PayMethod, 'payment_method' : 'Credit Card'};
+        payload['payment_type'] = PayMethod;
+        payload['payment_method'] =  'Credit Card';
         const paymentMethod = await StripeCard.createPaymentMethod();
         if (paymentMethod)
         {
@@ -192,7 +298,18 @@
         }
       } else {
         showFullPageLoader(true);
-        var payload = {'payment_type' : PayMethod, 'payment_method' : 'Dropshipper Fund'};
+        if(PayMethod == 'PAYMENT_DS')
+        {
+          payload['payment_type'] = PayMethod;
+          payload['payment_method'] =  'Dropshipper Fund';
+        }
+        if(PayMethod == 'PAYMENT_PAYWITHAFTERPAY')
+        {
+          payload['payment_type'] = PayMethod;
+          payload['payment_method'] =  'Pay With Afterpay';
+          payload['pschecksum'] = pschecksum;
+        }
+
         console.log(payload);
         const response = await PlaceOrder(payload);
         const result = await response.json();
@@ -203,7 +320,7 @@
         if(result.status === true)
         {
           var order_id = result.order_id;
-          await setOrderStatus('', order_id,PayMethod);
+          await setOrderStatus('', order_id,PayMethod, pschecksum);
         }
       }
 
@@ -239,9 +356,54 @@
     } finally {
     }
   }
-
+  async function CheckGuestCustomer(email)
+  {
+    $("#error_guest_email").hide();
+    $("#error_guest_email").html('');
+    $.ajax({
+      type:'POST',
+      url:site_url+'checkmember',
+      headers: {
+        'X-CSRF-TOKEN': csrfToken
+      },
+      datatype: 'JSON',
+      data:{
+        //action : 'chkmember',
+        action : 'chkmember_billing',
+        email : email
+      },
+      success:function(data) {
+        if(data != ''){
+          var chkArr = data.split("~");
+          if(chkArr[0]=="0")
+          {
+            var message = 'This email is already registered. Please log in.' + chkArr[1];
+            $("#error_guest_email").html(message);
+            $("#error_guest_email").show();
+            return false;
+          } else if(chkArr[0]=="1"){
+            var message = 'This email is already registered. Please log in.';
+            $("#error_guest_email").html(message);
+            $("#error_guest_email").show();
+            return false;
+          } else if(chkArr[0] == "2"){
+            var message = chkArr[1];
+            $("#error_guest_email").html(message);
+            $("#error_guest_email").show();
+            return false;
+          } else if(chkArr[0] == "4"){
+            var message = chkArr[1];
+            $("#error_guest_email").html(message);
+            $("#error_guest_email").show();
+            return false;
+          }
+        }
+      }
+    });
+  }
   async function PlaceOrder(payload)
   {
+    console.log(payload);
     return await fetch(window.checkoutUrls.createOrder, {
         method: "POST",
         credentials: "same-origin",
@@ -265,7 +427,7 @@
       */
       return result;
   }
-  async function setOrderStatus(payment_intent_id='', order_id, PayMethod='') {
+  async function setOrderStatus(payment_intent_id='', order_id, PayMethod='',pschecksum = '') {
     try {
       let payload = {};
       if(PayMethod == 'PAYMENT_STRIPE')
@@ -279,7 +441,8 @@
         payload = {
           payment_intent_id: payment_intent_id,
           order_id: order_id,
-          PayMethod: PayMethod
+          PayMethod: PayMethod,
+          pschecksum: pschecksum
         };
       }
       console.log(payload);
@@ -298,13 +461,17 @@
       if (!response.ok) {
         throw new Error(result.message || "Unable to update order.");
       }
+      console.log(result);
       if (result.status === true) {
+        console.log(window.checkoutUrls.orderReceipt);
         window.location.href = window.checkoutUrls.orderReceipt;
       }
+      console.log(window.checkoutUrls.orderReceipt);
       return result;
     } catch (error) {
       console.error(error);
-      alert(error.message);
+      //alert(error.message);
+      window.location.href = "/secure-checkout1";
     } finally {
     }
   }
@@ -312,24 +479,61 @@
   SetFormValidation();
 
   $(document).on("click", "#place-order-btn", function () {
+    var PayMethod = $("#selectedPaymentMethod").val();
     const btn = document.getElementById("place-order-btn");
     if (!btn) return;
-    if ($("#frmcheckoutaddress").valid()) {
+
+    if($("#tab-guest").length > 0 && $("#tab-guest").hasClass('active'))
+    {
+      if($("#checkout-guest-form").valid())
+      {
+        var guest_email = $("#checkout-guest-form #email").val();
+        CheckGuestCustomer(guest_email);
+        isGuestCustomer = 'Y';
+      }
+    }
+    var validationError = 0;
+    if(!$("#frmcheckoutaddress").valid())
+    {
+      validationError=1;
+    }
+    if(!$("#chksamebill").prop('checked') && !$("#frmbillingaddress").valid())
+    {
+      validationError=1;
+    }
+    $("#error_ship_method").hide();
+    $("#error_ship_method").empty();
+    if($('input[name="shipping"]:checked').length == 0)
+    {
+        $("#error_ship_method").html("Please select shipping method.")
+        $("#error_ship_method").show();
+        $("html, body").animate(
+          {
+            scrollTop: $("#error_ship_method").offset().top - 100, // Offset by 40px for spacing/fixed headers
+          },
+          500,
+          function () {
+            $("#error_ship_method").focus();
+          },
+        );
+    }
+    if(validationError == 0)
+    {
+        btn.classList.add("btn-loading");
+        btn.setAttribute("aria-busy", "true");
+        btn.setAttribute("aria-label", "Processing your order…");
+        btn.disabled = true;
+
+        // Simulate processing
+        setTimeout(() => {
+          btn.classList.remove("btn-loading");
+          btn.disabled = false;
+          // In real implementation: redirect to confirmation page
+        }, 2000);
+
+        createCheckoutOrder();
     }
 
-    btn.classList.add("btn-loading");
-    btn.setAttribute("aria-busy", "true");
-    btn.setAttribute("aria-label", "Processing your order…");
-    btn.disabled = true;
-
-    // Simulate processing
-    setTimeout(() => {
-      btn.classList.remove("btn-loading");
-      btn.disabled = false;
-      // In real implementation: redirect to confirmation page
-    }, 2000);
-    //processCardPayment();
-    createCheckoutOrder();
   });
 
   function getShippingAddress() {
@@ -342,6 +546,7 @@
       state: $("#shipping_state").val() || "",
       zip: $("#shipping_zip").val() || "",
       country: $("#shipping_country").val() || "",
+      phone: $("#shipping_phone").val() || "",
     };
   }
 
@@ -1535,6 +1740,8 @@
   }
 
   function loadShippingMethods() {
+    showLoader(false);
+    showShipMethodLoader(false);
     console.log("IN Shipping Methods");
     const shippingFlags = getShippingFlags();
 
@@ -1835,6 +2042,7 @@
         if (response.message) {
           showMessage("#shipping-method-messages", response.message, "success");
         }
+        loadDropshipperDetails();
       })
 
       .fail(function (xhr, status) {
@@ -1903,7 +2111,6 @@
             .closest('.shipping-option')
             .addClass('active selected');
 
-	
       const shippingMethodId = parseInt($(this).val(), 10);
 
       if (!shippingMethodId) {
@@ -1939,7 +2146,7 @@
      * Restore server-side Insurance/Signature state
      * BEFORE shipping methods / totals AJAX starts.
      */
-    restoreCheckoutAddonState(); 
+    restoreCheckoutAddonState();
 
     const address = getShippingAddress();
 
@@ -3672,7 +3879,7 @@ function updateQty(btn, delta) {
   /*
    * Load Free Sample popup from backend.
    */
- 
+
  function checkFreeGiftOnPageLoad() {
 
     const freeGiftUrl =
@@ -4615,6 +4822,11 @@ drawerBody.querySelectorAll(".order-item-row").forEach(function (row) {
             */
     if ($("#checkout-login-form").valid()) {
       showLoginLoader(true);
+      $("#checkout-login-form #newsletter").val('No');
+      if($("#checkout-login-form #customer_newsletter").prop('checked'))
+      {
+        $("#checkout-login-form #newsletter").val('Yes');
+      }
       $.ajax({
         type: "POST",
         url: $form.attr("action"),

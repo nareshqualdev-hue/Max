@@ -264,6 +264,201 @@ class AfterpayService
             ];
         }
     }
+    public function makePayment(
+        int $orderId,
+        float $paymentAmount,
+        string $pschecksum
+    ): array {
+        /*
+        * Validate basic information
+        */
+        if ($orderId <= 0) {
+            return [
+                'success'  => false,
+                'message'  => 'Invalid order ID.',
+                'response' => null,
+            ];
+        }
+        $orderToken = Session::get('ShoppingCart.AfterPay.Checkout_Token');
+        if (empty($orderToken)) {
+            return [
+                'success'  => false,
+                'message'  => 'Afterpay checkout token is missing.',
+                'response' => null,
+            ];
+        }
+
+        if ($paymentAmount <= 0) {
+            return [
+                'success'  => false,
+                'message'  => 'Invalid payment amount.',
+                'response' => null,
+            ];
+        }
+
+        if(empty($pschecksum))
+        {
+            return [
+                'success'  => false,
+                'message'  => 'Payment schedule checksum mismatch',
+                'response' => null,
+            ];
+        }
+
+        try {
+
+            /*
+            * Create Immediate Payment Capture request.
+            *
+            * This is exactly what the old
+            * DoPayment_Express_BTM() uses.
+            */
+            $paymentRequest = new AfterpayImmediatePaymentCapture([
+                'token' => urlencode($orderToken),
+                'isCheckoutAdjusted' => true,
+                'paymentScheduleChecksum' => $pschecksum,
+            ]);
+
+            /*
+            * Merchant account
+            */
+            $merchant = new AfterpayMerchantAccount();
+
+            $merchant->setMerchantId($this->config['merchant_id'])
+                ->setSecretKey($this->config['secret_key'])
+                ->setApiEnvironment($this->transactionMode)
+                ->setCountryCode('US');
+
+            $paymentRequest->setMerchantAccount($merchant);
+
+            /*
+            * Merchant reference
+            *
+            * Existing controller:
+            * "OR" . $order_id
+            */
+            $merchantReference = 'OR' . $orderId;
+
+            $paymentRequest->setMerchantReference(
+                $merchantReference
+            );
+
+            /*
+            * Build Afterpay items
+            *
+            * Preserve the existing free gift / free sample
+            * price handling.
+            */
+            $setItems = [];
+            $cartItems = Session::get('ShoppingCart.Cart');
+            foreach ($cartItems as $cartItem) {
+
+                if (
+                    isset($cartItem['IS_Free_Gift']) &&
+                    $cartItem['IS_Free_Gift'] === 'Yes'
+                ) {
+                    $itemPrice = $cartItem['TotPrice'];
+
+                } elseif (
+                    isset($cartItem['Is_Free_Sample']) &&
+                    $cartItem['Is_Free_Sample'] === 'Yes'
+                ) {
+                    $itemPrice = $cartItem['TotPrice'];
+
+                } else {
+                    $itemPrice = $cartItem['ItemPrice'];
+                }
+
+                $setItems[] = [
+                    'name'     => $cartItem['ProductName'],
+                    'sku'      => $cartItem['SKU'],
+                    'quantity' => $cartItem['Qty'],
+                    'pageUrl'  => $cartItem['Prod_URL'],
+                    'price'    => [$itemPrice,'USD'],
+                ];
+            }
+
+            $paymentRequest->setItems($setItems);
+
+            /*
+            * Validate request
+            */
+            if (!$paymentRequest->isValid()) {
+                return [
+                    'success'  => false,
+                    'message'  => 'Invalid Afterpay payment request.',
+                    'response' => null,
+                ];
+            }
+
+            /*
+            * Set payment amount
+            *
+            * Existing controller does this after isValid().
+            */
+            $paymentRequest->setAmount(NumberFormat($paymentAmount),'USD');
+
+            /*
+            * Send request to Afterpay
+            */
+            $paymentRequest->send();
+
+            /*
+            * Get response
+            */
+            $responseObject = $paymentRequest->getResponse();
+
+            $response = $responseObject->getParsedBody();
+
+            /*
+            * Existing success condition:
+            *
+            * status       = APPROVED
+            * paymentState = CAPTURED
+            *                 OR
+            *                 PARTIALLY_CAPTURED
+            */
+            $status = $response->status ?? null;
+            $paymentState = $response->paymentState ?? null;
+
+            $success =
+                $status === 'APPROVED' &&
+                in_array(
+                    $paymentState,
+                    [
+                        'CAPTURED',
+                        'PARTIALLY_CAPTURED',
+                    ],
+                    true
+                );
+
+            return [
+                'success'       => $success,
+                'status'        => $status,
+                'payment_state' => $paymentState,
+                'transaction_id'=> $response->id ?? null,
+                'response'      => $response,
+                'message'       => $success
+                    ? ''
+                    : ($response->message ??
+                        'Error in Processing Request, Please try again.'),
+            ];
+
+        } catch (\Throwable $e) {
+
+            \Log::error('Afterpay Make Payment Error', [
+                'order_id' => $orderId,
+                'message'  => $e->getMessage(),
+            ]);
+
+            return [
+                'success'  => false,
+                'message'  => 'Error in Processing Request, Please try again.',
+                'response' => null,
+                'exception' => $e->getMessage(),
+            ];
+        }
+    }
 
     public function isCheckoutTokenExpired(?string $expires): bool
     {
@@ -378,6 +573,7 @@ class AfterpayService
         if (!$consumer) {
             return $this->failure('Customer information is not available.');
         }
+        Session::put('sess_useremail',$consumer['email']);
         $billing = $this->buildBilling($order);
         $shipping = $this->buildShipping($order);
         $items = $this->buildItems($orderId);

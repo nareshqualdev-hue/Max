@@ -31,88 +31,147 @@ class StripePaymentService
      * Laravel receives ONLY the PaymentMethod ID.
      */
     public function pay(
-        string $paymentMethodId
+        string $paymentMethodId,
+        string $order_id
     ): array {
+        try{
+            if (trim($paymentMethodId) === '') {
+                throw new RuntimeException(
+                    'Payment method is required.'
+                );
+            }
 
-        if (
-            trim($paymentMethodId) === ''
-        ) {
-            throw new RuntimeException(
-                'Payment method is required.'
+            /*
+            * IMPORTANT:
+            *
+            * Always calculate the amount on the server.
+            */
+            //$totals = $this->checkoutTotals->calculate();
+            //$total = (float) ( $totals['NetTotal'] ?? 0 );
+            $total = (float)(Session::get('ShoppingCart.NetTotal','0'));
+
+            if ($total <= 0) {
+                throw new RuntimeException(
+                    'Invalid checkout total.'
+                );
+            }
+
+            $amount = $this->toStripeAmount($total);
+
+            $currency = $this->currency();
+
+            /*
+            * Create and confirm PaymentIntent.
+            */
+
+            $intent =
+                PaymentIntent::create([
+                    'amount' => $amount,
+                    'currency' => $currency,
+                    'payment_method' => $paymentMethodId,
+                    /*
+                    * This tells Stripe to confirm the
+                    * payment immediately.
+                    */
+                    'confirm' => true,
+                    /*
+                    * Required for cards that need
+                    * 3DS/SCA authentication.
+                    *
+                    * Stripe may return requires_action.
+                    */
+                    'return_url' => route('checkout.payment.stripe.return'),
+                    /*
+                    * Keep this enabled because the same
+                    * PaymentIntent architecture will later
+                    * support Apple Pay / Google Pay.
+                    */
+                    'automatic_payment_methods' => [
+                        'enabled' => true,
+                    ],
+
+                    'metadata' => [
+                        'order_number' => 'OR' . $order_id,
+                        'source' => 'maxaroma_checkout',
+                        'customer_id' => (string) Session::get('sess_icustomerid',''),
+                    ],
+                ]);
+
+            /*
+            * Keep PaymentIntent ID in checkout session.
+            */
+            Session::put(
+                'ShoppingCart.Stripe.PaymentIntentID',
+                $intent->id
             );
-        }
 
-        /*
-         * IMPORTANT:
-         *
-         * Always calculate the amount on the server.
-         */
-        $totals =
-            $this->checkoutTotals->calculate();
-
-        $total =
-            (float) (
-                $totals['NetTotal'] ?? 0
+            return $this->result(
+                $intent
             );
+        }catch (\Stripe\Exception\CardException $e) {
 
-        if ($total <= 0) {
-            throw new RuntimeException(
-                'Invalid checkout total.'
-            );
-        }
+        // Card declined / insufficient funds / etc.
+        \Log::warning('Stripe card payment failed', [
+            'message' => $e->getMessage(),
+            'code' => $e->getError()?->code,
+            'decline_code' => $e->getError()?->decline_code,
+        ]);
 
-        $amount =
-            $this->toStripeAmount($total);
+        return [
+            'success' => false,
+            'status' => 'failed',
+            'error_type' => 'card_error',
+            'message' => $e->getError()?->message
+                ?? 'Your card payment could not be completed.',
+        ];
 
-        $currency =
-            $this->currency();
+        } catch (\Stripe\Exception\ApiConnectionException $e) {
 
-        /*
-         * Create and confirm PaymentIntent.
-         */
-        $intent =
-            PaymentIntent::create([
-                'amount' => $amount,
-                'currency' => $currency,
-                'payment_method' => $paymentMethodId,
-                /*
-                 * This tells Stripe to confirm the
-                 * payment immediately.
-                 */
-                'confirm' => true,
-                /*
-                 * Required for cards that need
-                 * 3DS/SCA authentication.
-                 *
-                 * Stripe may return requires_action.
-                 */
-                'return_url' => route('checkout.payment.stripe.return'),
-                /*
-                 * Keep this enabled because the same
-                 * PaymentIntent architecture will later
-                 * support Apple Pay / Google Pay.
-                 */
-                'automatic_payment_methods' => [
-                    'enabled' => true,
-                ],
-
-                'metadata' => [
-                    'source' => 'maxaroma_checkout',
-                    'customer_id' => (string) Session::get('sess_icustomerid',''),
-                ],
+            // Stripe could not be reached
+            \Log::error('Stripe API connection error', [
+                'message' => $e->getMessage(),
             ]);
 
-        /*
-         * Keep PaymentIntent ID in checkout session.
-         */
-        Session::put(
-            'ShoppingCart.Stripe.PaymentIntentID',
-            $intent->id
-        );
+            return [
+                'success' => false,
+                'status' => 'failed',
+                'error_type' => 'connection_error',
+                'message' => 'Unable to connect to the payment service. Please try again.',
+            ];
 
-        return $this->result(
-            $intent
-        );
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+
+            // Other Stripe API errors
+            \Log::error('Stripe API error', [
+                'message' => $e->getMessage(),
+                'code' => $e->getError()?->code,
+                'type' => $e->getError()?->type,
+            ]);
+
+            return [
+                'success' => false,
+                'status' => 'failed',
+                'error_type' => 'stripe_error',
+                'message' => 'Unable to process the payment.',
+            ];
+
+        } catch (\Throwable $e) {
+
+            // Application / unexpected errors
+            \Log::error('Stripe payment unexpected error', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+
+            return [
+                'success' => false,
+                'status' => 'failed',
+                'error_type' => 'application_error',
+                'message' => 'An unexpected error occurred while processing the payment.',
+            ];
+        }
+
     }
 
      /**
@@ -248,16 +307,11 @@ class StripePaymentService
         /*
          * Verify amount again.
          */
-        $totals =
-            $this->checkoutTotals->calculate();
+        //$totals = $this->checkoutTotals->calculate();
+        $total = (float)(Session::get('ShoppingCart.NetTotal','0'));
 
-        $expectedAmount =
-            $this->toStripeAmount(
-                (float) (
-                    $totals['NetTotal'] ?? 0
-                )
-            );
-
+        //$expectedAmount = $this->toStripeAmount((float) ($totals['NetTotal'] ?? 0));
+        $expectedAmount = $this->toStripeAmount($total);
         if (
             (int) $intent->amount
             !== $expectedAmount

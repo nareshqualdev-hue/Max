@@ -11,7 +11,7 @@
                     </a>
                     <div class="modal-body">
                         <div class="modal-hd">
-                            <h1 id="gpay_applepay_paypal">Gpay/ApplePay</h1>
+                            <h1 id="gpay_applepay_paypal">PayPal</h1>
                         </div>
                         <div class="modal-space">
                             <div class="pt-3 pb-3">
@@ -31,10 +31,12 @@
                                                     <input type="checkbox" id="shipinsurance" checked aria-checked="true" aria-label="Enable Shipping Insurance">
                                                     <span class="slider round"></span>
                                                 </label>
+                                                {{--
                                                 <span class="cart-tooltip max_qttable" id="insure_info">
                                                     <a href="javascript:void(0);" aria-label="Shipping Insurance Info"><u>i</u></a>
                                                     <span class="tables" role="tooltip">Please note by turning Shipping Insurance OFF, you are agreeing to taking full responsibility for any loss, damages or theft. Maxaroma cannot take claim if the insurance is off, however you can submit a claim to the carrier directly. </span>
                                                 </span>
+                                                --}}
                                                 <input type="hidden" name="tempValInsuSignature" id="tempValInsuSignature" value="Yes" />
                                             </div>
                                         </div>
@@ -51,16 +53,18 @@
                                                     <input type="checkbox" value="Yes" data-value="@if($InsureAmount >= 200)0 @else 2.5 @endif" @if($InsureAmount>= 200 || Session::has('ShoppingCart.ShippingSignature')) checked @endif name="shipping_signature" id="shipping_signature" aria-checked="@if($InsureAmount>= 200 || Session::has('ShoppingCart.ShippingSignature'))true @else false @endif" aria-label="Request Signature">
                                                     <span class="slider round"></span>
                                                 </label>
+                                                {{--
                                                 <span class="cart-tooltip max_qttable" id="shipcerty_info" @if($InsureAmount < 200) style="visibility:hidden;" @endif>
                                                     <a href="javascript:void(0);" aria-label="Signature Info"><u>i</u></a>
                                                     <span class="tables" role="tooltip">For this order, we automatically add signature requirements free of charge. Opting out of signature requests will void any additional reassurances should your package show as delivered according to tracking.</span>
                                                 </span>
+                                                --}}
                                                 <input type="hidden" name="tempValInsu" id="tempValInsu" value="Yes" />
                                             </div>
                                         </div>
                                         <div class="text-center pt-2">
                                             <div class="col-12 mt-3 text-center" id="payment-request-button" role="region" aria-label="GPay/ApplePay Button"></div>
-                                            <div class="col-12 mt-3 text-center" id="paypal-button-container-checkout" style="display:none;" role="region" aria-label="Paypal Button"></div>
+                                            <div class="col-12 mt-3 text-center" id="paypal-button-container-checkout"  role="region" aria-label="Paypal Button"></div>
                                             <!-- <a href="#" class="d-inline-block btn btn-secondary m-1">btn1</a>
                                             <a href="#" class="d-inline-block btn btn-secondary m-1">btn1</a> -->
                                         </div>

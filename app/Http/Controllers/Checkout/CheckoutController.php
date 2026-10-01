@@ -14,8 +14,10 @@ use App\Models\Order;
 use App\Models\OrderDetail;
 use App\Models\Customer;
 use App\Models\NewsLetter;
+use App\Models\RewardPoint;
 use App\Services\Checkout\ShippingService;
 use App\Services\Payment\PaypalService;
+use App\Services\Payment\AfterpayService;
 
 class CheckoutController extends Controller
 {
@@ -24,18 +26,21 @@ class CheckoutController extends Controller
     protected StripePaymentService $StripePaymentService;
     protected ShippingService $ShippingService;
     protected PaypalService $PaypalService;
+    protected AfterpayService $AfterpayService;
 
     public function __construct(
         CheckoutService $checkoutService,
         StripePaymentService $StripePaymentService,
         ShippingService $ShippingService,
-        PaypalService $PaypalService
+        PaypalService $PaypalService,
+        AfterpayService $AfterpayService
     )
     {
         $this->checkoutService = $checkoutService;
         $this->StripePaymentService = $StripePaymentService;
         $this->ShippingService = $ShippingService;
         $this->PaypalService = $PaypalService;
+        $this->AfterpayService = $AfterpayService;
     }
 
     /**
@@ -56,10 +61,20 @@ class CheckoutController extends Controller
         if (isset($result['redirect'])) {
             return $result['redirect'];
         }
-        //dd($result);
+
         $result['data']['token_js_url'] = "https://portal.sandbox.afterpay.com/afterpay.js";
-        $method = $request->method ?? '';
+        $method = $request->route('method') ?? '';
         $result['data']['method'] = $method;
+        $selectedPaymentMethod = "PAYMENT_STRIPE";
+        if(Auth::user() && Auth::user()->is_dropshipper == 'Yes')
+        {
+            $selectedPaymentMethod = "PAYMENT_DS";
+        } elseif($method == 'afterpay')
+        {
+            $selectedPaymentMethod = "PAYMENT_PAYWITHAFTERPAY";
+        }
+
+        $result['data']['selectedPaymentMethod'] = $selectedPaymentMethod;
         return view('newcheckout.checkout-page')->with($result['data']);
     }
 
@@ -86,20 +101,30 @@ class CheckoutController extends Controller
     {
         $request->validate([
             'payment_method_id' => 'required|string|max:255',
+            'order_id' => 'required'
         ]);
 
         try {
             $result =
                 $this->StripePaymentService->pay(
-                    $request->payment_method_id
+                    $request->payment_method_id,
+                    $request->order_id
                 );
+            if($result['success'] === false)
+            {
+                Session::flash('PlaceOrderError',$result['message']);
+                $order_id = $request->order_id;
+                $Order = Order::find($order_id);
+                $Order->status = 'Declined';
+                //$Order->transaction_info = $result['message'];
+                //$Order->payment_gateway_response = json_encode($result);
+                $Order->save();
+            }
             return response()->json(
                 $result
             );
         } catch (Throwable $e) {
-
-            report($e);
-
+            Session::put('PlaceOrderError',$result['message']);
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage(),
@@ -221,7 +246,11 @@ class CheckoutController extends Controller
             $Tax = $AllCharges['Tax']['charge'];
         }
         $ShippingCharge = ($AllCharges['ShippingCharge']['charge']??0);
-        $ShippingInsurance= ((float)$AllCharges['ShippingInsurance']['charge']??0);
+        $ShippingInsurance = 0;
+        if(isset($AllCharges['ShippingInsurance']['charge']))
+        {
+            $ShippingInsurance= ((float)$AllCharges['ShippingInsurance']['charge']??0);
+        }
 
 		$ShopCart = Session::get('ShoppingCart.Cart');
 		$ItemsArr = array();
@@ -403,7 +432,11 @@ class CheckoutController extends Controller
         }
 
         $ShippingCharge = $AllCharges['ShippingCharge']['charge']??0;
-        $ShippingInsurance= (float)$AllCharges['ShippingInsurance']['charge']??0;
+        $ShippingInsurance = 0;
+        if(isset($AllCharges['ShippingInsurance']['charge']))
+        {
+            $ShippingInsurance= (float)$AllCharges['ShippingInsurance']['charge']??0;
+        }
         $ShippingSignature = 0;
         if(isset($AllCharges['GiftWrappingCharge']))
         {
@@ -566,8 +599,8 @@ class CheckoutController extends Controller
 		$lname = "";
 		$ship_fname = "";
 		$ship_lname = "";
-		if ($order_details != '') {
-			if (strpos($order_details, "---") !== "") {
+        if ($order_details != '') {
+			if (strpos($order_details, "---") !== false) {
 				$ord_data = explode("---", $order_details);
 				$ord = json_decode($ord_data[0], true);
 				if (isset($ord['payer']['name']['given_name']) && $ord['payer']['name']['given_name'] != '') {
@@ -584,16 +617,27 @@ class CheckoutController extends Controller
 				if (isset($ord['payer']['name']['surname']) && $ord['payer']['name']['surname'] != '') {
 					$lname = $ord['payer']['name']['surname'];
 				}
-				if (isset($ord['purchase_units'][0]['shipping']['name']) && $ord['purchase_units'][0]['shipping']['name'] != '') {
-					$ship_name = $ord['purchase_units'][0]['shipping']['name'];
-					$ship_name_arr = explode(" ", $ship_name);
-					if (isset($ship_name_arr[0]) && $ship_name_arr[0] != '') {
-						$ship_fname =  $ship_name_arr[0];
-					}
-					if (isset($ship_name_arr[1]) && $ship_name_arr[1] != '') {
-						$ship_lname = $ship_name_arr[1];
-					}
-				}
+				// if(isset($ord['purchase_units'][0]['shipping']['name']) && $ord['purchase_units'][0]['shipping']['name'] != '') {
+				// 	$ship_name = $ord['purchase_units'][0]['shipping']['name'];
+				// 	$ship_name_arr = explode(" ", $ship_name);
+				// 	if (isset($ship_name_arr[0]) && $ship_name_arr[0] != '') {
+				// 		$ship_fname =  $ship_name_arr[0];
+				// 	}
+				// 	if (isset($ship_name_arr[1]) && $ship_name_arr[1] != '') {
+				// 		$ship_lname = $ship_name_arr[1];
+				// 	}
+				// }
+                if(isset($ord['purchase_units'][0]['shipping']['name']['full_name']) && $ord['purchase_units'][0]['shipping']['name']['full_name'] != '')
+                {
+                    $ship_name = $ord['purchase_units'][0]['shipping']['name']['full_name'];
+                    $ship_name_arr = explode(" ", $ship_name);
+                    if (isset($ship_name_arr[0]) && $ship_name_arr[0] != '') {
+                        $ship_fname =  $ship_name_arr[0];
+                    }
+                    if (isset($ship_name_arr[1]) && $ship_name_arr[1] != '') {
+                        $ship_lname = $ship_name_arr[1];
+                    }
+                }
 			}
 		}
 
@@ -696,6 +740,7 @@ class CheckoutController extends Controller
         {
             $PaypalOrder = 'Yes';
             $this->PreparePaypalOrder($request);
+
             if (Session::has('ShoppingCart.Payment_Detail'))
             {
                 $PaymentDetail = Session::get('ShoppingCart.Payment_Detail');
@@ -703,6 +748,7 @@ class CheckoutController extends Controller
                 $PaymentMethod = "Paypal Express Checkout";
             }
         }
+
         $result = $this->checkoutService->prepareCheckout($request);
 
         if (isset($result['redirect']))
@@ -712,12 +758,53 @@ class CheckoutController extends Controller
 
         if(!Auth::user())
         {
+            $user_email = $request->guest_email;
+        } else {
+            $user_email = Auth::user()->email;
+        }
+        if($PaymentType == 'PAYMENT_STRIPE')
+        {
+            $BillingShipping = [
+                'email'         => $user_email,
+                'first_name'    => $request->shipping_first_name,
+                'last_name'     => $request->shipping_last_name,
+                'address1'      => $request->shipping_address1,
+                'address2'      => $request->shipping_address2,
+                'city'          => $request->shipping_city,
+                'country'       => $request->shipping_country,
+                'state'         => $request->shipping_state,
+                'zip'           => $request->shipping_zip,
+                'phone'         => $request->shipping_phone
+            ];
+            Session::put("ShoppingCart.ShippingAddress",$BillingShipping);
+            Session::put("ShoppingCart.BillingAsShipping",$request->BillingAsShipping);
+            if($request->BillingAsShipping == 'Yes')
+            {
+                Session::put("ShoppingCart.BillingAddress",$BillingShipping);
+            } else {
+                $Address = [
+                    'email'         => $user_email,
+                    'first_name'    => $request->billing_first_name,
+                    'last_name'     => $request->billing_last_name,
+                    'address1'      => $request->billing_address1,
+                    'address2'      => $request->billing_address2,
+                    'city'          => $request->billing_city,
+                    'country'       => $request->billing_country,
+                    'state'         => $request->billing_state,
+                    'zip'           => $request->billing_zip,
+                    'phone'         => $request->billing_phone
+                ];
+                Session::put("ShoppingCart.BillingAddress",$Address);
+            }
+        }
+        if(!Auth::user() && config('global.IS_GUEST_CHECKOUT') == 'Yes')
+        {
             $this->SetGuestCustomer($request,$PaypalOrder);
         }else{
             $this->CustomerInfoUpdate();
         }
 
-        $this->checkoutService->refresh('checkout');
+        //$this->checkoutService->refresh('checkout');
 
         $CheckoutData = $result['data']['checkout']['totals'];
         $customer_id = (int)Session::get('sess_icustomerid');
@@ -749,9 +836,10 @@ class CheckoutController extends Controller
         $w_user_type = Session::get('eusertype')??'Retailer';
 		$w_ilevelid  = (Session::has('ilevelid'))?Session::get('ilevelid'):0;
 
-        $Shipping = $result['data']['ShippingAddress'];
+        //$Shipping = $result['data']['ShippingAddress'];
+        $Shipping = Session::get('ShoppingCart.ShippingAddress');
         $Billing = Session::get('ShoppingCart.BillingAddress');
-
+        //dd(Session::get("ShoppingCart.BillingAddress"),Session::get("ShoppingCart.ShippingAddress"));
         $onlyGCPurchased = $result['data']['checkout']['onlyGCPurchased']??0;
         $free_gift = Session::get('ShoppingCart.FreeGift')??'';
         $gift_from = Session::get('ShoppingCart.GiftFrom')??'';
@@ -768,7 +856,7 @@ class CheckoutController extends Controller
         $is_maxtwoday = "No";
         if($onlyGCPurchased == 0)
 		{
-			if($ShippingInfo["ShippingCharge"] > 0)
+			if(isset($ShippingInfo["ShippingCharge"]) && $ShippingInfo["ShippingCharge"] > 0)
 			{
 				$fullShippingname =  $ShippingInfo["ShippingMethodName"]. " <b>(".Session::get('currency_symbol').$ShippingInfo["ShippingCharge"].")</b> ".Session::get('ShoppingCart.Shipping.ShippingDays');
 			}
@@ -800,10 +888,10 @@ class CheckoutController extends Controller
             'is_gift_order'		=> 'No',
             'handling_charge' 	=> '0.00',
             'wire_discount' 	=> '0.00',
-            'auto_discount' 	=> (float)($Discounts['AutoDiscount'] ?? 0),
-            'quantity_discount'	=> (float)($Discounts['QuantityDiscount'] ?? 0),
-            'reward_discount'	=> (float)($Discounts['YotpoRewardDiscount'] ?? 0),
-            'coupon_amount' 	=> (float)($Discounts['CouponDiscount'] ?? 0),
+            'auto_discount' 	=> (float)($Discounts['AutoDiscount']['discount'] ?? 0),
+            'quantity_discount'	=> (float)($Discounts['QuantityDiscount']['discount'] ?? 0),
+            'reward_discount'	=> (float)($Discounts['YotpoRewardDiscount']['discount'] ?? 0),
+            'coupon_amount' 	=> (float)($Discounts['CouponDiscount']['discount'] ?? 0),
             'coupon_id' 		=> ($CouponDetails['CouponID']??''),
             'Second_coupon_id'	=> $yotporewardcode??'',
             'coupon_code' 		=> ($CouponDetails['CouponCode']??''),
@@ -854,7 +942,7 @@ class CheckoutController extends Controller
             'gift_to'				=> $gift_to,
             'gift_message_customer'	=> $gift_message_customer,
             'cust_current_credit_limit' => $cust_current_credit_limit??0,
-            'apply_credit'          => (float)($Discounts['CreditDiscount']??0),
+            'apply_credit'          => (float)($Discounts['CreditDiscount']['discount']??0),
             'remaining_credit'      => $remaining_credit??0,
             'use_credit_limit'      => $use_credit_limit??0,
             'is_dropship_order'     => $is_dropship_order,
@@ -864,7 +952,7 @@ class CheckoutController extends Controller
             'EstimatedDeliveryDate' 	=> $EstimatedDeliveryDate,
             'fullshipping_info'		=> 	$fullShippingname,
             'merge_note'		=> 	$merge_note,
-            'bogo_discount'	=> (float)($Discounts['DogoDiscount']??0),
+            'bogo_discount'	=> (float)($Discounts['DogoDiscount']['discount']??0),
             'is_maxtwoday'	=> $is_maxtwoday,
             'route_shipping_insurance_charge' => $ShippingInsurance,
             'vLang_flag' => Session::get('ShoppingCart.YotpoFreeGiftCoupon'),
@@ -899,12 +987,12 @@ class CheckoutController extends Controller
         if($is_order_update == 'N')
         {
             $couponCode = ($CouponDetails['CouponCode']??'');
-            $CouponDiscount = (float)($Discounts['CouponDiscount'] ?? 0);
-            $AutoDiscount = (float)($Discounts['AutoDiscount'] ?? 0);
-            $QuanityDiscount = (float)($Discounts['QuanityDiscount'] ?? 0);
-            $YotpoRewardDiscount = (float)($Discounts['YotpoRewardDiscount'] ?? 0);
-            $DogoDiscount = (float)($Discounts['DogoDiscount'] ?? 0);
-            $apply_credit = (float)($Discounts['CreditDiscount']??0);
+            $CouponDiscount = (float)($Discounts['CouponDiscount']['discount'] ?? 0);
+            $AutoDiscount = (float)($Discounts['AutoDiscount']['discount'] ?? 0);
+            $QuanityDiscount = (float)($Discounts['QuanityDiscount']['discount'] ?? 0);
+            $YotpoRewardDiscount = (float)($Discounts['YotpoRewardDiscount']['discount'] ?? 0);
+            $DogoDiscount = (float)($Discounts['DogoDiscount']['discount'] ?? 0);
+            $apply_credit = (float)($Discounts['CreditDiscount']['discount']??0);
 
             $TotalTxShipping = 0;
             $couponPercentage = 0;
@@ -1100,7 +1188,12 @@ class CheckoutController extends Controller
                     $payment_intent_id
                 );
 
-            if (!$payment['success']) {
+            if (!$payment['success'])
+            {
+                $Order = Order::find($order_id);
+                $Order->status = 'Declined';
+                $Order->paymentintentid = $payment_intent_id;
+                $Order->save();
 
                 return response()->json([
                     'status' => false,
@@ -1108,11 +1201,19 @@ class CheckoutController extends Controller
                         'Payment has not been completed.',
                 ], 422);
             }
+            $TransactionResponse['paymentIntent'] = $this->StripePaymentService->retrieve($payment_intent_id);
 
             $Order = Order::find($order_id);
             $Order->pay_status = 'Paid';
             $Order->paymentintentid = $payment_intent_id;
+            //$Order->transaction_info = 'This transaction has been approved.';
+            $Order->transaction_info = json_encode($TransactionResponse);
+            //$Order->payment_gateway_response = json_encode($TransactionResponse);
             $Order->save();
+            return response()->json([
+                'status' => true,
+                'message' => 'Payment has been completed.',
+            ]);
         }elseif($request->has('PayMethod') && $request->PayMethod == 'PAYMENT_DS'){
             $order_id = $request->order_id??'';
             $Order = Order::find($order_id);
@@ -1127,12 +1228,42 @@ class CheckoutController extends Controller
                 $Customer->available_funds = $remaining_fund;
                 $Customer->save();
             }
+            return response()->json([
+                'status' => true,
+                'message' => 'Payment has been completed.',
+            ]);
+        }elseif($request->has('PayMethod') && $request->PayMethod == 'PAYMENT_PAYWITHAFTERPAY'){
+            $order_id = $request->order_id??'';
+            $pschecksum = $request->pschecksum;
+            $Order = Order::find($order_id);
+            $OrderAmount = $Order->order_total;
+            $AfterPayMakePayment = $this->AfterpayService->makePayment($order_id,$OrderAmount,$pschecksum);
+
+            if($AfterPayMakePayment['success'] === true)
+            {
+                $Order->pay_status = 'Paid';
+                $Order->status = 'Pending';
+                $Order->transaction_info = 'This transaction has been approved.';
+                $Order->payment_gateway_response = json_encode((array)$AfterPayMakePayment['response'])??'';
+                $Order->afterpay_transaction_id = $AfterPayMakePayment['transaction_id'];
+                $Order->save();
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Payment has been completed.',
+                ]);
+            } else {
+                $Order->status = 'Declined';
+                $Order->transaction_info = 'This transaction has been Declined.';
+                $Order->payment_gateway_response = json_encode((array)$AfterPayMakePayment['response'])??'';
+                $Order->save();
+
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Payment has not been completed.'
+                ], 422);
+            }
         }
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Payment has been completed.',
-        ]);
     }
 
     public function SetBillingShippingAddress($Data)
@@ -1236,8 +1367,8 @@ class CheckoutController extends Controller
         */
         $customerId = (int) Session::get('sess_icustomerid');
         $Billing = Session::get("ShoppingCart.BillingAddress");
+        $email = trim($Billing['email'] ?? '');
 
-        $email      = trim($Billing['email'] ?? '');
         $ip         = request()->ip();
         $userAgent  = request()->userAgent();
 
@@ -1341,12 +1472,30 @@ class CheckoutController extends Controller
             * PayPal guest checkout:
             * update customer billing information.
             */
-            if ($registrationType === 'Guest' && $isPaypal === 'Yes') {
-
-                $customerData = $this->getGuestCustomerBillingData($request);
-
-                Customer::where('customer_id', $customerId)
-                    ->update($customerData);
+            if ($registrationType === 'Guest' && $isPaypal === 'Yes')
+            {
+                //$customerData = $this->getGuestCustomerBillingData($request);
+                $BillingData = Session::get("ShoppingCart.BillingAddress");
+                if($BillingData['country'] != 'US' && isset($BillingData['other_state']) && $BillingData['other_state']!='')
+                {
+                    $state = $BillingData['other_state'];
+                }
+                else
+                {
+                    $state = $BillingData['state'];
+                }
+                $customerData = [
+                    'first_name'		=> stripslashes($BillingData['first_name']),
+                    'last_name' 		=> stripslashes($BillingData['last_name']),
+                    'address1' 			=> stripslashes($BillingData['address1']),
+                    'address2' 			=> stripslashes($BillingData['address2']),
+                    'city' 				=> stripslashes($BillingData['city']),
+                    'state' 			=> $state,
+                    'country' 			=> $BillingData['country'],
+                    'zip' 				=> $BillingData['zip'],
+                    'phone' 			=> $BillingData['phone']
+                ];
+                Customer::where('customer_id', $customerId)->update($customerData);
             }
 
             Session::put(
@@ -1354,10 +1503,7 @@ class CheckoutController extends Controller
                 "Merge with {$customer->eusertype} ({$registrationType}) customer id: {$customerId}"
             );
 
-            Session::put(
-                'ShoppingCart.is_registered_guest',
-                'Yes'
-            );
+            Session::put('ShoppingCart.is_registered_guest','Yes');
         }
 
         /*
@@ -1366,21 +1512,63 @@ class CheckoutController extends Controller
         * ---------------------------------------------------------
         */
         else {
-
-            $customerData = $this->getGuestCustomerBillingData($request);
-
-            $customerData['email']            = $email;
-            $customerData['registration_type'] = 'G';
-            $customerData['status']            = '1';
-            $customerData['eusertype']         = 'Retailer';
-            $customerData['customer_ip']      = $ip;
-            $customerData['customer_browser'] = $userAgent;
+            /*
+            if($request->has('guest_email') && !empty($request->guest_email))
+            {
+                $email = $request->guest_email;
+                $GuestBilling = [
+                    'email'         => $request->guest_email,
+                    'first_name'    => $request->shipping_first_name,
+                    'last_name'     => $request->shipping_last_name,
+                    'address1'      => $request->shipping_address1,
+                    'address2'      => $request->shipping_address2,
+                    'city'          => $request->shipping_city,
+                    'country'       => $request->shipping_country,
+                    'state'         => $request->shipping_state,
+                    'zip'           => $request->shipping_zip,
+                    'phone'         => $request->shipping_phone
+                ];
+                Session::put("ShoppingCart.ShippingAddress",$GuestBilling);
+                if($request->BillingAsShipping == 'Yes')
+                {
+                    Session::put("ShoppingCart.BillingAddress",$GuestBilling);
+                }
+            }
+            */
+            //$customerData = $this->getGuestCustomerBillingData($request);
+            $BillingData = Session::get("ShoppingCart.BillingAddress");
+            if($BillingData['country'] != 'US' && isset($BillingData['other_state']) && $BillingData['other_state']!='')
+            {
+                $state = $BillingData['other_state'];
+            }
+            else
+            {
+                $state = $BillingData['state'];
+            }
+            $customerData = [
+                'first_name'		=> stripslashes($BillingData['first_name']),
+                'last_name' 		=> stripslashes($BillingData['last_name']),
+                'address1' 			=> stripslashes($BillingData['address1']),
+                'address2' 			=> stripslashes($BillingData['address2']),
+                'city' 				=> stripslashes($BillingData['city']),
+                'state' 			=> $state,
+                'country' 			=> $BillingData['country'],
+                'zip' 				=> $BillingData['zip'],
+                'phone' 			=> $BillingData['phone'],
+                'email' 			=> $BillingData['email'],
+                'registration_type' => 'G',
+                'status' 			=> '1',
+                'eusertype'			=> 'Retailer',
+                'customer_ip' 		=> $_SERVER['REMOTE_ADDR'],
+                'customer_browser' 	=> $_SERVER['HTTP_USER_AGENT']
+            ];
 
             /*
             * Normally customerId will be zero because the old
             * session was cleared above.
             */
-            if ($customerId <= 0) {
+            if(!Session::has('sess_icustomerid'))
+            {
                 $customer = Customer::create($customerData);
 
                 $customerId = (int) $customer->customer_id;
@@ -1389,13 +1577,11 @@ class CheckoutController extends Controller
                     'sess_icustomerid' => $customerId,
                     'etype'            => 'G',
                     'eusertype'        => 'Retailer',
-                    'sess_useremail'   => $email,
+                    'sess_useremail'   => $BillingData['email'],
                 ]);
             }
             else {
-
-                Customer::where('customer_id', $customerId)
-                    ->update($customerData);
+                Customer::where('customer_id', $customerId)->update($customerData);
             }
         }
 
@@ -1413,7 +1599,8 @@ class CheckoutController extends Controller
         * 7. Billing address
         * ---------------------------------------------------------
         */
-        $this->SetBillingShippingAddress($request);
+
+        //$this->SetBillingShippingAddress($request);
 
         /*
         * ---------------------------------------------------------
@@ -1427,17 +1614,17 @@ class CheckoutController extends Controller
         * 9. Guest -> registered customer
         * ---------------------------------------------------------
         */
-        $customerPassword = trim($request['guest_password'] ?? '');
+        if(!Auth::user() && Session::get('sess_icustomerid') != '')
+        {
+            $customerPassword = trim($request['guest_password'] ?? '');
 
-        if (
-            $customerPassword !== '' &&
-            $registrationType === 'Guest'
-        ) {
-            return $this->registerGuestCustomer(
-                $request,
-                $customerId,
-                $customerPassword
-            );
+            if ($customerPassword !== '' && $registrationType === 'Guest') {
+                return $this->registerGuestCustomer(
+                    $request,
+                    $customerId,
+                    $customerPassword
+                );
+            }
         }
 
         return true;
@@ -1480,6 +1667,7 @@ class CheckoutController extends Controller
         */
         $data = Session::get('ShoppingCart.BillingAddress');
         return [
+            'email'      => $data['email'] ?? '',
             'first_name' => $data['first_name'] ?? '',
             'last_name'  => $data['last_name'] ?? '',
             'address1'   => $data['address1'] ?? '',
@@ -1487,8 +1675,8 @@ class CheckoutController extends Controller
             'city'       => $data['city'] ?? '',
             'state'      => $data['state'] ?? '',
             'country'    => $data['country'] ?? '',
-            'zip'        => $request['zip'] ?? '',
-            'phone'      => $request['phone'] ?? '',
+            'zip'        => $data['zip'] ?? '',
+            'phone'      => $data['phone'] ?? ''
         ];
     }
 
@@ -1513,7 +1701,8 @@ class CheckoutController extends Controller
             return;
         }
 
-        $email = trim($request['email'] ?? '');
+        $Billing = Session::get("ShoppingCart.BillingAddress");
+        $email = trim($Billing['email'] ?? '');
 
         if ($email === '') {
             return;
@@ -1528,19 +1717,19 @@ class CheckoutController extends Controller
         }
 
         $newsletter = NewsLetter::create([
-            'first_name' => trim($request['bill_fname'] ?? ''),
-            'last_name'  => trim($request['bill_lname'] ?? ''),
+            'first_name' => trim($Billing['first_name'] ?? ''),
+            'last_name'  => trim($Billing['last_name'] ?? ''),
             'email'      => $email,
-            'phone_no'   => trim($request['bill_phone'] ?? ''),
+            'phone_no'   => trim($Billing['phone'] ?? ''),
             'status'     => '1',
         ]);
 
-        if($newsletter->news_letter_id &&trim($request['bill_phone'] ?? '') !== '' && config('global.SITE_MODE') === 'Live')
+        if($newsletter->news_letter_id &&trim($Billing['phone'] ?? '') !== '' && config('global.SITE_MODE') === 'Live')
         {
             AddAttentiveSubscriber([
-                'phone'     => trim($request['bill_phone']),
+                'phone'     => trim($Billing['phone']),
                 'email'     => $email,
-                'first_name' => trim($request['bill_fname'] ?? ''),
+                'first_name' => trim($Billing['first_name'] ?? ''),
                 'visitorId' => $newsletter->news_letter_id,
             ]);
         }
@@ -1551,7 +1740,8 @@ class CheckoutController extends Controller
         int $customerId,
         string $customerPassword
     ) {
-        $email = trim($request['bill_email'] ?? '');
+        //$email = trim($request['bill_email'] ?? '');
+        $email = trim(Session::get('sess_useremail'));
         $ip    = request()->ip();
 
         /*
@@ -1667,7 +1857,7 @@ class CheckoutController extends Controller
         /*
         * External integrations should ideally be queued.
         */
-        YotpoRequest('create_customer', $customer);
+        //YotpoRequest('create_customer', $customer);
 
         /*
         * Merge guest accounts.
@@ -1680,7 +1870,7 @@ class CheckoutController extends Controller
         /*
         * Billing address after registration.
         */
-        $this->SetBillingShippingAddress($request);
+        //$this->SetBillingShippingAddress($request);
         return true;
     }
 
@@ -1689,8 +1879,7 @@ class CheckoutController extends Controller
         $guestCustomer = Customer::select('customer_id')
             ->where('status', '1')
             ->where('email', trim($email))
-            ->where('registration_type', 'G')
-            ->where('is_deleted', 'No')
+            ->where('registration_type', 'M')
             ->first();
 
         if (!$guestCustomer) {
@@ -1704,12 +1893,7 @@ class CheckoutController extends Controller
             return false;
         }
 
-        $mergeLog = sprintf(
-            'Merge with %s%s customer id: %d',
-            $memberCustomer->eusertype,
-            $memberCustomer->registration_type,
-            $memberCustomerId
-        );
+        $mergeLog = 'Merge with '.$memberCustomer->eusertype.$memberCustomer->registration_type.' customer id: '.$memberCustomerId;
 
         Customer::where('customer_id', $guestCustomerId)
             ->update([
