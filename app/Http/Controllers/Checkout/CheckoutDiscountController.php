@@ -137,6 +137,26 @@ class CheckoutDiscountController extends Controller
                         'discount'
                     );
 			
+			$finalCart = Session::get(
+			'ShoppingCart.Cart',
+			[]
+		);
+
+		$couponFreeGiftApplied = false;
+
+		foreach ($finalCart as $item) {
+			if (
+				is_array($item)
+				&& ($item['FreeGiftCoupon'] ?? 'No') === 'Yes'
+				
+			) {
+				$couponFreeGiftApplied = true;
+				break;
+			}
+		}
+
+			
+			
 			$freeSampleRuleChanged = false;
 
 			if (!empty($freeSampleItems)) {
@@ -147,19 +167,40 @@ class CheckoutDiscountController extends Controller
 						);
 			}
             return response()->json([
-                'status' => 'success',
-                'error' => 0,
-                'message' =>
-                    $result['message']
-                    ?? 'Coupon applied successfully.',
-                'discount' => $result,
-                'checkout' => $checkout,
-                'free_sample_rule_changed' =>
-					$freeSampleRuleChanged,
-                'totals' =>
-                    $checkout['totals']
-                    ?? [],
-            ]);
+    'status' => 'success',
+    'error' => 0,
+
+    'message' =>
+        $result['message']
+        ?? 'Coupon applied successfully.',
+
+    'discount' => $result,
+
+    'checkout' => $checkout,
+
+    'free_sample_rule_changed' =>
+        $freeSampleRuleChanged,
+    'coupon_free_gift_applied' =>
+    $couponFreeGiftApplied,    
+
+    'totals' =>
+        $checkout['totals']
+        ?? [],
+
+    /*
+     * IMPORTANT:
+     * Return the final backend cart after coupon
+     * + coupon Free Gift processing.
+     *
+     * Backend remains the source of truth.
+     */
+    'cart' => [
+        'Cart' => Session::get(
+            'ShoppingCart.Cart',
+            []
+        ),
+    ],
+]);
         } catch (\Throwable $e) {
             addLog(
                 'CheckoutDiscountApplyError',
@@ -228,8 +269,8 @@ class CheckoutDiscountController extends Controller
         }
 
         try {
-            $this->couponService
-                ->removeCoupon();
+            $hasCouponFreeGift =
+			$this->couponService->removeCoupon();
 
             $checkout =
                 $this->checkoutService
@@ -255,6 +296,7 @@ class CheckoutDiscountController extends Controller
                 'totals' =>
                     $checkout['totals']
                     ?? [],
+               'coupon_free_gift_removed' => $hasCouponFreeGift,     
             ]);
         } catch (\Throwable $e) {
             addLog(

@@ -3036,12 +3036,8 @@ protected function applyFreeShippingCoupon(
         $discount =
             NumberFormat($couponDiscount);
         
-        Log::info('Coupon Session Save Debug', [
-				'coupon_code' => $couponCode,
-				'couponDiscount' => $couponDiscount,
-				'formatted_discount' => $discount,
-				'count_gc_purchase' => $coupon->count_gc_purchase ?? null,
-			]);    
+        $hasCouponFreeGift =
+        !empty($coupon->freegift_product_sku);   
 
         /*
          * ---------------------------------------------------------
@@ -3115,6 +3111,12 @@ protected function applyFreeShippingCoupon(
             'ShoppingCart.PromoCoupon.FirstCouponDiscount',
             $discount
         );
+        Session::put(
+        'ShoppingCart.PromoCoupon.HasFreeGift',
+        $hasCouponFreeGift
+            ? 'Yes'
+            : 'No'
+		);
     }
 
     /**
@@ -3169,7 +3171,7 @@ protected function applyFreeShippingCoupon(
      * Calculation/business rules remain in the existing coupon flow.
      * This method only clears coupon-specific state and item-wise values.
      */
-    public function removeCoupon(): void
+    public function removeCoupon(): bool
     {
         $cart = Session::get('ShoppingCart.Cart', []);
 
@@ -3195,22 +3197,26 @@ protected function applyFreeShippingCoupon(
          * Only items explicitly marked as FreeGiftCoupon are removed.
          */
         $cart = Session::get('ShoppingCart.Cart', []);
-
+		 $hasCouponFreeGift = false;
         foreach ($cart as $index => $item) {
             if (
                 isset($item['FreeGiftCoupon'])
                 && $item['FreeGiftCoupon'] === 'Yes'
             ) {
+				 $hasCouponFreeGift = true;
                 unset($cart[$index]);
             }
         }
+		Session::put(
+    'ShoppingCart.PromoCoupon.HasFreeGift',
+    'No');
 
         Session::put(
             'ShoppingCart.Cart',
             array_values($cart)
         );
 
-        return;
+         return $hasCouponFreeGift;
     }
 
     /**

@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Traits\AfterpayTrait;
+use App\Http\Controllers\Traits\CommonTrait;
 
 use App\Models\Order;
 use App\Models\OrderDetail;
@@ -21,6 +22,7 @@ use App\Services\Payment\AfterpayService;
 
 class CheckoutController extends Controller
 {
+    use CommonTrait;
     use AfterpayTrait;
     protected CheckoutService $checkoutService;
     protected StripePaymentService $StripePaymentService;
@@ -61,7 +63,7 @@ class CheckoutController extends Controller
         if (isset($result['redirect'])) {
             return $result['redirect'];
         }
-
+        //dd($result['data']);
         $result['data']['token_js_url'] = "https://portal.sandbox.afterpay.com/afterpay.js";
         $method = $request->route('method') ?? '';
         $result['data']['method'] = $method;
@@ -735,6 +737,7 @@ class CheckoutController extends Controller
         $PaymentType = $request->payment_type??'';
         $PaymentMethod = $request->payment_method??'';
         $PaypalOrder = 'No';
+        $IsGiftCertificateItem = 'No';
 
         if($request->has('isPaypalOrder') && $request->isPaypalOrder == 'Yes')
         {
@@ -905,7 +908,7 @@ class CheckoutController extends Controller
             'payment_method' 	=> $PaymentMethod,
             'pay_status' 		=> 'Unpaid',
             'ccinfo' 			=> "",
-            'customer_comment' 	=> "",
+            'customer_comment' 	=> $request->customer_commment??'',
             'status'			=> 'Pending',
             'currency_info'		=> $currency_info,
             'checkout_type' 	=> $checkout_type,
@@ -1151,14 +1154,13 @@ class CheckoutController extends Controller
                 }
 
                 ## Insert purchased GC
-                /*
+
                 $IsGiftCertificateItem = $this->checkGiftCertificateItem('IsGiftCertificateItem',$tempCart[$i]);
                 if($IsGiftCertificateItem == 'Yes')
                 {
                     //$AddGC = $this->InsertGiftCertificateDB($tempCart[$i], $OrdDetail->orders_detail_id, $customer_id,$IsAmazOR);
                     $AddGC = $this->checkGiftCertificateItem('InsertGiftCertificateInDB', $tempCart[$i], 'Yes', $OrdDetail->orders_detail_id, $customer_id,$IsAmazOR);
                 }
-                */
             }
         }
 

@@ -227,7 +227,6 @@
 
       const payment = await StripeCard.pay(payload);
       console.log(payment);
-
       if(payment.success === true)
       {
         //alert("Payment Successfull");
@@ -251,7 +250,7 @@
       var pschecksum = $("#pschecksum").val() || '';
       var payload = {};
       var ShippingData = $("#frmcheckoutaddress").serializeArray();
-
+      var customer_comment = $("#customer_comment").val();
       if(isGuestCustomer == 'Y')
       {
         payload['guest_email'] = $("#checkout-guest-form #email").val();
@@ -275,13 +274,17 @@
           payload[field.name] = field.value;
         });
       }
-
+      if($.trim(customer_comment) != '')
+      {
+        payload['customer_comment'] = customer_comment;
+      }
       //payload['shippingAddress'] = $("#frmcheckoutaddress").serializeArray();
       if(PayMethod == 'PAYMENT_STRIPE')
       {
         payload['payment_type'] = PayMethod;
         payload['payment_method'] =  'Credit Card';
         const paymentMethod = await StripeCard.createPaymentMethod();
+        console.log(paymentMethod);
         if (paymentMethod)
         {
           console.log(paymentMethod);
@@ -517,6 +520,11 @@
           },
         );
     }
+    if(!$("#chkagree").prop('checked'))
+    {
+      alert("Please indicate that you have read and agree to the Terms and Conditions");
+      return false;
+    }
     if(validationError == 0)
     {
         btn.classList.add("btn-loading");
@@ -648,12 +656,16 @@
           "No shipping methods are available for this address." +
           "</div>",
       );
-
+      $("#section-delivery").hide();
+	  $("#place-order-btn").hide();
+	  $("#review-block").hide();
       showShipMethodLoader(false);
-
+		
       return;
     }
-
+	$("#section-delivery").show();
+	$("#place-order-btn").show();
+	$("#review-block").show();
     const selectedId = parseInt(
       response.selectedShippingMethodId ||
         response.selected_shipping_method_id ||
@@ -1761,10 +1773,15 @@
           "Enter country, state and ZIP code to see shipping methods." +
           "</div>",
       );
-
+	   $("#section-delivery").hide();
+	   $("#place-order-btn").hide();
+	   $("#review-block").hide();	
+		
       return;
     }
-
+	$("#section-delivery").show();
+	$("#place-order-btn").show();
+	$("#review-block").show();
     const shippingMethodsUrl =
       urls.shippingMethods || "/checkoutnew/shipping-methods";
 
@@ -1811,7 +1828,9 @@
             response.message || "Unable to load shipping methods.",
             "error",
           );
-
+		$("#section-delivery").hide();
+		$("#place-order-btn").hide();
+		$("#review-block").hide();	
           return;
         }
 
@@ -1827,7 +1846,10 @@
         });
 
         if (status === "abort") {
-          return;
+		$("#section-delivery").hide();
+		$("#place-order-btn").hide();		
+        $("#review-block").hide();	
+        return;
         }
 
         let message = "Unable to load shipping methods. Please try again.";
@@ -1835,7 +1857,9 @@
         if (xhr.responseJSON && xhr.responseJSON.message) {
           message = xhr.responseJSON.message;
         }
-
+		$("#section-delivery").hide();
+		$("#place-order-btn").hide();	
+        $("#review-block").hide();	
         showMessage("#shipping-method-messages", message, "error");
       })
       .always(function () {
@@ -2153,6 +2177,12 @@
     if (addressReady(address)) {
       loadShippingMethods();
     }
+    else
+    {
+	    $("#section-delivery").hide();
+		$("#place-order-btn").hide();
+		$("#review-block").hide();		
+	}
     loadDropshipperDetails();
     checkFreeGiftOnPageLoad();
     checkFreeSamplePopup();
@@ -2313,29 +2343,51 @@
           result.insertAdjacentHTML("beforeend", appliedHtml);
         }
 
-        /*
-         * Clear input so another Coupon/Reward
-         * can be entered.
-         */
         input.value = "";
 
-        /*
-         * Recalculate existing selected shipping
-         * method / totals.
-         *
-         * Existing checkout flow preserved.
-         */
-        const selectedMethod = $('input[name="shipping"]:checked').val();
+			/*
+			 * =====================================================
+			 * SYNC FINAL BACKEND CART
+			 * =====================================================
+			 *
+			 * Coupon Free Gift is inserted by the backend.
+			 * Render that final cart before/along with the
+			 * normal checkout recalculation.
+			 *
+			 * Backend remains the source of truth.
+			 */
+			if (
+				response.cart &&
+				typeof appendFreeGiftCartItems === "function"
+			) {
+				appendFreeGiftCartItems(response);
+			}
 
-        if (
-          selectedMethod &&
-          window.MaxaromaOnePageCheckout &&
-          typeof window.MaxaromaOnePageCheckout.setShippingMethod === "function"
-        ) {
-          window.MaxaromaOnePageCheckout.setShippingMethod(
-            parseInt(selectedMethod, 10),
-          );
-        }
+						if (
+				response.coupon_free_gift_applied === true
+			) {
+				window.location.reload();
+				return;
+			}
+
+			/*
+			 * =====================================================
+			 * Recalculate existing selected shipping
+			 * method / totals.
+			 * =====================================================
+			 */
+			const selectedMethod =
+				$('input[name="shipping"]:checked').val();
+
+			if (
+				selectedMethod &&
+				window.MaxaromaOnePageCheckout &&
+				typeof window.MaxaromaOnePageCheckout.setShippingMethod === "function"
+			) {
+				window.MaxaromaOnePageCheckout.setShippingMethod(
+					parseInt(selectedMethod, 10),
+				);
+			}
       })
       .fail(function (xhr) {
         result
@@ -2497,6 +2549,14 @@
               delete result.dataset.couponCode;
             }
           }
+
+          if (
+				discountType !== "reward" &&
+				response.coupon_free_gift_removed === true
+			) {
+				window.location.reload();
+				return;
+			}
 
           /*
            * Existing checkout recalculation.

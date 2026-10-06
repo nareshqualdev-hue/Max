@@ -411,10 +411,22 @@ is_string($image)
             <!-- 2. Amazon Pay -->
             <div id="AmazonPayButtonAll" role="region" aria-label="Amazon Pay Button"></div>
             @endif
+            {{--
             <!-- 3. Link (no brand SVG supplied — accessible wordmark) -->
             <button class="express-btn express-btn-link" type="button" aria-label="Pay with Link">
               Link
             </button>
+            --}}
+            <div id="shoptotal" style="display:none;" aria-hidden="true">
+                @if($NetTotal > 0 && isset($NetTotal))
+                    {{$NetTotal}}
+                @endif
+            </div>
+            <div class="gpayapplepaybtn" id="payment-request-button-checkout" role="region" aria-label="GPay and ApplePay Button">
+                <div class="cover-spin" aria-hidden="true"></div>
+            </div>
+            <a href="javascript:void(0);" class="edit-btn btn btn-primary insuranceSignature" id="GpayBtnn" style="display:none;" role="button" aria-label="Pay with Gpay or ApplePay">Gpay/ApplePay</a>
+
             @if($CartAttr["IsPaypalExpressCheckout"] == 'Yes')
             <!-- 4. PayPal -->
             <button class="express-btn express-btn-paypal" id="btnpaypal" type="button" aria-label="Pay with PayPal">
@@ -422,14 +434,23 @@ is_string($image)
             </button>
             <!-- <div id="paypal-button-container-checkout" class="express-btn express-btn-paypal" role="region" aria-label="Pay with PayPal"></div> -->
             @endif
+            <!-- <div id="express-checkout-element"></div> -->
             <!-- 5. Apple Pay -->
+
+            <div id="stripe-wallet-section" style="display:none;">
+              <div id="stripe-express-checkout"></div>
+            </div>
+            {{--
             <button class="express-btn express-btn-apple" type="button" aria-label="Pay with Apple Pay">
               <img src="{{ url('images/checkout-new/apple-pay.svg') }}" alt="">
             </button>
+            --}}
             <!-- 6. Google Pay -->
+            {{--
             <button class="express-btn express-btn-google" type="button" aria-label="Pay with Google Pay">
               <img src="{{ url('images/checkout-new/google-pay.svg') }}" alt="">
             </button>
+            --}}
           </div>
 
           <div class="divider-text" style="margin-top: var(--space-5); font-size: var(--font-size-xs);">
@@ -1526,7 +1547,7 @@ is_string($image)
   <script src="{{$token_js_url}}" async onload="createAfterpayWidget()"> </script>
   @endif
   <!-- ══ 7. ORDER REVIEW + PLACE ORDER ════════════════════ -->
-  <section class="place-order-section" aria-labelledby="review-heading">
+  <section class="place-order-section" aria-labelledby="review-heading" id="review-block">
     <input type="hidden" name="selectedPaymentMethod" id="selectedPaymentMethod" value="{{ $selectedPaymentMethod }}" />
     <h2 class="step-title" id="review-heading" style="margin-bottom: var(--space-5);">Review your order</h2>
 
@@ -1575,10 +1596,12 @@ is_string($image)
              right where the customer actually places the order. -->
     <div class="review-summary-card" id="review-summary-card">
       <button type="button" class="review-summary-toggle" id="review-summary-toggle" aria-expanded="false" aria-controls="review-summary-panel" onclick="toggleReviewSummary()" aria-label="Show order summary">
+        {{--
         <div class="review-summary-thumb" aria-hidden="true">
           <img src="{{ url('/images/noimage-lrg.jpg') }}" alt="">
           <span class="review-summary-qty" id="review-summary-qty">{{ $cartItemCount }}</span>
         </div>
+        --}}
         <div class="review-summary-total">
           <span class="place-order-total-label">Total</span>
           <div class="review-summary-tax" id="review-summary-tax-value">Includes {{ $money($checkoutTax) }} tax</div>
@@ -1588,6 +1611,22 @@ is_string($image)
           <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
         </svg>
       </button>
+      <div class="review-table">
+        <hr>
+        <div class="review-row">
+          <span class="review-row-label">Special Request</span>
+        </div>
+        <div>
+          <textarea class="fl-input" name="customer_comment" id="customer_comment" rows="5" style="height:auto;" placeholder="Special Request"></textarea>
+          <div class="review-summary-tax" id="review-summary-tax-value">This request and notes are optional. We'll do our best to accommodate your request, but it’s not guaranteed.</div>
+        </div>
+        <div>
+          <label class="field-check">
+            <input type="checkbox" id="chkagree" name="chkagree" checked>
+            <span style="font-size: var(--font-size-sm);">By placing and order on MaxAroma.com you agree with the terms and conditions.</span>
+          </label>
+        </div>
+      </div>
       <div class="review-summary-panel" id="review-summary-panel">
         <div class="review-summary-clip">
           <div class="review-summary-inner">
@@ -1800,8 +1839,9 @@ is_string($image)
                   @if($isFreeGift || $isFreeSample)
 
                   <span>Qty :{{ $quantity }}</span>
-
+				   @if(!($isFreeGift && (($item['FreeGiftCoupon'] ?? 'No') === 'Yes')))	
                   <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
+                   @endif
                   @else
                   @if(($item['IsGiftCertificateItem'] ?? 'No') === 'No')
                   <div class="qty-stepper" role="group" aria-label="Quantity for {{ $productName }}">
@@ -2418,7 +2458,9 @@ is_string($image)
           @if($isFreeGift || $isFreeSample)
 
           <span>Qty : {{ $quantity }}</span>
+          @if(!($isFreeGift && (($item['FreeGiftCoupon'] ?? 'No') === 'Yes')))
           <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
+          @endif
           @else
 
           @if(($item['IsGiftCertificateItem'] ?? 'No') === 'No')
@@ -2460,9 +2502,6 @@ is_string($image)
   </aside>
   </div>
 
-  @php $StripeCardVer = filemtime(config('global.SITE_JS_CORE_PATH').'stripe-card.js'); @endphp
-  <script src="https://js.stripe.com/v3/"></script>
-  <script src="{{config('global.SITE_JS_CORE')}}stripe-card.js?ver={{$StripeCardVer}}"></script>
   <script>
     $("#chksamebill").change(function(){
       $("#divBillingAddr").hide();
@@ -2474,7 +2513,8 @@ is_string($image)
 
     window.stripePaymentUrls = {
       pay: @json(route('checkout.payment.stripe.pay')),
-      verify: @json(route('checkout.payment.stripe.verify'))
+      verify: @json(route('checkout.payment.stripe.verify')),
+      stripePaymentIntent : @json(route('create-stripe-intent'))
     };
     window.selectedPayMethod = $(".payment-tab .active").attr('data-method');
     window.checkoutUrls = {
@@ -2487,10 +2527,24 @@ is_string($image)
       merchant_id: "{{ config('MERCHANT_ID') }}",
       callback_url: "{{ config('CALLBACK_CHECKOUT_URL') }}"
     }
+    window.stripeinfo = {
+      stripekey : "{{config('services.stripe.striptkey')}}",
+      stripesecret : "{{config('services.stripe.secret')}}"
+    }
+  </script>
+
+  @php $StripeCardVer = filemtime(config('global.SITE_JS_CORE_PATH').'stripe-card.js'); @endphp
+  @php $StripeServiceVer = filemtime(config('global.SITE_JS_CORE_PATH').'stripe-service.js'); @endphp
+  <script src="https://js.stripe.com/v3/"></script>
+
+  <script src="{{config('global.SITE_JS_CORE')}}stripe-card.js?ver={{$StripeCardVer}}"></script>
+  <!-- <script src="{{config('global.SITE_JS_CORE')}}stripe-service.js?ver={{$StripeServiceVer}}"></script> -->
+  <script>
     StripeCard.init(
       @json(config('services.stripe.striptkey'))
     );
   </script>
+  @include("newcheckout.stripe-buttons")
   @include("newcheckout.paypal")
   @include("newcheckout.amazon")
   @if($method != 'afterpay')

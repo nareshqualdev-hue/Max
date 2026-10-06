@@ -2187,6 +2187,18 @@ public function syncFreeSamplesAfterCartMutation(
         'ShoppingCart.Cart',
         []
     );
+     $isFreeGiftCoupon =
+        Session::get(
+            'ShoppingCart.PromoCoupon.HasFreeGift',
+            'No'
+        ) === 'Yes';
+
+    if ($isFreeGiftCoupon) {
+
+        $this->removeSamples();
+
+        return true;
+    }
     
     /*
  * =========================================================

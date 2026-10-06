@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Checkout;
 use App\Http\Controllers\Controller;
 use App\Services\Cart\CartService;
 use App\Services\Checkout\CheckoutService;
+use App\Services\Discount\CouponService;
 use App\Services\Discount\FreeGiftService;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Http\JsonResponse;
@@ -21,7 +22,8 @@ class CheckoutCartController extends Controller
         protected CheckoutService $checkoutService,
         protected FreeGiftService $freeGiftService,
         protected FreeSampleService $freeSampleService,
-        protected CheckoutTotalsService $checkoutTotalsService
+        protected CheckoutTotalsService $checkoutTotalsService,
+        protected CouponService $couponService
     ) {
     }
 
@@ -208,32 +210,100 @@ class CheckoutCartController extends Controller
                 (int) $validated['cart_id']
             );
 
-        if (($result['success'] ?? false) === true) {
-            $result['checkout'] =
-                $this->checkoutService
-                    ->refresh('cart');
+       if (($result['success'] ?? false) === true) {
 
-            $result['freeGift'] =
-                $this->resolveFreeGiftAfterCartChange();
+    /*
+     * ---------------------------------------------------------
+     * Check final cart after removing the requested item.
+     * ---------------------------------------------------------
+     */
+    $cart =
+        Session::get(
+            'ShoppingCart.Cart',
+            []
+        );
 
-            /*
-             * Truth Mode:
-             * Keep response.cart unchanged.
-             *
-             * The existing checkout.js quantity flow expects
-             * response.cart for the product that was updated, while
-             * the final Free Gift cart is exposed inside
-             * response.freeGift.cart.
-             *
-             * Do NOT promote freeGift.cart to response.cart.
-             * That previously changed the response contract and
-             * caused the existing Qty 7 behaviour to stop working.
-             */
-            $result['freeGift'] =
-                $this->attachFinalFreeGiftCart(
-                    $result['freeGift']
-                );
+    $hasRegularProduct = false;
+
+    foreach ($cart as $item) {
+
+        $isFreeGift =
+            ($item['IS_Free_Gift'] ?? 'No') === 'Yes';
+
+        $isFreeSample =
+            ($item['Is_Free_Sample'] ?? 'No') === 'Yes';
+
+        /*
+         * Free Gift and Free Sample do not count
+         * as regular products.
+         */
+        if (
+            !$isFreeGift
+            &&
+            !$isFreeSample
+        ) {
+            $hasRegularProduct = true;
+
+            break;
         }
+    }
+
+
+    /*
+     * ---------------------------------------------------------
+     * No regular product remains.
+     *
+     * If the cart only contains the coupon Free Gift,
+     * remove the coupon and its Free Gift, then redirect
+     * to Shopping Cart.
+     * ---------------------------------------------------------
+     */
+    if (!$hasRegularProduct) {
+
+        $this->couponService
+            ->removeCoupon();
+
+        /*
+         * Get the FINAL cart after removeCoupon().
+         *
+         * removeCoupon() also removes items marked:
+         * FreeGiftCoupon = Yes
+         */
+        $result['cart'] =
+            Session::get(
+                'ShoppingCart.Cart',
+                []
+            );
+
+        return response()->json([
+            'success' => true,
+            'status' => 'redirect',
+            'redirect' => url('/shoppingcart'),
+            'cart' => $result['cart'],
+        ]);
+    }
+
+
+    /*
+     * ---------------------------------------------------------
+     * Normal cart flow.
+     * ---------------------------------------------------------
+     */
+    $result['checkout'] =
+        $this->checkoutService
+            ->refresh('cart');
+
+    $result['freeGift'] =
+        $this->resolveFreeGiftAfterCartChange();
+
+    /*
+     * Keep existing response contract.
+     */
+    $result['freeGift'] =
+        $this->attachFinalFreeGiftCart(
+            $result['freeGift']
+        );
+}
 
         return response()->json($result);
     }
@@ -350,31 +420,22 @@ public function resolveFreeGiftAfterCartChange(): array
      * CURRENT CART
      * =========================================================
      */
-    Log::info('FREE GIFT PAGE/CHANGE RESOLVE START', [
-        'url' => request()->fullUrl(),
-        'method' => request()->method(),
+    $isFreeGiftCoupon =
+    Session::get(
+        'ShoppingCart.PromoCoupon.HasFreeGift',
+        'No'
+    ) === 'Yes';
 
-        'subtotal' => Session::get(
-            'ShoppingCart.SubTotal',
-            null
-        ),
-
-        'cart_session' => Session::get(
-            'ShoppingCart.Cart',
-            null
-        ),
-
-        'freegift_flag' => config('Settings.FREEGIFTFLAG'),
-
-        'checkout_shipping_cart' => config(
-            'Settings.CHECKOUT_SHOIPPINGCART'
-        ),
-
-        'user_type' => Session::get('eusertype'),
-        'dropshipper' => Session::get('is_dropshipper'),
-
-        'store_auth' => Auth::guard('store')->check(),
-    ]);
+	if ($isFreeGiftCoupon) {
+		return [
+			'status' => 'coupon_active',
+			'shouldPopup' => false,
+			'shouldAutoAdd' => false,
+			'eligibleGifts' => [],
+			'remainingCount' => 0,
+			'cart' => $this->cartService->getCart(),
+		];
+	}
 
     $shoppingCart =
         $this->cartService->getCart();
