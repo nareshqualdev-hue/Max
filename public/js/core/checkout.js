@@ -4220,155 +4220,243 @@ sequence
       });
   });
   function removeItem(btn) {
-    const row = btn.closest(".order-item-row");
+  const row = btn.closest(".order-item-row");
 
-    if (!row) {
-      return;
-    }
-
-    const cartId = parseInt(row.dataset.cartId || "", 10);
-
-    if (Number.isNaN(cartId) || cartId < 0) {
-      console.error("removeItem: cart_id missing", row);
-      return;
-    }
-
-    /*
-     * Prevent duplicate remove requests.
-     */
-    if (row.dataset.cartRemoving === "1") {
-      return;
-    }
-
-    row.dataset.cartRemoving = "1";
-
-    btn.disabled = true;
-
-    removeFromCheckoutCart(cartId)
-      .done(function (response) {
-        if (!response || response.success !== true) {
-          console.error("Cart remove failed:", response);
-
-          btn.disabled = false;
-          delete row.dataset.cartRemoving;
-
-          return;
-        }
-
-        /*
-         * =====================================================
-         * FINAL BACKEND CART
-         * =====================================================
-         *
-         * Backend response is the source of truth.
-         */
-        let cart = [];
-
-        if (Array.isArray(response.cart)) {
-          cart = response.cart;
-        } else if (response.cart && Array.isArray(response.cart.Cart)) {
-          cart = response.cart.Cart;
-        }
-
-        /*
-         * =====================================================
-         * EMPTY CART
-         * =====================================================
-         */
-        if (!cart.length) {
-          window.location.href = "/shoppingcart";
-
-          return;
-        }
-        if (
-          response.checkout.onlyGCPurchased === 1 ||
-          response.checkout.onlyGCPurchased === "1"
-        ) {
-          window.location.reload();
-
-          return;
-        }
-        /*
-         * =====================================================
-         * REMOVE DELETED PRODUCT FROM BOTH UI LOCATIONS
-         * =====================================================
-         */
-        document
-          .querySelectorAll('.order-item-row[data-cart-id="' + cartId + '"]')
-          .forEach(function (element) {
-            element.style.transition = "opacity .15s ease";
-
-            element.style.opacity = "0";
-
-            setTimeout(function () {
-              element.remove();
-            }, 150);
-          });
-
-        /*
-         * =====================================================
-         * RE-SYNC ORDER SUMMARY
-         * =====================================================
-         */
-        setTimeout(function () {
-          syncCheckoutSummaryAfterCartChange(cart);
-
-          /*
-           * =================================================
-           * UPDATE SUBTOTAL FROM FINAL BACKEND CART
-           * =================================================
-           *
-           * IMPORTANT:
-           *
-           * Do NOT call:
-           *
-           * updateTotals(response.checkout)
-           *
-           * here.
-           *
-           * The cart response is the source of truth
-           * after remove.
-           */
-          updateCheckoutDrawerSubtotal({
-            cart: cart,
-          });
-          resetShippingSignatureAfterCartChange();
-
-          /*
-           * =====================================================
-           * REFRESH SHIPPING METHODS AFTER CART CHANGE
-           * =====================================================
-           *
-           * Backend ShippingService preserves the currently
-           * selected shipping method when it is still available.
-           *
-           * Example:
-           * Expedited selected
-           *     ↓
-           * Remove item
-           *     ↓
-           * Fresh shipping methods
-           *     ↓
-           * Expedited still available
-           *     ↓
-           * Expedited remains selected
-           */
-          if (typeof loadShippingMethods === "function") {
-            loadShippingMethods();
-          }
-        }, 180);
-      })
-      .fail(function (xhr) {
-        const response = xhr.responseJSON || {};
-
-        console.error("Cart remove request failed:", response);
-
-        btn.disabled = false;
-
-        delete row.dataset.cartRemoving;
-      });
+  if (!row) {
+    return;
   }
 
+  const cartId = parseInt(row.dataset.cartId || "", 10);
+
+  if (Number.isNaN(cartId) || cartId < 0) {
+    console.error("removeItem: cart_id missing", row);
+    return;
+  }
+
+  /*
+   * =====================================================
+   * PREVENT DUPLICATE REMOVE REQUESTS
+   * =====================================================
+   */
+  if (row.dataset.cartRemoving === "1") {
+    return;
+  }
+
+  row.dataset.cartRemoving = "1";
+  btn.disabled = true;
+
+  removeFromCheckoutCart(cartId)
+    .done(function (response) {
+      /*
+       * =====================================================
+       * REMOVE FAILED
+       * =====================================================
+       */
+      if (!response || response.success !== true) {
+        console.error("Cart remove failed:", response);
+
+        btn.disabled = false;
+        delete row.dataset.cartRemoving;
+
+        return;
+      }
+
+      /*
+       * =====================================================
+       * FINAL BACKEND CART
+       * =====================================================
+       *
+       * Backend response is the source of truth.
+       */
+      let cart = [];
+
+      if (Array.isArray(response.cart)) {
+        cart = response.cart;
+      } else if (
+        response.cart &&
+        Array.isArray(response.cart.Cart)
+      ) {
+        cart = response.cart.Cart;
+      }
+
+      /*
+       * =====================================================
+       * EMPTY CART
+       * =====================================================
+       */
+      if (!cart.length) {
+        window.location.href = "/shoppingcart";
+
+        return;
+      }
+
+      /*
+       * =====================================================
+       * ONLY GIFT CERTIFICATE PURCHASE
+       * =====================================================
+       */
+      if (
+        response.checkout &&
+        (
+          response.checkout.onlyGCPurchased === 1 ||
+          response.checkout.onlyGCPurchased === "1"
+        )
+      ) {
+        window.location.reload();
+
+        return;
+      }
+
+      /*
+       * =====================================================
+       * REMOVE DELETED PRODUCT FROM UI
+       * =====================================================
+       *
+       * Remove the deleted product from every checkout
+       * location immediately.
+       */
+      document
+        .querySelectorAll(
+          '.order-item-row[data-cart-id="' + cartId + '"]'
+        )
+        .forEach(function (element) {
+          element.style.transition = "opacity .15s ease";
+          element.style.opacity = "0";
+
+          setTimeout(function () {
+            element.remove();
+          }, 150);
+        });
+
+      /*
+       * =====================================================
+       * RE-SYNC ORDER SUMMARY
+       * =====================================================
+       *
+       * The backend cart is the source of truth.
+       */
+      setTimeout(function () {
+        syncCheckoutSummaryAfterCartChange(cart);
+
+        /*
+         * =================================================
+         * UPDATE CHECKOUT TOTALS
+         * =================================================
+         *
+         * IMPORTANT:
+         *
+         * After removing a product, coupon / auto discount /
+         * quantity discount / tax / protection etc. can change.
+         *
+         * The backend checkout response must therefore be
+         * used to update the totals immediately.
+         */
+        if (response.checkout) {
+          updateTotals(response.checkout);
+
+          /*
+           * =================================================
+           * COUPON UI SYNC
+           * =================================================
+           *
+           * Example:
+           *
+           * Coupon applies only to:
+           * UP730870159378
+           *
+           * Remove UP730870159378
+           *
+           * Backend re-validates coupon
+           *
+           * Coupon becomes invalid
+           *
+           * Remove the "TESTCODEQUALDEV Applied" row
+           * immediately without page refresh.
+           */
+          const totals =
+            response.checkout.totals ||
+            response.checkout.Totals ||
+            {};
+
+          const discounts =
+            totals.Discounts ||
+            totals.discounts ||
+            {};
+
+          const couponDiscount =
+            discounts.CouponDiscount ||
+            discounts.couponDiscount ||
+            null;
+
+          /*
+           * If CouponDiscount is no longer present,
+           * remove the applied coupon UI.
+           *
+           * Do NOT remove Yotpo Reward UI here.
+           */
+          if (
+            !couponDiscount ||
+            parseFloat(
+              couponDiscount.discount || 0
+            ) <= 0
+          ) {
+            document
+              .querySelectorAll(".coupon-applied")
+              .forEach(function (element) {
+                element.remove();
+              });
+
+            const promoResult =
+              document.getElementById("promo-result");
+
+            if (promoResult) {
+              delete promoResult.dataset.couponCode;
+            }
+          }
+        }
+
+        /*
+         * =================================================
+         * UPDATE SUBTOTAL / CART SUMMARY
+         * =================================================
+         */
+        updateCheckoutDrawerSubtotal({
+          cart: cart,
+        });
+
+        /*
+         * =================================================
+         * RESET SHIPPING SIGNATURE
+         * =================================================
+         */
+        resetShippingSignatureAfterCartChange();
+
+        /*
+         * =================================================
+         * REFRESH SHIPPING METHODS
+         * =================================================
+         */
+        if (
+          typeof loadShippingMethods === "function"
+        ) {
+          loadShippingMethods();
+        }
+      }, 180);
+    })
+    .fail(function (xhr) {
+      const response =
+        xhr.responseJSON || {};
+
+      console.error(
+        "Cart remove request failed:",
+        response
+      );
+
+      btn.disabled = false;
+
+      delete row.dataset.cartRemoving;
+    });
+}
   function resetShippingSignatureAfterCartChange() {
     window.MaxaromaCheckout = window.MaxaromaCheckout || {};
 
@@ -4407,203 +4495,222 @@ sequence
       setShippingSignature("remove");
     }
   }
-  function syncCheckoutSummaryAfterCartChange(cart) {
-    if (!Array.isArray(cart)) {
-      return;
-    }
-
-    const mainList = document.getElementById("checkout-cart-items");
-
-    const drawerBody = document.querySelector(".cart-drawer-body");
-
-    if (!mainList || !drawerBody) {
-      updateCartItemCountAfterChange(cart);
-
-      return;
-    }
-
-    /*
-     * =====================================================
-     * BACKEND CART = SOURCE OF TRUTH
-     * =====================================================
-     */
-
-    const currentIds = new Set(
-      cart.map(function (item) {
-        return String(
-          item && (item.cart_id ?? item.ProductID ?? item.id ?? ""),
-        );
-      }),
-    );
-
-    /*
-     * =====================================================
-     * REMOVE STALE NORMAL ITEMS FROM CART DRAWER
-     * =====================================================
-     *
-     * Free Gift / Free Sample are NOT touched here.
-     */
-drawerBody.querySelectorAll(".order-item-row").forEach(function (row) {
-
-  /*
-   * ---------------------------------------------------------
-   * FREE GIFT
-   * ---------------------------------------------------------
-   *
-   * Free Gift is managed separately.
-   */
-  const isFreeGift =
-    row.dataset.freeGift === "1";
-
-  if (isFreeGift) {
+ 
+ function syncCheckoutSummaryAfterCartChange(cart) {
+  if (!Array.isArray(cart)) {
     return;
   }
 
-  /*
-   * ---------------------------------------------------------
-   * CART ROW ID
-   * ---------------------------------------------------------
-   */
-  const rowId =
-    String(row.dataset.cartId || "");
+  const mainList = document.getElementById("checkout-cart-items");
+  const drawerBody = document.querySelector(".cart-drawer-body");
 
-  /*
-   * ---------------------------------------------------------
-   * FREE SAMPLE
-   * ---------------------------------------------------------
-   *
-   * Free Sample is NOT returned in backend cart when the
-   * Free Sample rule changes and backend removes it.
-   *
-   * Therefore stale Free Sample row must be removed.
-   *
-   * We identify it by the existing row's product id and
-   * current backend cart.
-   * ---------------------------------------------------------
-   */
-  const productId =
-    String(row.dataset.productId || "");
-
-  const isCurrentCartItem =
-    currentIds.has(rowId);
-
-  const isCurrentProduct =
-    productId !== "" &&
-    Array.from(currentIds).some(function (id) {
-      return id === productId;
-    });
-
-  /*
-   * If backend no longer contains this row, remove it.
-   */
-  if (
-    !isCurrentCartItem &&
-    !isCurrentProduct
-  ) {
-    row.remove();
+  if (!mainList || !drawerBody) {
+    updateCartItemCountAfterChange(cart);
+    return;
   }
-});
 
-    /*
-     * =====================================================
-     * REMOVE CURRENT NORMAL SUMMARY ROWS
-     * =====================================================
-     *
-     * We will rebuild the first two positions from the
-     * current backend cart.
-     *
-     * This is what makes:
-     *
-     * A
-     * B
-     *
-     * become:
-     *
-     * B
-     * C
-     *
-     * after A is removed.
-     */
-    mainList
-      .querySelectorAll('.order-item-row:not([data-free-gift="1"])')
-      .forEach(function (row) {
-        row.remove();
+  function getCartItemId(item) {
+    if (!item) {
+      return "";
+    }
+
+    return String(
+      item.cart_id ??
+        item.ProductID ??
+        item.product_id ??
+        item.id ??
+        "",
+    );
+  }
+
+  function getRowIds(row) {
+    if (!row) {
+      return [];
+    }
+
+    const ids = [];
+
+    const cartId = String(row.dataset.cartId || "");
+    const productId = String(row.dataset.productId || "");
+
+    if (cartId !== "") {
+      ids.push(cartId);
+    }
+
+    if (productId !== "" && !ids.includes(productId)) {
+      ids.push(productId);
+    }
+
+    return ids;
+  }
+
+  function rowMatchesId(row, itemId) {
+    return getRowIds(row).includes(String(itemId));
+  }
+
+  /*
+   * Backend cart is the source of truth.
+   * Exclude Free Gift / Free Sample from normal item rendering.
+   */
+  const normalCart = cart.filter(function (item) {
+    if (!item) {
+      return false;
+    }
+
+    const isFreeGift =
+      String(
+        item.IS_Free_Gift ??
+          item.Is_Free_Gift ??
+          item.is_free_gift ??
+          "",
+      ).toLowerCase() === "yes";
+
+    const isFreeSample =
+      String(
+        item.IS_Free_Sample ??
+          item.Is_Free_Sample ??
+          item.is_free_sample ??
+          "",
+      ).toLowerCase() === "yes";
+
+    return !isFreeGift && !isFreeSample;
+  });
+
+  const currentIds = new Set(
+    normalCart
+      .map(getCartItemId)
+      .filter(function (id) {
+        return id !== "";
+      }),
+  );
+
+  /*
+   * Remove only products which no longer exist
+   * in the backend cart.
+   */
+  mainList
+    .querySelectorAll('.order-item-row:not([data-free-gift="1"])')
+    .forEach(function (row) {
+      const stillExists = getRowIds(row).some(function (id) {
+        return currentIds.has(id);
       });
 
-    /*
-     * =====================================================
-     * MORE ITEMS BUTTON
-     * =====================================================
-     */
-    const moreButton = mainList.querySelector(".view-all-items");
+      if (!stillExists) {
+        row.remove();
+      }
+    });
 
-    if (!moreButton) {
-      updateCartItemCountAfterChange(cart);
+  const existingSummaryRows = Array.from(
+    mainList.querySelectorAll(
+      '.order-item-row:not([data-free-gift="1"])',
+    ),
+  );
 
+  const drawerRows = Array.from(
+    drawerBody.querySelectorAll(
+      '.order-item-row:not([data-free-gift="1"])',
+    ),
+  );
+
+  const moreButton = mainList.querySelector(".view-all-items");
+
+  /*
+   * Only first 2 normal products are shown
+   * in Order Summary.
+   */
+  const desiredItems = normalCart.slice(0, 2);
+
+  desiredItems.forEach(function (item) {
+    const itemId = getCartItemId(item);
+
+    if (!itemId) {
       return;
     }
 
     /*
-     * =====================================================
-     * GET CURRENT NORMAL PRODUCTS FROM DRAWER
-     * =====================================================
-     *
-     * Drawer already contains the latest product HTML.
-     * We use it as the existing UI template.
+     * Keep existing summary row if it already exists.
      */
-    const normalDrawerRows = Array.from(
-      drawerBody.querySelectorAll('.order-item-row:not([data-free-gift="1"])'),
-    ).filter(function (row) {
-      return currentIds.has(String(row.dataset.cartId || ""));
+    let row = existingSummaryRows.find(function (candidate) {
+      return rowMatchesId(candidate, itemId);
     });
 
     /*
-     * =====================================================
-     * SHOW FIRST TWO PRODUCTS IN ORDER SUMMARY
-     * =====================================================
+     * If missing, use drawer row as template.
      */
-    normalDrawerRows.slice(0, 2).forEach(function (drawerRow) {
-      const summaryRow = drawerRow.cloneNode(true);
-
-      /*
-       * Make sure the cloned row remains a normal
-       * removable product row.
-       */
-      summaryRow.dataset.freeGift = "0";
-
-      summaryRow.dataset.cartId = drawerRow.dataset.cartId;
-
-      summaryRow.dataset.productId = drawerRow.dataset.productId || "";
-
-      /*
-       * Remove animation/state from drawer clone.
-       */
-      delete summaryRow.dataset.cartRemoving;
-
-      summaryRow.style.opacity = "1";
-
-      /*
-       * Make remove button usable.
-       */
-      summaryRow.querySelectorAll(".item-remove").forEach(function (button) {
-        button.disabled = false;
+    if (!row) {
+      const drawerRow = drawerRows.find(function (candidate) {
+        return rowMatchesId(candidate, itemId);
       });
 
-      /*
-       * Insert before:
-       *
-       * + More Items
-       */
-      mainList.insertBefore(summaryRow, moreButton);
-    });
+      if (drawerRow) {
+        row = drawerRow.cloneNode(true);
+
+        row.dataset.freeGift = "0";
+        delete row.dataset.cartRemoving;
+
+        row.style.opacity = "1";
+
+        row.querySelectorAll(".item-remove").forEach(function (button) {
+          button.disabled = false;
+        });
+      }
+    }
+
+    if (!row) {
+      return;
+    }
 
     /*
-     * =====================================================
-     * UPDATE MORE ITEMS COUNT
-     * =====================================================
+     * Keep backend IDs synchronized.
      */
-    updateCartItemCountAfterChange(cart);
-  }
+    row.dataset.cartId =
+      item.cart_id ??
+      item.ProductID ??
+      item.product_id ??
+      item.id ??
+      row.dataset.cartId ??
+      "";
+
+    if (item.ProductID !== undefined && item.ProductID !== null) {
+      row.dataset.productId = item.ProductID;
+    }
+
+    /*
+     * Move row into correct Order Summary position.
+     */
+    if (moreButton) {
+      mainList.insertBefore(row, moreButton);
+    } else {
+      mainList.appendChild(row);
+    }
+  });
+
+  /*
+   * Remove extra normal rows.
+   */
+  const desiredIds = new Set(
+    desiredItems
+      .map(getCartItemId)
+      .filter(function (id) {
+        return id !== "";
+      }),
+  );
+
+  mainList
+    .querySelectorAll('.order-item-row:not([data-free-gift="1"])')
+    .forEach(function (row) {
+      const isDesired = getRowIds(row).some(function (id) {
+        return desiredIds.has(id);
+      });
+
+      if (!isDesired) {
+        row.remove();
+      }
+    });
+
+  updateCartItemCountAfterChange(cart);
+}
+ 
   function updateCheckoutDrawerSubtotal(response) {
     if (!response) {
       return;
