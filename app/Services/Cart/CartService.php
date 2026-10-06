@@ -612,123 +612,196 @@ public function update(
      * behavior without bringing ShoppingcartController/CartTrait
      * into the new checkout.
      */
-    protected function recalculateAfterCartMutation(): void
-    {
-        /*
-         * Gift Certificate must be synced first because the
-         * applicable certificate amount depends on the new cart total.
-         */
-       
-       $isGiftCertificateRestricted =
-			strtolower(
-				trim(
-					Session::get(
-						'eusertype',
-						''
-					)
-				)
-			) === 'wholesaler'
-			||
-			trim(
-				Session::get(
-					'is_dropshipper',
-					''
-				)
-			) === 'Yes';
-
-		if ($isGiftCertificateRestricted) {
-			$this->giftCertificateService
-			->remove();
-		}
-		else
-		{
-			$this->giftCertificateService->sync();
-		}
-
-        /*
-         * Legacy UpdateCart() explicitly re-applies the active
-         * Yotpo Reward before SetupCart().
-         */
-        $rewardCode = trim(
-            (string) Session::get(
-                'ShoppingCart.YotpoRewardCode',
+  protected function recalculateAfterCartMutation(): void
+{
+    /*
+     * Gift Certificate must be synced first because the
+     * applicable certificate amount depends on the new cart total.
+     */
+    $isGiftCertificateRestricted =
+        strtolower(
+            trim(
+                Session::get(
+                    'eusertype',
+                    ''
+                )
+            )
+        ) === 'wholesaler'
+        ||
+        trim(
+            Session::get(
+                'is_dropshipper',
                 ''
             )
-        );
+        ) === 'Yes';
 
-        if ($rewardCode !== '') {
-            $normalUser = Auth::user();
-
-            if (Auth::guard('store')->check()) {
-                $normalUser =
-                    Auth::guard('web')->user();
-            }
-
-            $customerId =
-                $normalUser
-                    ? Session::get(
-                        'sess_icustomerid'
-                    )
-                    : null;
-
-            $this->couponService->apply(
-                $rewardCode,
-                $customerId
-            );
-        }
-
-        /*
-         * Same automatic-discount rules used by SetupCart().
-         */
-        if (
-            config('Settings.AUTODISCOUNTFLAG') ===
-            'Yes'
-        ) {
-            $this->autoDiscountService->apply();
-        }
-
-        if (
-            config('Settings.QUANTITYDISCOUNTFLAG') ===
-            'Yes'
-        ) {
-            $this->quantityDiscountService->apply();
-        }
-
-        /*
-         * BOGO is also cart-dependent and must be recalculated
-         * after quantity changes.
-         */
-       if (
-				config('Settings.BOGODISCOUNTFLAG') === 'Yes'
-			) {
-				$this->bogoDiscountService
-					->apply();
-			}
-			
-			if (
-			config('global.BOGO_QTY__AUTO_COMBINED') == '1'
-			) {
-			$bogoDiscount =
-				(float) Session::get(
-					'ShoppingCart.DogoDiscount',
-					0
-				);
-
-			if ($bogoDiscount > 0) {
-				Session::put(
-					'ShoppingCart.AutoDiscount',
-					0
-				);
-
-				Session::put(
-					'ShoppingCart.QuantityDiscount',
-					0
-				);
-			}
-		}	
-			
+    if ($isGiftCertificateRestricted) {
+        $this->giftCertificateService
+            ->remove();
+    } else {
+        $this->giftCertificateService
+            ->sync();
     }
 
+    /*
+     * ---------------------------------------------------------
+     * Legacy UpdateCart() explicitly re-applies the active
+     * Yotpo Reward before SetupCart().
+     * ---------------------------------------------------------
+     */
+    $rewardCode = trim(
+    (string) Session::get(
+        'ShoppingCart.YotpoRewardCode',
+        ''
+    )
+);
+
+/*
+ * Do not automatically re-apply a Yotpo reward after the
+ * customer explicitly removed it.
+ *
+ * A fresh explicit Apply clears this flag inside
+ * CouponService::apply().
+ */
+$rewardWasRemoved = Session::get(
+    'ShoppingCart.YotpoRewardRemoved',
+    false
+);
+
+if (
+    $rewardCode !== ''
+    && !$rewardWasRemoved
+) {
+    $normalUser = Auth::user();
+
+    if (Auth::guard('store')->check()) {
+        $normalUser =
+            Auth::guard('web')->user();
+    }
+
+    $customerId =
+        $normalUser
+            ? Session::get(
+                'sess_icustomerid'
+            )
+            : null;
+
+    $this->couponService->apply(
+        $rewardCode,
+        $customerId
+    );
+}
+
+    /*
+     * ---------------------------------------------------------
+     * Re-validate active normal Promo Coupon after cart change.
+     *
+     * Removing a product can make an existing coupon invalid
+     * when the coupon is based on:
+     *
+     * - Product SKU
+     * - Category
+     * - Brand
+     * - Order Amount
+     * - Other existing coupon rules
+     *
+     * CouponService already contains the existing coupon
+     * eligibility/business rules.
+     *
+     * Therefore we call CouponService::apply() again instead
+     * of duplicating any coupon logic here.
+     * ---------------------------------------------------------
+     */
+    $promoCouponCode = trim(
+        (string) Session::get(
+            'ShoppingCart.PromoCoupon.CouponCode',
+            ''
+        )
+    );
+
+    if ($promoCouponCode !== '') {
+
+        $normalUser = Auth::user();
+
+        if (Auth::guard('store')->check()) {
+            $normalUser =
+                Auth::guard('web')->user();
+        }
+
+        $customerId =
+            $normalUser
+                ? Session::get(
+                    'sess_icustomerid'
+                )
+                : null;
+
+        $this->couponService->apply(
+            $promoCouponCode,
+            $customerId
+        );
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Same automatic-discount rules used by SetupCart().
+     * ---------------------------------------------------------
+     */
+    if (
+        config('Settings.AUTODISCOUNTFLAG') ===
+        'Yes'
+    ) {
+        $this->autoDiscountService->apply();
+    }
+
+    if (
+        config('Settings.QUANTITYDISCOUNTFLAG') ===
+        'Yes'
+    ) {
+        $this->quantityDiscountService->apply();
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * BOGO is also cart-dependent and must be recalculated
+     * after quantity changes.
+     * ---------------------------------------------------------
+     */
+    if (
+        config('Settings.BOGODISCOUNTFLAG') ===
+        'Yes'
+    ) {
+        $this->bogoDiscountService
+            ->apply();
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * BOGO quantity auto-combined logic.
+     * ---------------------------------------------------------
+     */
+    if (
+        config('global.BOGO_QTY__AUTO_COMBINED') == '1'
+    ) {
+        $bogoDiscount =
+            (float) Session::get(
+                'ShoppingCart.DogoDiscount',
+                0
+            );
+
+        if ($bogoDiscount > 0) {
+
+            Session::put(
+                'ShoppingCart.AutoDiscount',
+                0
+            );
+
+            Session::put(
+                'ShoppingCart.QuantityDiscount',
+                0
+            );
+        }
+    }
+}
     /**
      * Remove cart item.
      *
