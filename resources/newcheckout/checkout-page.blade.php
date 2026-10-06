@@ -52,7 +52,10 @@ $checkoutGiftWrap = $chargeValue('GiftWrappingCharge');
 $checkoutNetTotal = (float) ($totals['NetTotal'] ?? 0);
 $NetTotal = (float) ($totals['NetTotal'] ?? 0);
 $CartAttr = $checkoutState['cartAttributes'];
-
+$yotpoRewardCode = (string) Session::get(
+    'ShoppingCart.YotpoRewardCode',
+    ''
+);
 $CartAttr["IsPaypalExpressCheckout"] = $checkoutState['paymentAvailability']['IsPaypalExpressCheckout']??'No';
 $CartAttr["Amazon_pay_Checkout"] = "Yes";
 $Is_Afterpay_Checkout = "Yes";
@@ -64,10 +67,7 @@ $promoCouponCode = (string) Session::get(
 ''
 );
 
-$yotpoRewardCode = (string) Session::get(
-'ShoppingCart.YotpoRewardCode',
-''
-);
+
 
 $cart = Session::get('ShoppingCart.Cart', []);
 $cart = is_array($cart) ? $cart : [];
@@ -3935,6 +3935,8 @@ is_string($image)
   <script>
     window.MaxaromaCheckout = window.MaxaromaCheckout || {};
     window.MaxaromaCheckout.csrfToken = @json(csrf_token());
+    window.MaxaromaCheckout.yotpoRewardCode = @json($yotpoRewardCode);
+
     window.MaxaromaCheckout.urls = Object.assign(
       window.MaxaromaCheckout.urls || {}, {
         /*
@@ -3942,7 +3944,7 @@ is_string($image)
          * Shipping
          * ---------------------------------------------------------
          */
-
+		
         shippingMethods: @json(route('checkoutnew.shipping.methods')),
         setShippingMethod: @json(route('checkoutnew.shipping.method')),
         shippingInsurance: @json(route('checkoutnew.shipping.insurance')),
@@ -4034,7 +4036,7 @@ is_string($image)
      * Checkout state
      * ---------------------------------------------------------
      */
-
+	
     window.MaxaromaCheckout.selectedShippingMethodId =
       @json($selectedShippingMethodId);
 
