@@ -3051,36 +3051,37 @@ protected function applyFreeShippingCoupon(
          * values so DiscountService can report the Reward correctly.
          */
         if ($isReward) {
-            Session::put(
-                'ShoppingCart.YotpoRewardCode',
-                $couponCode
-            );
+    Session::forget(
+        'ShoppingCart.YotpoRewardRemoved'
+    );
 
-            Session::put(
-                'ShoppingCart.YotpoRewardDiscount',
-                $discount
-            );
+    Session::put(
+        'ShoppingCart.YotpoRewardCode',
+        $couponCode
+    );
 
-            Session::put(
-                'ShoppingCart.YotpoRewardCouponID',
-                $coupon->coupon_id
-            );
+    Session::put(
+        'ShoppingCart.YotpoRewardDiscount',
+        $discount
+    );
 
-            Session::put(
-                'ShoppingCart.YotpoReward_Detail',
-                $coupon->toArray()
-            );
+    Session::put(
+        'ShoppingCart.YotpoRewardCouponID',
+        $coupon->coupon_id
+    );
 
-            Session::put(
-                'Niche_Fragrances_Membership',
-                'Yes'
-            );
+    Session::put(
+        'ShoppingCart.YotpoReward_Detail',
+        $coupon->toArray()
+    );
 
-            /*
-             * Do NOT save the Yotpo Reward as a normal PromoCoupon.
-             */
-            return;
-        }
+    Session::put(
+        'Niche_Fragrances_Membership',
+        'Yes'
+    );
+
+    return;
+}
 
         /*
          * ---------------------------------------------------------
@@ -3225,77 +3226,68 @@ protected function applyFreeShippingCoupon(
      * The controller keeps responsibility for the existing payment-intent
      * / Yotpo coupon deactivation flow. This method clears the Reward state.
      */
-    public function removeYotpoReward(): void
-    {
-        /*
-         * Preserve legacy Yotpo coupon deactivation.
-         *
-         * pu_coupon is shared with normal coupons, but source=Yotpo
-         * identifies the reward. The generated reward is deactivated
-         * for the current customer's email and today's start_date,
-         * matching the existing flow.
-         */
-        $rewardCode = trim(
-            (string) Session::get(
-                'ShoppingCart.YotpoRewardCode',
-                ''
-            )
+
+public function removeYotpoReward(): void
+{
+    $rewardCode = trim(
+        (string) Session::get(
+            'ShoppingCart.YotpoRewardCode',
+            ''
+        )
+    );
+
+    if ($rewardCode !== '') {
+        $normalUser = Auth::user();
+
+        if (Auth::guard('store')->check()) {
+            $normalUser = Auth::guard('web')->user();
+        }
+
+        $email = trim(
+            (string) ($normalUser->email ?? '')
         );
 
-        if ($rewardCode !== '') {
-            $normalUser = Auth::user();
-
-            if (Auth::guard('store')->check()) {
-                $normalUser =
-                    Auth::guard('web')->user();
-            }
-
-            $email = trim(
-                (string) ($normalUser->email ?? '')
-            );
-
-            if ($email !== '') {
-                Coupon::where(
-                    'coupon_number',
-                    $rewardCode
-                )
-                    ->where(
-                        'source',
-                        'Yotpo'
-                    )
-                    ->where(
-                        'customer_email',
-                        $email
-                    )
-                    ->where(
-                        'start_date',
-                        DB::raw('curdate()')
-                    )
-                    ->update([
-                        'status' => '0',
-                    ]);
-            }
+        if ($email !== '') {
+            Coupon::where('coupon_number', $rewardCode)
+                ->where('source', 'Yotpo')
+                ->where('customer_email', $email)
+                ->where('start_date', DB::raw('curdate()'))
+                ->update([
+                    'status' => '0',
+                ]);
         }
-
-        $cart = Session::get('ShoppingCart.Cart', []);
-
-        foreach (array_keys($cart) as $index) {
-            Session::put(
-                'ShoppingCart.Cart.' . $index . '.RewardItemWiseDiscout',
-                0
-            );
-        }
-
-        Session::put('ShoppingCart.YotpoRewardRedeemDiscount', '');
-        Session::put('ShoppingCart.YotpoRewardDiscount', '');
-        Session::put('ShoppingCart.YotpoRewardCode', '');
-        Session::put('ShoppingCart.YotpoRewardCouponID', '');
-        Session::put('ShoppingCart.YotpoReward_Detail', []);
-
-        return;
     }
 
-    protected function clearCouponSessions(): void
+    /*
+     * Remove Yotpo item-wise discount.
+     */
+    $cart = Session::get(
+        'ShoppingCart.Cart',
+        []
+    );
+
+    foreach (array_keys($cart) as $index) {
+        Session::put(
+            'ShoppingCart.Cart.' . $index . '.RewardItemWiseDiscout',
+            0
+        );
+    }
+
+    /*
+     * Remove Yotpo reward session only.
+     */
+    Session::put(
+    'ShoppingCart.YotpoRewardRemoved',
+    true
+);
+
+Session::put('ShoppingCart.YotpoRewardRedeemDiscount', '');
+Session::put('ShoppingCart.YotpoRewardDiscount', '');
+Session::put('ShoppingCart.YotpoRewardCode', '');
+Session::put('ShoppingCart.YotpoRewardCouponID', '');
+Session::put('ShoppingCart.YotpoReward_Detail', []);
+}
+   protected function clearCouponSessions(): void
     {
         Session::forget(
             'ShoppingCart.PromoCoupon'
