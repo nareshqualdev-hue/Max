@@ -2171,7 +2171,17 @@
      * BEFORE shipping methods / totals AJAX starts.
      */
     restoreCheckoutAddonState();
-
+	
+	if (
+    window.MaxaromaCheckout &&
+    window.MaxaromaCheckout.checkout &&
+    typeof updateTotals === "function"
+) {
+    updateTotals(
+        window.MaxaromaCheckout.checkout
+    );
+}
+	
     const address = getShippingAddress();
 
     if (addressReady(address)) {
@@ -2256,6 +2266,8 @@
       },
     })
       .done(function (response) {
+		
+
         result
           .querySelectorAll(".promo-applying-message")
           .forEach(function (element) {
@@ -2296,7 +2308,7 @@
          */
 
         const safeCode = escapeHtml(code);
-
+		const isYotpoReward = response.is_yotpo_reward === true;
         /*
          * Prevent duplicate display of same code.
          */
@@ -2311,37 +2323,44 @@
         });
 
         if (!alreadyApplied) {
-          const appliedHtml =
-            "<div " +
-            'class="coupon-applied animate-in" ' +
-            'data-discount-code="' +
-            safeCode +
-            '" ' +
-            'style="margin-top:12px;" ' +
-            'role="status">' +
-            "<div>" +
-            '<span class="coupon-applied-code">' +
-            safeCode +
-            "</span>" +
-            '<span style="' +
-            "font-size:12px;" +
-            "color:var(--color-text-success);" +
-            'margin-left:8px;">' +
-            "Applied" +
-            "</span>" +
-            "</div>" +
-            "<button " +
-            'type="button" ' +
-            'class="coupon-remove" ' +
-            'data-discount-code="' +
-            safeCode +
-            '">' +
-            "Remove" +
-            "</button>" +
-            "</div>";
+	
+    const appliedHtml =
+        "<div " +
+        'class="coupon-applied animate-in" ' +
+        'data-discount-code="' +
+        safeCode +
+        '" ' +
+        'style="margin-top:12px;" ' +
+        'role="status">' +
+        "<div>" +
+        '<span class="coupon-applied-code">' +
+        safeCode +
+        "</span>" +
+        '<span style="' +
+        "font-size:12px;" +
+        "color:var(--color-text-success);" +
+        'margin-left:8px;">' +
+        "Applied" +
+        "</span>" +
+        "</div>" +
+        "<button " +
+'type="button" ' +
+(isYotpoReward
+    ? 'id="maxaroma-remove-yotpo-reward" '
+    : "") +
+'class="coupon-remove" ' +
+'data-discount-code="' +
+safeCode +
+'" ' +
+'data-discount-kind="' +
+(isYotpoReward ? "reward" : "coupon") +
+'">' +
+"Remove" +
+"</button>"  +
+        "</div>";
 
-          result.insertAdjacentHTML("beforeend", appliedHtml);
-        }
+    result.insertAdjacentHTML("beforeend", appliedHtml);
+}
 
         input.value = "";
 
@@ -2356,6 +2375,13 @@
 			 *
 			 * Backend remains the source of truth.
 			 */
+			if (
+				response &&
+				typeof updateTotals === "function"
+			) {
+				updateTotals(response);
+			}
+ 
 			if (
 				response.cart &&
 				typeof appendFreeGiftCartItems === "function"
@@ -2561,18 +2587,29 @@
           /*
            * Existing checkout recalculation.
            */
-          const selectedMethod = $('input[name="shipping"]:checked').val();
+     
+	
+	if (
+    response &&
+    typeof updateTotals === "function"
+) {
+    updateTotals(response);
+}
+	
+    const selectedMethod =
+        $('input[name="shipping"]:checked').val();
 
-          if (
-            selectedMethod &&
-            window.MaxaromaOnePageCheckout &&
-            typeof window.MaxaromaOnePageCheckout.setShippingMethod ===
-              "function"
-          ) {
-            window.MaxaromaOnePageCheckout.setShippingMethod(
-              parseInt(selectedMethod, 10),
-            );
-          }
+    if (
+        selectedMethod &&
+        window.MaxaromaOnePageCheckout &&
+        typeof window.MaxaromaOnePageCheckout.setShippingMethod ===
+            "function"
+    ) {
+        window.MaxaromaOnePageCheckout.setShippingMethod(
+            parseInt(selectedMethod, 10),
+        );
+    }
+
         })
         .fail(function (xhr) {
           button.prop("disabled", false);
