@@ -43,7 +43,7 @@ class AfterpayService
     protected array $config = [];
     protected string $transactionMode = 'sandbox';
     protected string $paymentUrl = '';
-    protected string $tokenJsUrl = '';
+    public string $tokenJsUrl = '';
     public function __construct()
     {
         $this->loadConfiguration();

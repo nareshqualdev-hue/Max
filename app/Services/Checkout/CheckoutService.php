@@ -27,6 +27,7 @@ class CheckoutService
 		protected \App\Services\Checkout\GiftCertificateService $giftCertificateService,
 		protected \App\Services\Discount\BogoDiscountService $bogoDiscountService,
 		protected \App\Services\Discount\CouponService $couponService,
+        protected \App\Services\Discount\CreditDisocuntService $creditDisocuntService,
 		protected CartStockService $cartStockService,
     ) {
     }
@@ -45,7 +46,7 @@ class CheckoutService
         \Illuminate\Http\Request $request
     ): array {
         addLog('CheckoutPrepareStart');
-
+        //Session::forget("ShoppingCart.SampleInfo");
         /*
          * Preserve existing Afterpay / Store checkout session rules.
          */
@@ -82,7 +83,7 @@ class CheckoutService
         /*
          * Afterpay entry flow.
          */
-        if ($request->input('method') === 'pa') {
+        if ($request->input('method') === 'afterpay') {
             Session::forget(
                 'ShoppingCart.AfterPay.Checkout_Token'
             );
@@ -282,7 +283,8 @@ class CheckoutService
             ],
 
             'JSFILES' => [
-                'checkout.js',
+                //'checkout.js',
+                'checkout1.js',
                 'paypal.js'
                 //'checkout-new.js'
             ],
@@ -745,7 +747,7 @@ if (
                     )
                 );
 
-        //$dropshipperDetails = $this->GetDropshipperDetails();
+        $creditLimit = $this->creditDisocuntService->GetCreditLimitAmount($totals['NetTotal']);
         /*
          * ---------------------------------------------------------
          * 7. Final response
@@ -756,6 +758,7 @@ if (
             'cartAttributes' => $cartAttributes,
             'paymentAvailability' => $paymentAvailability,
             'totals' => $totals,
+            'creditLimit' => $creditLimit,
             //'dropshipperDetails' => $dropshipperDetails,
             /*
              * Preserve the currently applied Gift Certificate
@@ -1002,7 +1005,7 @@ if (
                  * single source of truth for Insurance calculation.
                  */
                 $this->shippingInsuranceService
-                    ->calculate('add');
+                    ->calculate('add', 0, 'No', false);
 
                 /*
                  * Now calculate Tax using the fully refreshed
@@ -1895,7 +1898,10 @@ public function refreshAfterShippingMethod(
 $insurance =
             $this->shippingInsuranceService
                 ->calculate(
-                    'add'
+                    'add',
+                    0,
+                    'No',
+                    false
                 );
     /*
      * ---------------------------------------------------------
@@ -2069,7 +2075,10 @@ protected function resolveOrderTotal(
 		$insurance =
             $this->shippingInsuranceService
                 ->calculate(
-                    'add'
+                    'add',
+                    0,
+                    'No',
+                    false
                 );
         /*
          * If BillingAsShipping is used, preserve the existing
@@ -2692,5 +2701,11 @@ protected function recalculateCouponAndTax(
             }
         }
         return $DropshipperAccountDetails;
+    }
+
+    public function ApplyCreditDiscount($Check=0):void
+    {
+        $NetTotal = $this->checkoutTotalsService->getNetTotal();
+        $this->creditDisocuntService->ApplyCreditDiscount($Check,$NetTotal);
     }
 }

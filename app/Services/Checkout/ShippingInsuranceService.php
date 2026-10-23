@@ -11,7 +11,7 @@ class ShippingInsuranceService
         protected CheckoutTotalsService $checkoutTotalsService,
        protected DiscountService $discountService
     ) {
-		
+
     }
 
     /**
@@ -46,7 +46,7 @@ class ShippingInsuranceService
                     $phoneOrder,
             ]
         );
-
+        Log::info($action."===>".$netTotal."===>".$phoneOrder);
         /*
          * ---------------------------------------------------------
          * Persist the customer's explicit Insurance ON/OFF choice.
@@ -196,7 +196,6 @@ class ShippingInsuranceService
          * because insurance is calculated on the amount before tax.
          * ---------------------------------------------------------
          */
-        
 
         /*
          * ---------------------------------------------------------

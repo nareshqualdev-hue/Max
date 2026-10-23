@@ -39,8 +39,8 @@ class FreeSampleService
 	) {
 		$this->productNormalizationService =
 			$productNormalizationService;
-	} 
-  
+	}
+
  public function addSample(
     $productsId,
     $freeSampleRuleStart = null,
@@ -547,7 +547,7 @@ class FreeSampleService
 
     return $outOfStockMessage;
 }
- 
+
     /**
      * Get eligible free-sample products for the existing Free Sample popup.
      *
@@ -725,7 +725,38 @@ public function getSampleProductsPopup(
             )
             ->first();
     }
+    /*
+    Session::forget("ShoppingCart.SampleInfo");
+    if(config('Settings.FREESAMPLE_VALUE') == 'Yes')
+    {
+        $FindRange = [];
+        if($activeRules)
+        {
+            $CartTotal = (float)Session::get("ShoppingCart.SubTotal");
+            foreach($activeRules as $activeRule)
+            {
+                $Range = (float)($activeRule->price_start_range - $CartTotal);
+                if($Range > 0 && $CartTotal < $activeRule->price_start_range)
+                {
+                    $FindRange[] = [
+                        'start_price' => (float)$activeRule->price_start_range,
+                        'cart_value' => $CartTotal,
+                        'remain_amount' => $Range
+                    ];
+                }
+            }
+        }
 
+        if(count($FindRange)>0)
+        {
+            usort($FindRange, function ($a, $b) {
+                return $a['remain_amount'] <=> $b['remain_amount'];
+            });
+
+            Session::put("ShoppingCart.SampleInfo",$FindRange[0]);
+        }
+    }
+    */
     /*
      * ---------------------------------------------------------
      * Rule debug.
@@ -2199,7 +2230,7 @@ public function syncFreeSamplesAfterCartMutation(
 
         return true;
     }
-    
+
     /*
  * =========================================================
  * Free Sample eligibility restrictions
@@ -2265,7 +2296,6 @@ public function syncFreeSamplesAfterCartMutation(
 		 */
 		return true;
 	}
-    
 
     Log::info(
         'FreeSampleSync START',

@@ -14,54 +14,51 @@
                             <h1 id="gpay_applepay_paypal">PayPal</h1>
                         </div>
                         <div class="modal-space">
-                            <div class="pt-3 pb-3">
+                            <div class="checkout-addons">
+                                <div class="addon-list">
+
+                                    <!-- Protect My Order -->
+                                    <label class="addon-row{{ $checkoutInsurance > 0 ? ' active' : '' }}" aria-label="Add Protect My Order">
+                                    <span class="addon-icon" aria-hidden="true">
+                                        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                                        <path d="M11 2L3 5.5V10.5C3 15.1 6.6 19.4 11 20.5C15.4 19.4 19 15.1 19 10.5V5.5L11 2Z" stroke="#000" stroke-width="1.5"></path>
+                                        <path d="M8 11L10 13L14 9" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                                        </svg>
+                                    </span>
+                                    <span class="addon-body">
+                                        <span class="addon-title">Protect My Order</span>
+                                        <span class="addon-desc">Covers damage, loss &amp; theft</span>
+                                    </span>
+                                    <span class="addon-price" id="protection-addon-price">{{ $checkoutInsurance > 0 ? '+' . $money($checkoutInsurance) : 'Free' }}</span>
+                                    <span class="toggle-switch">
+                                        <input type="checkbox" id="protection" name="protection" {{ $checkoutInsurance > 0 ? 'checked' : '' }} >
+                                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                                    </span>
+                                    </label>
+
+                                    <!-- Request Signature -->
+                                    <label class="addon-row{{ $checkoutSignature > 0 ? ' active' : '' }}" aria-label="Add Request Signature">
+                                    <span class="addon-icon" aria-hidden="true">
+                                        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                                        <path d="M3 16C5 13 7 12 8.5 13.5C9.5 14.5 8 16 6.5 15C5 14 6.5 9 8.5 7C10 5.5 11 6.5 10.5 8.5C10 11 8 14.5 10 16C11.5 17 13.5 15.5 15 13" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                                        <path d="M16 17H19" stroke="#000" stroke-width="1.5" stroke-linecap="round"></path>
+                                        </svg>
+                                    </span>
+                                    <span class="addon-body">
+                                        <span class="addon-title">Request Signature</span>
+                                        <span class="addon-desc">Signature required on delivery</span>
+                                    </span>
+                                    <span class="addon-price" id="signature-addon-price">{{ $checkoutSignature > 0 ? '+' . $money($checkoutSignature) : 'Free' }}</span>
+                                    <span class="toggle-switch">
+                                        <input type="checkbox" id="request-signature" name="request-signature" {{ $checkoutSignature > 0 ? 'checked' : '' }}>
+                                        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                                    </span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div>
                                 <div class="row d-flex justify-content-center">
-                                    <div class="col-sm-9">
-                                        <div class="row row5 pb-2" id="divinsurance" role="region" aria-labelledby="insuranceLabel">
-                                            <div class="col-9">
-                                                <div id="insuranceLabel">Shipping Protection</div>
-                                                <div>From Damage, Loss, Theft
-                                                    @if(Session::has('shipping_insurance_charge'))
-                                                        <span>{{Price(Session::get('shipping_insurance_charge'))}}</span>
-                                                    @endif
-                                                </div>
-                                            </div>
-                                            <div class="col-3" align="right">
-                                                <label class="switch active mb-0" id="insurance">
-                                                    <input type="checkbox" id="shipinsurance" checked aria-checked="true" aria-label="Enable Shipping Insurance">
-                                                    <span class="slider round"></span>
-                                                </label>
-                                                {{--
-                                                <span class="cart-tooltip max_qttable" id="insure_info">
-                                                    <a href="javascript:void(0);" aria-label="Shipping Insurance Info"><u>i</u></a>
-                                                    <span class="tables" role="tooltip">Please note by turning Shipping Insurance OFF, you are agreeing to taking full responsibility for any loss, damages or theft. Maxaroma cannot take claim if the insurance is off, however you can submit a claim to the carrier directly. </span>
-                                                </span>
-                                                --}}
-                                                <input type="hidden" name="tempValInsuSignature" id="tempValInsuSignature" value="Yes" />
-                                            </div>
-                                        </div>
-                                        <div class="row row5 pb-2" id="divshipcerty" data-amt="{{$InsureAmount}}" role="region" aria-labelledby="signatureLabel">
-                                            <div class="col-9">
-                                                @if($InsureAmount <= 199)
-                                                    <div id="signatureLabel">Request Signature ($2.5)</div>
-                                                @else
-                                                    <div id="signatureLabel">Request Signature (It's Free)</div>
-                                                @endif
-                                            </div>
-                                            <div class="col-3" align="right">
-                                                <label class="mb-0 switch @if($InsureAmount >= 200 || Session::has('ShoppingCart.ShippingSignature')) active @endif" id="insurance">
-                                                    <input type="checkbox" value="Yes" data-value="@if($InsureAmount >= 200)0 @else 2.5 @endif" @if($InsureAmount>= 200 || Session::has('ShoppingCart.ShippingSignature')) checked @endif name="shipping_signature" id="shipping_signature" aria-checked="@if($InsureAmount>= 200 || Session::has('ShoppingCart.ShippingSignature'))true @else false @endif" aria-label="Request Signature">
-                                                    <span class="slider round"></span>
-                                                </label>
-                                                {{--
-                                                <span class="cart-tooltip max_qttable" id="shipcerty_info" @if($InsureAmount < 200) style="visibility:hidden;" @endif>
-                                                    <a href="javascript:void(0);" aria-label="Signature Info"><u>i</u></a>
-                                                    <span class="tables" role="tooltip">For this order, we automatically add signature requirements free of charge. Opting out of signature requests will void any additional reassurances should your package show as delivered according to tracking.</span>
-                                                </span>
-                                                --}}
-                                                <input type="hidden" name="tempValInsu" id="tempValInsu" value="Yes" />
-                                            </div>
-                                        </div>
+                                    <div class="col-sm-12 col-md-12 col-lg-12">
                                         <div class="text-center pt-2">
                                             <div class="col-12 mt-3 text-center" id="payment-request-button" role="region" aria-label="GPay/ApplePay Button"></div>
                                             <div class="col-12 mt-3 text-center" id="paypal-button-container-checkout"  role="region" aria-label="Paypal Button"></div>

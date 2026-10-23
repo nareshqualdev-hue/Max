@@ -5,7 +5,6 @@ namespace App\Services\Checkout;
 use App\Services\Discount\DiscountService;
 use Illuminate\Support\Facades\Session;
 
-
 class CheckoutTotalsService
 {
     public function __construct(
@@ -287,6 +286,7 @@ class CheckoutTotalsService
          * Shipping Insurance
          * ---------------------------------------------------------
          */
+
         if (
             Session::has(
                 'shipping_insurance_charge'

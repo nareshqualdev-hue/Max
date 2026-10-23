@@ -90,6 +90,17 @@ class CheckoutDiscountController extends Controller
                     $code,
                     $customerId
                 );
+              
+              
+            $isYotpoReward =
+			strtoupper(
+				trim(
+					(string) Session::get(
+						'ShoppingCart.YotpoRewardCode',
+						''
+					)
+				)
+			) === strtoupper(trim($code));    
 
             if (
                 isset($result['error'])
@@ -200,6 +211,7 @@ class CheckoutDiscountController extends Controller
             []
         ),
     ],
+    'is_yotpo_reward' => $isYotpoReward,
 ]);
         } catch (\Throwable $e) {
             addLog(

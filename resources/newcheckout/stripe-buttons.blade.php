@@ -1,3 +1,4 @@
+{{--
 <script>
 let stripe = null;
 let paymentRequest = null;
@@ -454,7 +455,7 @@ async function InitializeStripePaymentRequest() {
      * Button click
      * -----------------------------------------------------
      */
-    /*
+
     prButton.on(
         'click',
         async function () {
@@ -496,7 +497,7 @@ async function InitializeStripePaymentRequest() {
             }
         }
     );
-    */
+
     /**
      * -----------------------------------------------------
      * Shipping address change
@@ -632,7 +633,7 @@ async function InitializeStripePaymentRequest() {
                         AppleGPay,
                         JSON.stringify(ev)
                     );
-                alert(clientSecret);
+
                 if (!clientSecret) {
 
                     StripePaymentFailed(ev);
@@ -757,7 +758,7 @@ $(document).ready(function () {
 
 });
 </script>
-{{--
+--}}
 <script>
     var AppleGPay = '';
     function GetShippingOptions(state = '', zip = '', country = '', city = '') {
@@ -767,11 +768,11 @@ $(document).ready(function () {
         var shippingmodes = [];
         $.ajax({
             type: 'POST',
-            url: site_url + 'shipping',
+            url: site_url + 'get-shipping-methods',
             headers: {
                 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
             },
-            async: false,
+            //async: false,
             data: {
                 'OnlyHead': '0',
                 'action': 'shippinginfo',
@@ -805,7 +806,7 @@ $(document).ready(function () {
             headers: {
                 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
             },
-            async: false,
+            //async: false,
             data: {
                 'action': 'getcart',
             },
@@ -837,11 +838,11 @@ $(document).ready(function () {
     function SetStripeShippingMethod(ShipMethodID, state = '', zip = '', country = '', city = '') {
         $.ajax({
             type: 'POST',
-            url: site_url + 'setshipmethod',
+            url: site_url + 'set-shipping-method',
             headers: {
                 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
             },
-            async: false,
+            //async: false,
             datatype: 'JSON',
             data: {
                 action: 'stripecart',
@@ -863,7 +864,7 @@ $(document).ready(function () {
             headers: {
                 'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
             },
-            async: false,
+            //async: false,
             datatype: 'JSON',
             data: {
                 action: 'clientsecret',
@@ -895,7 +896,7 @@ $(document).ready(function () {
         return clientSecret;
     }
     //pk_test_xWTUgWDaaFSIfHkKClwzQrhS00eb9PQSLX
-
+    /*
     $(document).ready(function() {
         var stripe = Stripe('{{env("STRIPE_KEY")}}', {
             apiVersion: "2019-05-16",
@@ -911,21 +912,20 @@ $(document).ready(function () {
             requestPayerName: true,
             requestPayerEmail: true,
             requestPayerPhone: true,
-            /*shippingOptions: [
-            	// The first shipping option in this list appears as the default
-            	// option in the browser payment interface.
-            	{
-            	  id: 'free-shipping',
-            	  label: 'Free shipping',
-            	  detail: 'Arrives in 5 to 7 days',
-            	  amount: 0,
-            	},
-              ],*/
         });
         var elements = stripe.elements();
 
         var prButton = elements.create('paymentRequestButton', {
             paymentRequest: paymentRequest,
+            buttonType: {
+                applePay: 'buy',
+                googlePay: 'buy'
+            },
+            paymentMethodOrder: [
+                'applePay',
+                'googlePay',
+                'link'
+            ],
             style: {
                 paymentRequestButton: {
                     type: 'default', // One of 'default', 'book', 'buy', or 'donate'
@@ -976,7 +976,7 @@ $(document).ready(function () {
         });
 
     });
-
+    */
     $(document).ready(function() {
         var stripe = Stripe('{{env("STRIPE_KEY")}}', {
             //var stripe = Stripe('pk_test_Ht4UumNApNKNPlO0eZVA4rhM00j4ohrYZO', {
@@ -1036,15 +1036,22 @@ $(document).ready(function () {
         paymentRequest.canMakePayment().then(function(result) {
             if (result) {
                 // $("#GpayBtn").show();
+                console.log(result);
                 if (result.applePay) {
                     $("#GpayBtn").show();
                     $("#GpayBtn").html("Apple Pay");
                     AppleGPay = 'A';
-                }
-                if (result.googlePay) {
+                    $("#payment-request-button-checkout").addClass("express-btn-apple");
+                    $("#payment-request-button-checkout").html('<img src="/images/checkout-new/apple-pay.svg" alt="">');
+                }else if(result.googlePay){
                     $("#GpayBtn").show();
                     $("#GpayBtn").html("Google Pay");
                     AppleGPay = 'G';
+                    $("#payment-request-button-checkout").addClass("express-btn-google");
+                    $("#payment-request-button-checkout").html('<img src="/images/checkout-new/google-pay.svg" alt="">');
+                }else if(result.link){
+                    $("#payment-request-button-checkout").addClass("express-btn-link");
+                    $("#payment-request-button-checkout").text("Link");
                 }
                 prButton.mount('#payment-request-button');
             } else {
@@ -1278,6 +1285,12 @@ $(document).ready(function () {
                 });
             }
         });
+
+        $(document).on('click', '.express-btn-link, .express-btn-google, .express-btn-apple', function() {
+            $("#ShippingSignInsu").modal('show');
+            $("#gpay_applepay_paypal").text("GooglePay/ApplePay");
+            $("#paypal-button-container-checkout").hide();
+            $("#payment-request-button").show();
+        });
     });
 </script>
---}}

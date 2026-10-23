@@ -518,6 +518,72 @@ class TaxService
             };
 
         /*
+         * Select the highest applicable tax rate among all areas
+         * matching the current priority. Keep the existing priority
+         * order; only resolve overlaps within that priority.
+         */
+        $getHighestTaxArea = function ($areas) use (
+            $subTotal,
+            $isFromPayPalProductPage,
+            $shippingChargePayPalProductPage
+        ) {
+            $highestArea = null;
+            $highestRate = null;
+
+            foreach ($areas as $candidateArea) {
+                $areaSubTotal = (float) $subTotal;
+
+                $shippingChargeTotal = (
+                    Session::has('ShoppingCart.Shipping.ShippingCharge')
+                    && Session::get('ShoppingCart.Shipping.ShippingCharge') > 0
+                ) ? (float) Session::get('ShoppingCart.Shipping.ShippingCharge') : 0;
+
+                if (
+                    $isFromPayPalProductPage === 'Yes'
+                    && isset($shippingChargePayPalProductPage)
+                    && $shippingChargePayPalProductPage != 0
+                    && $shippingChargePayPalProductPage != '0.00'
+                ) {
+                    $shippingChargeTotal = (float) $shippingChargePayPalProductPage;
+                }
+
+                if (($candidateArea->ShippingTaxable ?? 'No') === 'Yes') {
+                    $areaSubTotal += $shippingChargeTotal;
+                }
+                if (($candidateArea->insurance ?? 'No') === 'Yes') {
+                    $areaSubTotal += (float) $this->getCharge('ShippingInsurance');
+                }
+                if (($candidateArea->signature ?? 'No') === 'Yes') {
+                    $areaSubTotal += (float) $this->getCharge('ShippingSignature');
+                }
+
+                $areaSubTotal = max(0, (float) NumberFormat($areaSubTotal));
+
+                $rate = TaxRates::where('tax_areas_id', $candidateArea->tax_areas_id)
+                    ->where('amount_from', '<=', $areaSubTotal)
+                    ->orderBy('charge_amount', 'desc')
+                    ->first();
+
+                if (!$rate) {
+                    continue;
+                }
+
+                if ($highestRate === null || (float) $rate->charge_amount > $highestRate) {
+                    $highestRate = (float) $rate->charge_amount;
+                    $highestArea = $candidateArea;
+                }
+            }
+
+            Log::info('Highest applicable tax area selected', [
+                'area_id' => $highestArea->tax_areas_id ?? null,
+                'charge_amount' => $highestRate,
+                'matching_area_count' => is_countable($areas) ? count($areas) : null,
+            ]);
+
+            return $highestArea;
+        };
+
+        /*
          * ---------------------------------------------------------
          * PRIORITY 1:
          *
@@ -565,7 +631,9 @@ class TaxService
                 ->orderByRaw(
                     '(zip_to - zip_from) ASC'
                 )
-                ->first();
+                ->get();
+
+            $area = $getHighestTaxArea($area);
 
             if (
                 $area
@@ -611,7 +679,9 @@ class TaxService
             ->orderByRaw(
                 '(zip_to - zip_from) ASC'
             )
-            ->first();
+            ->get();
+
+        $area = $getHighestTaxArea($area);
 
         if (
             $area
@@ -656,7 +726,9 @@ class TaxService
             ->orderByRaw(
                 '(zip_to - zip_from) ASC'
             )
-            ->first();
+            ->get();
+
+        $area = $getHighestTaxArea($area);
 
         if (
             $area
@@ -697,7 +769,9 @@ class TaxService
             ->orderByRaw(
                 '(zip_to - zip_from) ASC'
             )
-            ->first();
+            ->get();
+
+        $area = $getHighestTaxArea($area);
 
         if (
             $area
@@ -743,7 +817,9 @@ class TaxService
                 ->orderByRaw(
                     '(zip_to - zip_from) ASC'
                 )
-                ->first();
+                ->get();
+
+            $area = $getHighestTaxArea($area);
 
             if (
                 $area
@@ -780,7 +856,9 @@ class TaxService
             ->orderByRaw(
                 '(zip_to - zip_from) ASC'
             )
-            ->first();
+            ->get();
+
+        $area = $getHighestTaxArea($area);
 
         if (
             $area

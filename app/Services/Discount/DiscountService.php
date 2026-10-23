@@ -42,6 +42,18 @@ class DiscountService
 
         /*
          * ---------------------------------------------------------
+         * Credit Limit Discount
+         * ---------------------------------------------------------
+         */
+        $this->addDiscount(
+            $discounts,
+            'CreditLimitDiscount',
+            'Credit Limit Discount',
+            'ShoppingCart.credit_limit_discount'
+        );
+
+        /*
+         * ---------------------------------------------------------
          * Yotpo Reward Discount
          * ---------------------------------------------------------
          */

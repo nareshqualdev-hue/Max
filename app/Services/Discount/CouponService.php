@@ -438,20 +438,29 @@ public function apply(
         case '0':
 
             $result =
-                $this->applyOrderAmountCoupon(
-                    $coupon,
-                    $subTotal,
-                    $grandTotal,
-                    $grandTotalSale,
-                    $giftCertificateTotal,
-                    $totalDealPrice,
-                    $excludeSkuList
-                );
+				$this->applyOrderAmountCoupon(
+					$coupon,
+					$subTotal,
+					$grandTotal,
+					$grandTotalSale,
+					$giftCertificateTotal,
+					$totalDealPrice,
+					$excludeSkuList
+				);
 
-            $couponDiscount =
-                $result['discount'];
+			if (
+				isset($result['valid']) &&
+				$result['valid'] === false
+			) {
+				return $this->invalidCartCoupon(
+					$log
+				);
+			}
 
-            break;
+			$couponDiscount =
+				$result['discount'];
+
+			break;
 
         /*
          * -----------------------------------------------------
@@ -465,6 +474,10 @@ public function apply(
                     $coupon,
                     $excludeSkuList
                 );
+
+            if (empty($result['matched'])) {
+                return $this->invalidCartCoupon($log);
+            }
 
             $couponDiscount =
                 $result['discount'];
@@ -580,6 +593,10 @@ public function apply(
                     $excludeSkuList
                 );
 
+            if (empty($result['matched'])) {
+                return $this->invalidCartCoupon($log);
+            }
+
             $couponDiscount =
                 $result['discount'];
 
@@ -678,13 +695,14 @@ public function apply(
      * A Free-Gift-only coupon can legitimately have
      * zero monetary discount.
      */
-    if (
-        $hasCouponFreeGift
-    ) {
-        $this->insertFreeGift(
-            $couponFreeGiftSku
-        );
-    }
+		if (
+		$hasCouponFreeGift
+		&& $couponDiscount >= 0
+	) {
+		$this->insertFreeGift(
+			$couponFreeGiftSku
+		);
+	}
 
     /*
      * ---------------------------------------------------------
@@ -775,7 +793,10 @@ public function apply(
     /**
      * Order amount coupon.
      */
-  protected function applyOrderAmountCoupon(
+/**
+ * Order amount coupon.
+ */
+protected function applyOrderAmountCoupon(
     $coupon,
     float $subTotal,
     float $grandTotal,
@@ -839,12 +860,14 @@ public function apply(
     ) {
 
         foreach ($cart as $item) {
-			Log::info('Coupon Excluded Item Debug', [
-					'sku' => $item['SKU'] ?? null,
-					'price' => $item['Price'] ?? null,
-					'qty' => $item['Qty'] ?? null,
-					'totPrice' => $item['TotPrice'] ?? null,
-				]);
+
+            Log::info('Coupon Excluded Item Debug', [
+                'sku' => $item['SKU'] ?? null,
+                'price' => $item['Price'] ?? null,
+                'qty' => $item['Qty'] ?? null,
+                'totPrice' => $item['TotPrice'] ?? null,
+            ]);
+
             $sku =
                 (string) (
                     $item['SKU'] ?? ''
@@ -922,10 +945,10 @@ public function apply(
             - (float) $totalDealPrice
             - (float) $totalExcludePrice
             - (
-					(string) $coupon->count_gc_purchase === '0'
-						? (float) $giftCertificateTotal
-						: 0.0
-			  )
+                (string) $coupon->count_gc_purchase === '0'
+                    ? (float) $giftCertificateTotal
+                    : 0.0
+            )
             + $shippingCharge
             + $taxValue;
 
@@ -939,13 +962,13 @@ public function apply(
             - (float) $totalDealPrice
             - (float) $totalExcludePrice
             - (
-					(string) $coupon->count_gc_purchase === '0'
-						? (float) $giftCertificateTotal
-						: 0.0
-			  );
+                (string) $coupon->count_gc_purchase === '0'
+                    ? (float) $giftCertificateTotal
+                    : 0.0
+            );
 
-    } 
-    else 
+    }
+    else
     {
 
         /*
@@ -953,11 +976,11 @@ public function apply(
          */
         $tempSubTotal =
             (float) $subTotal
-            -  (
-					(string) $coupon->count_gc_purchase === '0'
-						? (float) $giftCertificateTotal
-						: 0.0
-				)
+            - (
+                (string) $coupon->count_gc_purchase === '0'
+                    ? (float) $giftCertificateTotal
+                    : 0.0
+            )
             - (float) $totalDealPrice
             - (float) $totalExcludePrice;
 
@@ -965,55 +988,52 @@ public function apply(
         $tempSaleTotal =
             (float) $subTotal
             - (
-					(string) $coupon->count_gc_purchase === '0'
-						? (float) $giftCertificateTotal
-						: 0.0
-				)
+                (string) $coupon->count_gc_purchase === '0'
+                    ? (float) $giftCertificateTotal
+                    : 0.0
+            )
             - (float) $totalDealPrice
             - (float) $totalExcludePrice;
     }
-	
-		Log::info('Coupon Order Amount Debug', [
-		'coupon_code' => $coupon->coupon_number ?? null,
-		'coupon_discount' => $coupon->discount ?? null,
-		'count_ship_tax' => $coupon->count_ship_tax ?? null,
 
-		'subTotal' => $subTotal,
-		'totalExcludePrice' => $totalExcludePrice,
-		'totalDealPrice' => $totalDealPrice,
-		'giftCertificateTotal' => $giftCertificateTotal,
 
-		'tempSubTotal' => $tempSubTotal,
-		'tempSaleTotal' => $tempSaleTotal,
+    Log::info('Coupon Order Amount Debug', [
+        'coupon_code' => $coupon->coupon_number ?? null,
+        'coupon_discount' => $coupon->discount ?? null,
+        'count_ship_tax' => $coupon->count_ship_tax ?? null,
 
-		'shippingCharge' => $shippingCharge ?? 0,
-		'taxValue' => $taxValue ?? 0,
-	]);
-	
-	
+        'subTotal' => $subTotal,
+        'totalExcludePrice' => $totalExcludePrice,
+        'totalDealPrice' => $totalDealPrice,
+        'giftCertificateTotal' => $giftCertificateTotal,
 
-    /*
-     * ---------------------------------------------------------
-     * Free-gift-only coupon
-     * ---------------------------------------------------------
-     */
-    if (
-        $coupon->discount <= 0
-        &&
-        !empty(
-            $coupon->freegift_product_sku
-        )
-    ) {
-        return [
-            'discount' => 0,
-        ];
-    }
+        'tempSubTotal' => $tempSubTotal,
+        'tempSaleTotal' => $tempSaleTotal,
+
+        'shippingCharge' => $shippingCharge ?? 0,
+        'taxValue' => $taxValue ?? 0,
+    ]);
 
 
     /*
      * ---------------------------------------------------------
      * Minimum/order amount validation
      * ---------------------------------------------------------
+     *
+     * IMPORTANT:
+     *
+     * This validation MUST happen before the
+     * Free-Gift-only coupon check.
+     *
+     * Example:
+     *
+     * Order = $25
+     * Minimum = $40
+     * Discount = $0
+     * Free Gift = Yes
+     *
+     * Result:
+     * Coupon is invalid and Free Gift is NOT added.
      */
     if (
         $tempSaleTotal <
@@ -1025,6 +1045,33 @@ public function apply(
 
         return [
             'discount' => 0,
+            'valid' => false,
+        ];
+    }
+
+
+    /*
+     * ---------------------------------------------------------
+     * Free-gift-only coupon
+     * ---------------------------------------------------------
+     *
+     * IMPORTANT:
+     *
+     * Discount = 0 is valid ONLY after the minimum/order
+     * amount validation above has passed.
+     *
+     * This preserves Free-Gift-only coupon functionality.
+     */
+    if (
+        (float) $coupon->discount <= 0
+        &&
+        !empty(
+            $coupon->freegift_product_sku
+        )
+    ) {
+        return [
+            'discount' => 0,
+            'valid' => true,
         ];
     }
 
@@ -1054,20 +1101,21 @@ public function apply(
             (float)
             $coupon->discount;
     }
-	
-	
-	Log::info('Coupon FINAL Calculation Debug', [
-    'coupon_code' => $coupon->coupon_number ?? null,
-    'count_gc_purchase' => $coupon->count_gc_purchase ?? null,
-    'subTotal' => $subTotal,
-    'totalExcludePrice' => $totalExcludePrice,
-    'giftCertificateTotal' => $giftCertificateTotal,
-    'totalDealPrice' => $totalDealPrice,
-    'tempSaleTotal' => $tempSaleTotal,
-    'coupon_type' => $coupon->type ?? null,
-    'coupon_rate' => $coupon->discount ?? null,
-    'calculated_discount' => $discount,
-]);	
+
+
+    Log::info('Coupon FINAL Calculation Debug', [
+        'coupon_code' => $coupon->coupon_number ?? null,
+        'count_gc_purchase' => $coupon->count_gc_purchase ?? null,
+        'subTotal' => $subTotal,
+        'totalExcludePrice' => $totalExcludePrice,
+        'giftCertificateTotal' => $giftCertificateTotal,
+        'totalDealPrice' => $totalDealPrice,
+        'tempSaleTotal' => $tempSaleTotal,
+        'coupon_type' => $coupon->type ?? null,
+        'coupon_rate' => $coupon->discount ?? null,
+        'calculated_discount' => $discount,
+    ]);
+
 
     /*
      * ---------------------------------------------------------
@@ -1085,9 +1133,10 @@ public function apply(
     return [
         'discount' =>
             $discount,
+
+        'valid' => true,
     ];
-}
-  
+} 
    /**
      * Product SKU coupon.
      */
@@ -2496,6 +2545,7 @@ protected function applyFreeShippingCoupon(
         return [
             'discount' => 0,
             'free_gift_sku' => null,
+            'matched' => false,
         ];
     }
 
@@ -2519,6 +2569,7 @@ protected function applyFreeShippingCoupon(
         return [
             'discount' => 0,
             'free_gift_sku' => null,
+            'matched' => false,
         ];
     }
 
@@ -2630,6 +2681,7 @@ protected function applyFreeShippingCoupon(
         return [
             'discount' => 0,
             'free_gift_sku' => null,
+            'matched' => false,
         ];
     }
 
@@ -2647,6 +2699,7 @@ protected function applyFreeShippingCoupon(
         return [
             'discount' => 0,
             'free_gift_sku' => null,
+            'matched' => false,
         ];
     }
 
@@ -2655,6 +2708,8 @@ protected function applyFreeShippingCoupon(
             NumberFormat(
                 $couponDiscount
             ),
+
+        'matched' => true,
 
         'free_gift_sku' =>
             !empty(
@@ -3287,6 +3342,30 @@ Session::put('ShoppingCart.YotpoRewardCode', '');
 Session::put('ShoppingCart.YotpoRewardCouponID', '');
 Session::put('ShoppingCart.YotpoReward_Detail', []);
 }
+    /**
+     * Remove only coupon-provided Free Gift items after the coupon
+     * becomes invalid for the current cart. Normal rule gifts and
+     * Free Samples are deliberately preserved.
+     */
+    protected function removeCouponFreeGiftFromCart(): void
+    {
+        $cart = Session::get('ShoppingCart.Cart', []);
+
+        if (!is_array($cart) || $cart === []) {
+            Session::put('ShoppingCart.PromoCoupon.HasFreeGift', 'No');
+            return;
+        }
+
+        foreach ($cart as $index => $item) {
+            if (($item['FreeGiftCoupon'] ?? 'No') === 'Yes') {
+                unset($cart[$index]);
+            }
+        }
+
+        Session::put('ShoppingCart.Cart', array_values($cart));
+        Session::put('ShoppingCart.PromoCoupon.HasFreeGift', 'No');
+    }
+
    protected function clearCouponSessions(): void
     {
         Session::forget(
@@ -3313,6 +3392,7 @@ Session::put('ShoppingCart.YotpoReward_Detail', []);
         string $message,
         array $log = []
     ): array {
+        $this->removeCouponFreeGiftFromCart();
         $this->clearCouponSessions();
 
         $log['message'] =
@@ -3346,6 +3426,7 @@ Session::put('ShoppingCart.YotpoReward_Detail', []);
         $message =
             'Coupon code does not apply to the item you have in your bag.';
 
+        $this->removeCouponFreeGiftFromCart();
         $this->clearCouponSessions();
 
         $log['message'] =

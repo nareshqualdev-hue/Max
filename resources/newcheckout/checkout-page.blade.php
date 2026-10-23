@@ -52,9 +52,10 @@ $checkoutGiftWrap = $chargeValue('GiftWrappingCharge');
 $checkoutNetTotal = (float) ($totals['NetTotal'] ?? 0);
 $NetTotal = (float) ($totals['NetTotal'] ?? 0);
 $CartAttr = $checkoutState['cartAttributes'];
+$CreditLimitDetails = $checkoutState['creditLimit'];
 $yotpoRewardCode = (string) Session::get(
-    'ShoppingCart.YotpoRewardCode',
-    ''
+'ShoppingCart.YotpoRewardCode',
+''
 );
 $CartAttr["IsPaypalExpressCheckout"] = $checkoutState['paymentAvailability']['IsPaypalExpressCheckout']??'No';
 $CartAttr["Amazon_pay_Checkout"] = "Yes";
@@ -66,8 +67,6 @@ $promoCouponCode = (string) Session::get(
 'ShoppingCart.PromoCoupon.CouponCode',
 ''
 );
-
-
 
 $cart = Session::get('ShoppingCart.Cart', []);
 $cart = is_array($cart) ? $cart : [];
@@ -368,12 +367,47 @@ is_string($image)
       padding: 0.5rem 1rem;
     }
 
-    #error_guest_email,#error_ship_method {
+    #error_guest_email,
+    #error_ship_method {
       display: none;
     }
-    #divBillingAddr{display: none;}
+
+    #divBillingAddr {
+      display: none;
+    }
+
+    .payloader {
+      --color-1: #000;
+      --size: 1px;
+      width: calc(48 * var(--size));
+      height: calc(48 * var(--size));
+      border: calc(5 * var(--size)) solid var(--color-1);
+      border-bottom-color: transparent;
+      border-radius: 50%;
+      display: inline-block;
+      box-sizing: border-box;
+      animation: rotation 1s linear infinite;
+    }
+
+    @keyframes rotation {
+      0% {
+        transform: rotate(0deg);
+      }
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+    .clsgreen{
+      color: green;
+      font-weight: 600;
+      font-size: 13px;
+      text-align: center;
+    }
   </style>
-  <div class="checkout-page" id="checkout-app">
+  <div class="checkout-page" id="checkout-app" data-method = "{{ $method }}">
+    @if($method != 'amazonpay')
+      @include('newcheckout.google-address')
+    @endif
     @include('newcheckout.checkout-header')
     <div id="full-page-loader" class="loader-overlay loader-hidden">
       <div class="loader"></div>
@@ -386,7 +420,6 @@ is_string($image)
     </div>
 
     <main class="checkout-main" role="main" id="main-content">
-
       <!-- ── LEFT COLUMN ──────────────────────────────────────── -->
       <div class="checkout-form-col">
         @if(Session::has('PlaceOrderError'))
@@ -396,7 +429,7 @@ is_string($image)
           </div>
         </div>
         @endif
-        @if($method != 'afterpay')
+        @if($method != 'afterpay' && $method != 'amazonpay')
         <!-- ══ 1. EXPRESS CHECKOUT ══════════════════════════════ -->
         <section class="express-section" aria-labelledby="express-heading">
           <div class="express-header">
@@ -409,7 +442,10 @@ is_string($image)
             </button>
             @if($CartAttr["Amazon_pay_Checkout"] == 'Yes' && $onlyGCPurchased != '1')
             <!-- 2. Amazon Pay -->
-            <div id="AmazonPayButtonAll" role="region" aria-label="Amazon Pay Button"></div>
+             <button class="express-btn express-btn-amazon" id="btnAmazonPay" type="button" aria-label="Pay with Amazon Pay">
+              <img src="/images/checkout-new/amazon-pay.svg" alt="">
+            </button>
+            <div id="AmazonPayButtonAll" role="region" aria-label="Amazon Pay Button" style="display: none;"></div>
             @endif
             {{--
             <!-- 3. Link (no brand SVG supplied — accessible wordmark) -->
@@ -418,12 +454,13 @@ is_string($image)
             </button>
             --}}
             <div id="shoptotal" style="display:none;" aria-hidden="true">
-                @if($NetTotal > 0 && isset($NetTotal))
-                    {{$NetTotal}}
-                @endif
+              @if($NetTotal > 0 && isset($NetTotal))
+              {{$NetTotal}}
+              @endif
             </div>
-            <div class="gpayapplepaybtn" id="payment-request-button-checkout" role="region" aria-label="GPay and ApplePay Button">
-                <div class="cover-spin" aria-hidden="true"></div>
+
+            <div class="express-btn" id="payment-request-button-checkout" role="region" aria-label="GPay and ApplePay Button">
+              <span class="payloader"></span>
             </div>
             <a href="javascript:void(0);" class="edit-btn btn btn-primary insuranceSignature" id="GpayBtnn" style="display:none;" role="button" aria-label="Pay with Gpay or ApplePay">Gpay/ApplePay</a>
 
@@ -458,7 +495,7 @@ is_string($image)
           </div>
         </section>
         @endif
-        @if($method != 'afterpay')
+        @if($method != 'afterpay' && $method != 'amazonpay')
         <!-- ══ 2. CONTACT INFORMATION ════════════════════════════ -->
         <section class="checkout-section" aria-labelledby="contact-heading" id="section-contact">
           <div class="checkout-section-head">
@@ -484,1075 +521,972 @@ is_string($image)
                  Old checkout behavior:
                  Guest / Sign In UI is completely hidden after login.
             ====================================================== --}}
-            <div
-              id="contact-logged-in"
-              style="display:flex; flex-direction:column; gap: var(--space-4);">
+            <div id="contact-logged-in" style="display:flex; flex-direction:column; gap: var(--space-4);">
               <div class="fl-group">
-                <input
-                  class="fl-input"
-                  type="email"
-                  id="email"
-                  name="email"
-                  value="{{ Session::get('sess_useremail')??'' }}"
-                  placeholder="Email address"
-                  autocomplete="email"
-                  readonly
-                  aria-required="true">
-                <label class="fl-label" for="email">
-                  Email address
-                </label>
+                <div class="input-inner">
+                  <input
+                    class="fl-input"
+                    type="email"
+                    id="email"
+                    name="email"
+                    value="{{ Session::get('sess_useremail')??'' }}"
+                    placeholder="Email address"
+                    autocomplete="email"
+                    readonly
+                    aria-required="true">
+                  <label class="fl-label" for="email">
+                    Email address
+                  </label>
+                </div>
               </div>
-              {{--
-            <div class="fl-group">
-              <div class="relative">
-                <input
-                  class="fl-input"
-                  type="tel"
-                  id="phone"
-                  name="phone"
-                  value="{{ Session::get('sess_phone')??'' }}"
-              placeholder="Phone number"
-              autocomplete="tel"
-              inputmode="tel"
-              aria-describedby="phone-hint">
-              <label class="fl-label" for="phone">
-                Phone number (optional)
-              </label>
+            </div>
+            @else
+            <!-- Guest / Sign In toggle -->
+            <div class="auth-options">
+              <div class="auth-toggle" role="tablist" aria-label="Checkout as guest or sign in">
+                <button
+                  class="auth-tab active"
+                  role="tab"
+                  aria-selected="true"
+                  id="tab-guest"
+                  aria-controls="panel-guest"
+                  onclick="switchAuthTab('guest')">
+                  Continue as Guest
+                </button>
+
+                <button
+                  class="auth-tab"
+                  role="tab"
+                  aria-selected="false"
+                  id="tab-signin"
+                  aria-controls="panel-signin"
+                  onclick="switchAuthTab('signin')">
+                  Sign In
+                </button>
+              </div>
             </div>
 
-            <span
-              class="fl-error-msg"
-              id="phone-hint"
-              style="display:flex; color: var(--color-text-tertiary);">
-              For delivery updates via text
-            </span>
-          </div>
-          --}}
-      </div>
+            <!-- Guest Panel -->
+            <div role="tabpanel" id="panel-guest" aria-labelledby="tab-guest">
+              <div style="display:flex; flex-direction:column; gap: var(--space-4);">
+                <div id="error_guest_email" class="alert alert-danger text-center" role="alert" aria-live="polite"></div>
+                <form id="checkout-guest-form" method="POST" action="">
+                  @csrf
+                  <div class="fl-group pb-3">
+                    <div class="input-inner">
+                      <input
+                        class="fl-input"
+                        type="email"
+                        id="email"
+                        name="email"
+                        placeholder="Email address"
+                        autocomplete="email"
+                        inputmode="email"
+                        required
+                        aria-required="true"
+                        aria-describedby="email-error">
 
-      @else
+                      <label class="fl-label" for="email">
+                        Email address
+                      </label>
 
-      <!-- Guest / Sign In toggle -->
-      <div class="auth-options">
-        <div class="auth-toggle" role="tablist" aria-label="Checkout as guest or sign in">
-          <button
-            class="auth-tab active"
-            role="tab"
-            aria-selected="true"
-            id="tab-guest"
-            aria-controls="panel-guest"
-            onclick="switchAuthTab('guest')">
-            Continue as Guest
-          </button>
+                      <svg
+                        class="fl-check-icon"
+                        viewBox="0 0 18 18"
+                        fill="none"
+                        aria-hidden="true">
+                        <path
+                          d="M3 9L7 13L15 5"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"></path>
+                      </svg>
+                    </div>
 
-          <button
-            class="auth-tab"
-            role="tab"
-            aria-selected="false"
-            id="tab-signin"
-            aria-controls="panel-signin"
-            onclick="switchAuthTab('signin')">
-            Sign In
-          </button>
-        </div>
-      </div>
+                    <span
+                      class="fl-error-msg"
+                      id="email-error"
+                      role="alert">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 12 12"
+                        fill="none"
+                        aria-hidden="true">
+                        <circle
+                          cx="6"
+                          cy="6"
+                          r="5.5"
+                          stroke="currentColor"></circle>
+                        <path
+                          d="M6 3.5V6.5"
+                          stroke="currentColor"
+                          stroke-linecap="round"></path>
+                        <circle
+                          cx="6"
+                          cy="8.5"
+                          r="0.5"
+                          fill="currentColor"></circle>
+                      </svg>
+                      Please enter a valid email address
+                    </span>
+                  </div>
+                  {{--
+                      <div class="fl-group pb-3">
+                        <div class="input-inner">
+                          <input
+                            class="fl-input"
+                            type="tel"
+                            id="phone"
+                            name="phone"
+                            placeholder="Phone number"
+                            autocomplete="tel"
+                            inputmode="tel"
+                            aria-describedby="phone-hint">
 
-      <!-- Guest Panel -->
-      <div role="tabpanel" id="panel-guest" aria-labelledby="tab-guest">
-        <div style="display:flex; flex-direction:column; gap: var(--space-4);">
-          <div id="error_guest_email" class="alert alert-danger text-center" role="alert" aria-live="polite"></div>
-          <form id="checkout-guest-form" method="POST" action="">
-            @csrf
-            <div class="fl-group pb-3">
-              <input
-                class="fl-input"
-                type="email"
-                id="email"
-                name="email"
-                placeholder="Email address"
-                autocomplete="email"
-                inputmode="email"
-                required
-                aria-required="true"
-                aria-describedby="email-error">
+                          <label class="fl-label" for="phone">
+                            Phone number (optional)
+                          </label>
+                        </div>
 
-              <label class="fl-label" for="email">
-                Email address
-              </label>
-
-              <svg
-                class="fl-check-icon"
-                viewBox="0 0 18 18"
-                fill="none"
-                aria-hidden="true">
-                <path
-                  d="M3 9L7 13L15 5"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"></path>
-              </svg>
-
-              <span
-                class="fl-error-msg"
-                id="email-error"
-                role="alert">
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  aria-hidden="true">
-                  <circle
-                    cx="6"
-                    cy="6"
-                    r="5.5"
-                    stroke="currentColor"></circle>
-                  <path
-                    d="M6 3.5V6.5"
-                    stroke="currentColor"
-                    stroke-linecap="round"></path>
-                  <circle
-                    cx="6"
-                    cy="8.5"
-                    r="0.5"
-                    fill="currentColor"></circle>
-                </svg>
-                Please enter a valid email address
-              </span>
-            </div>
-            {{--
-                <div class="fl-group pb-3">
-                  <div class="relative">
+                        <span
+                          class="fl-error-msg"
+                          id="phone-hint"
+                          style="display:flex; color: var(--color-text-tertiary);">
+                          For delivery updates via text
+                        </span>
+                      </div>
+                      --}}
+                  <label
+                    class="field-check"
+                    style="margin-top: -8px;">
                     <input
-                      class="fl-input"
-                      type="tel"
-                      id="phone"
-                      name="phone"
-                      placeholder="Phone number"
-                      autocomplete="tel"
-                      inputmode="tel"
-                      aria-describedby="phone-hint">
+                      type="checkbox"
+                      id="guest_newsletter"
+                      name="guest_newsletter"
+                      checked>
 
-                    <label class="fl-label" for="phone">
-                      Phone number (optional)
-                    </label>
+                    <div style="display:flex; flex-direction:column; gap:2px;">
+                      <span
+                        style="font-size: var(--font-size-sm); font-weight: var(--font-weight-medium);">
+                        Stay in the loop
+                      </span>
+
+                      <span
+                        style="font-size: var(--font-size-xs); color: var(--color-text-tertiary);">
+                        Receive exclusive deals and new arrivals from MaxAroma
+                      </span>
+                    </div>
+                  </label>
+
+                </form>
+              </div>
+            </div>
+
+            <!-- Sign In Panel (hidden by default) -->
+            <div role="tabpanel" id="panel-signin" aria-labelledby="tab-signin" hidden="">
+              <form
+                id="checkout-login-form"
+                method="POST"
+                action="{{ url('/login.html') }}">
+                @csrf
+
+                <input type="hidden" name="action" value="signin">
+                <input type="hidden" id="newsletter" name="newsletter" value="No">
+
+                <input
+                  type="hidden"
+                  name="fromcheckout"
+                  value="secure-checkout1">
+                <div style="display:flex; flex-direction:column; gap: var(--space-4);">
+                  <div class="fl-group">
+                    <div class="input-inner">
+                      <input class="fl-input" type="email" name="email"
+                        id="checkout-login-email" placeholder="Email address" autocomplete="email" inputmode="email">
+                      <label class="fl-label" for="signin-email">Email address</label>
+                    </div>
+                  </div>
+                  <div class="fl-group">
+                    <div class="input-inner">
+                      <input class="fl-input" type="password" name="password"
+                        id="checkout-login-password" placeholder="Password" autocomplete="current-password">
+                      <label class="fl-label" for="signin-password">Password</label>
+                    </div>
+                    <label class="checkout-login-message"></label>
                   </div>
 
-                  <span
-                    class="fl-error-msg"
-                    id="phone-hint"
-                    style="display:flex; color: var(--color-text-tertiary);">
-                    For delivery updates via text
-                  </span>
+                  <label
+                    class="field-check"
+                    style="margin-top: -8px;">
+                    <input
+                      type="checkbox"
+                      id="customer_newsletter"
+                      name="customer_newsletter"
+                      checked>
+
+                    <div style="display:flex; flex-direction:column; gap:2px;">
+                      <span
+                        style="font-size: var(--font-size-sm); font-weight: var(--font-weight-medium);">
+                        Stay in the loop
+                      </span>
+
+                      <span
+                        style="font-size: var(--font-size-xs); color: var(--color-text-tertiary);">
+                        Receive exclusive deals and new arrivals from MaxAroma
+                      </span>
+                    </div>
+                  </label>
+                  <div style="display:flex; justify-content:flex-end;">
+                    <a href="{{ url('/forgot-password.html') }}" target="_blank">
+                      <button type="button" style="font-size:var(--font-size-sm); color:var(--color-text-secondary); text-decoration:underline; background:none; border:none; cursor:pointer;">Forgot password?</button>
+                    </a>
+                  </div>
+                  <button type="submit" class="btn btn-primary btn-full">Sign In</button>
                 </div>
-                --}}
-            <label
-              class="field-check"
-              style="margin-top: -8px;">
-              <input
-                type="checkbox"
-                id="guest_newsletter"
-                name="guest_newsletter"
-                checked>
-
-              <div style="display:flex; flex-direction:column; gap:2px;">
-                <span
-                  style="font-size: var(--font-size-sm); font-weight: var(--font-weight-medium);">
-                  Stay in the loop
-                </span>
-
-                <span
-                  style="font-size: var(--font-size-xs); color: var(--color-text-tertiary);">
-                  Receive exclusive deals and new arrivals from MaxAroma
-                </span>
-              </div>
-            </label>
-
-          </form>
-        </div>
-      </div>
-
-      <!-- Sign In Panel (hidden by default) -->
-      <div role="tabpanel" id="panel-signin" aria-labelledby="tab-signin" hidden="">
-        <form
-          id="checkout-login-form"
-          method="POST"
-          action="{{ url('/login.html') }}">
-          @csrf
-
-          <input type="hidden" name="action" value="signin">
-          <input type="hidden" id="newsletter" name="newsletter" value="No">
-
-          <input
-            type="hidden"
-            name="fromcheckout"
-            value="secure-checkout1">
-          <div style="display:flex; flex-direction:column; gap: var(--space-4);">
-            <div class="fl-group">
-              <input class="fl-input" type="email" name="email"
-                id="checkout-login-email" placeholder="Email address" autocomplete="email" inputmode="email">
-              <label class="fl-label" for="signin-email">Email address</label>
+              </form>
             </div>
-            <div class="fl-group">
-              <input class="fl-input" type="password" name="password"
-                id="checkout-login-password" placeholder="Password" autocomplete="current-password">
-              <label class="fl-label" for="signin-password">Password</label>
-            </div>
-            <div class="checkout-login-message"></div>
-            <label
-              class="field-check"
-              style="margin-top: -8px;">
-              <input
-                type="checkbox"
-                id="customer_newsletter"
-                name="customer_newsletter"
-                checked>
-
-              <div style="display:flex; flex-direction:column; gap:2px;">
-                <span
-                  style="font-size: var(--font-size-sm); font-weight: var(--font-weight-medium);">
-                  Stay in the loop
-                </span>
-
-                <span
-                  style="font-size: var(--font-size-xs); color: var(--color-text-tertiary);">
-                  Receive exclusive deals and new arrivals from MaxAroma
-                </span>
-              </div>
-            </label>
-            <div style="display:flex; justify-content:flex-end;">
-              <button type="button" style="font-size:var(--font-size-sm); color:var(--color-text-secondary); text-decoration:underline; background:none; border:none; cursor:pointer;">Forgot password?</button>
-            </div>
-            <button type="submit" class="btn btn-primary btn-full">Sign In</button>
           </div>
-      </div>
-      </form>
-  </div>
-
-  @endif
-
+          @endif
         </section>
         @endif
-  <!-- ══ 3. SHIPPING ADDRESS ══════════════════════════════ -->
-  <section class="checkout-section" aria-labelledby="shipping-heading" id="section-shipping">
-    <div class="checkout-section-head">
-      <div class="checkout-section-head-left">
-        <h2 class="step-title" id="shipping-heading">Shipping address</h2>
-      </div>
-      {{--<button class="section-edit-btn" aria-label="Edit shipping address" onclick="editSection('shipping')">Edit</button>--}}
-    </div>
 
-    <!-- Completed summary -->
-    <div class="section-summary" id="shipping-summary" style="display:none;" aria-live="polite">
-      <span id="shipping-summary-name"></span>
-      <span id="shipping-summary-address"></span>
-      <span id="shipping-summary-location"></span>
-    </div>
-
-    <div class="checkout-section-body" id="shipping-form">
-      <form method="post" name="frmcheckoutaddress" id="frmcheckoutaddress">
-        <!-- Country -->
-        <div style="display:flex; flex-direction:column; gap: var(--space-3);">
-          <div class="fl-group">
-            <select
-              class="fl-input"
-              id="shipping_country"
-              name="shipping_country"
-              autocomplete="shipping country"
-              aria-label="Country"
-              aria-required="true">
-              <option value=""></option>
-
-              @foreach($countries as $countryCode => $countryName)
-              <option
-                value="{{ $countryCode }}"
-                {{ $selectedShippingCountry === $countryCode ? 'selected' : '' }}>
-                {{ $countryName }}
-              </option>
-              @endforeach
-            </select>
-
-            <label class="fl-label" for="shipping_country">
-              Country / Region
-            </label>
+        @if($method != 'amazonpay')
+        <!-- ══ 3. SHIPPING ADDRESS ══════════════════════════════ -->
+        <section class="checkout-section" aria-labelledby="shipping-heading" id="section-shipping">
+          <div class="checkout-section-head">
+            <div class="checkout-section-head-left">
+              <h2 class="step-title" id="shipping-heading">Shipping address</h2>
+            </div>
+            {{--<button class="section-edit-btn" aria-label="Edit shipping address" onclick="editSection('shipping')">Edit</button>--}}
           </div>
 
-          <!-- First / Last name -->
-          <div class="form-grid-2">
-            <div class="fl-group">
-              <input
-                class="fl-input"
-                type="text"
-                id="shipping_first_name"
-                name="shipping_first_name"
-                placeholder="First name"
-                autocomplete="shipping given-name"
-                value="{{ is_array($shippingAddress) ? ($shippingAddress['first_name'] ?? '') : '' }}"
-                aria-required="true">
-              <label class="fl-label" for="shipping_first_name">
-                First name
-              </label>
-            </div>
-
-            <div class="fl-group">
-              <input
-                class="fl-input"
-                type="text"
-                id="shipping_last_name"
-                name="shipping_last_name"
-                placeholder="Last name"
-                autocomplete="shipping family-name"
-                value="{{ is_array($shippingAddress) ? ($shippingAddress['last_name'] ?? '') : '' }}"
-                aria-required="true">
-              <label class="fl-label" for="shipping_last_name">
-                Last name
-              </label>
-            </div>
+          <!-- Completed summary -->
+          <div class="section-summary" id="shipping-summary" style="display:none;" aria-live="polite">
+            <span id="shipping-summary-name"></span>
+            <span id="shipping-summary-address"></span>
+            <span id="shipping-summary-location"></span>
           </div>
 
-          <!-- Address -->
-          <div class="fl-group" style="position:relative;">
-            <input
-              class="fl-input"
-              type="text"
-              id="shipping_address1"
-              name="shipping_address1"
-              placeholder="Address"
-              autocomplete="shipping address-line1"
-              value="{{ is_array($shippingAddress) ? ($shippingAddress['address1'] ?? '') : '' }}"
-              aria-required="true"
-              role="combobox"
-              aria-expanded="false"
-              aria-autocomplete="list"
-              aria-controls="address-suggestions">
+          <div class="checkout-section-body" id="shipping-form">
+            <form method="post" name="frmcheckoutaddress" id="frmcheckoutaddress">
+              <!-- Country -->
+              <div style="display:flex; flex-direction:column; gap: var(--space-3);">
+                <div class="fl-group">
+                  <div class="input-inner">
+                    <select
+                      class="fl-input"
+                      id="shipping_country"
+                      name="shipping_country"
+                      autocomplete="shipping country"
+                      aria-label="Country"
+                      aria-required="true">
+                      <option value=""></option>
 
-            <label class="fl-label" for="shipping_address1">
-              Address
-            </label>
+                      @foreach($countries as $countryCode => $countryName)
+                      <option
+                        value="{{ $countryCode }}"
+                        {{ $selectedShippingCountry === $countryCode ? 'selected' : '' }}>
+                        {{ $countryName }}
+                      </option>
+                      @endforeach
+                    </select>
 
-            <span
-              style="position:absolute; right:14px; top:50%; transform:translateY(-50%); color:var(--color-text-tertiary); pointer-events:none;"
-              aria-hidden="true">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"></circle>
-                <path d="M11 11L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
-              </svg>
-            </span>
+                    <label class="fl-label" for="shipping_country">
+                      Country / Region
+                    </label>
+                  </div>
+                </div>
 
-            <ul
-              class="addr-suggestions"
-              id="address-suggestions"
-              role="listbox"
-              aria-label="Address suggestions"
-              hidden></ul>
-          </div>
+                <!-- First / Last name -->
+                <div class="form-grid-2">
+                  <div class="fl-group">
+                    <div class="input-inner">
+                      <input
+                        class="fl-input"
+                        type="text"
+                        id="shipping_first_name"
+                        name="shipping_first_name"
+                        placeholder="First name"
+                        autocomplete="shipping given-name"
+                        value="{{ is_array($shippingAddress) ? ($shippingAddress['first_name'] ?? '') : '' }}"
+                        aria-required="true">
+                      <label class="fl-label" for="shipping_first_name">
+                        First name
+                      </label>
+                    </div>
+                  </div>
 
-          <!-- Address 2 -->
-          <div class="fl-group">
-            <input
-              class="fl-input"
-              type="text"
-              id="shipping_address2"
-              name="shipping_address2"
-              placeholder="Apt, suite, etc. (optional)"
-              autocomplete="shipping address-line2"
-              value="{{ is_array($shippingAddress) ? ($shippingAddress['address2'] ?? '') : '' }}">
-            <label class="fl-label" for="shipping_address2">
-              Apt, suite, etc. (optional)
-            </label>
-          </div>
+                  <div class="fl-group">
+                    <div class="input-inner">
+                      <input
+                        class="fl-input"
+                        type="text"
+                        id="shipping_last_name"
+                        name="shipping_last_name"
+                        placeholder="Last name"
+                        autocomplete="shipping family-name"
+                        value="{{ is_array($shippingAddress) ? ($shippingAddress['last_name'] ?? '') : '' }}"
+                        aria-required="true">
+                      <label class="fl-label" for="shipping_last_name">
+                        Last name
+                      </label>
+                    </div>
+                  </div>
+                </div>
 
-          <!-- City / State / ZIP -->
-          <div class="form-grid-3col">
+                <!-- Address -->
+                <div class="fl-group" style="position:relative;">
+                  <div class="input-inner">
+                    <input
+                      class="fl-input"
+                      type="text"
+                      id="shipping_address1"
+                      name="shipping_address1"
+                      placeholder="Address"
+                      autocomplete="shipping address-line1"
+                      value="{{ is_array($shippingAddress) ? ($shippingAddress['address1'] ?? '') : '' }}"
+                      aria-required="true"
+                      role="combobox"
+                      aria-expanded="false"
+                      aria-autocomplete="list"
+                      aria-controls="address-suggestions">
 
-            <div class="fl-group">
-              <input
-                class="fl-input"
-                type="text"
-                id="shipping_city"
-                name="shipping_city"
-                placeholder="City"
-                autocomplete="shipping address-level2"
-                value="{{ is_array($shippingAddress) ? ($shippingAddress['city'] ?? '') : '' }}"
-                aria-required="true">
-              <label class="fl-label" for="shipping_city">
-                City
-              </label>
-            </div>
+                    <label class="fl-label" for="shipping_address1">
+                      Address
+                    </label>
 
-            <div
-              class="fl-group"
-              id="shipping-state-container">
-              @if($selectedShippingCountry === 'US')
+                    <span
+                      style="position:absolute; right:14px; top:50%; transform:translateY(-50%); color:var(--color-text-tertiary); pointer-events:none;"
+                      aria-hidden="true">
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"></circle>
+                        <path d="M11 11L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
+                      </svg>
+                    </span>
+                  </div>
 
-              <select
-                class="fl-input"
-                id="shipping_state"
-                name="shipping_state"
-                autocomplete="shipping address-level1"
-                aria-label="State"
-                aria-required="true">
-                @foreach($states as $stateCode => $stateName)
-                <option
-                  value="{{ $stateCode }}"
-                  {{ $selectedShippingState === $stateCode ? 'selected' : '' }}>
-                  {{ $stateName }}
-                </option>
-                @endforeach
-              </select>
+                  <ul
+                    class="addr-suggestions"
+                    id="address-suggestions"
+                    role="listbox"
+                    aria-label="Address suggestions"
+                    hidden></ul>
+                </div>
 
-              <label class="fl-label" for="shipping_state">
-                State
-              </label>
+                <!-- Address 2 -->
+                <div class="fl-group">
+                  <div class="input-inner">
+                    <input
+                      class="fl-input"
+                      type="text"
+                      id="shipping_address2"
+                      name="shipping_address2"
+                      placeholder="Apt, suite, etc. (optional)"
+                      autocomplete="shipping address-line2"
+                      value="{{ is_array($shippingAddress) ? ($shippingAddress['address2'] ?? '') : '' }}">
+                    <label class="fl-label" for="shipping_address2">
+                      Apt, suite, etc. (optional)
+                    </label>
+                  </div>
+                </div>
 
-              @else
+                <!-- City / State / ZIP -->
+                <div class="form-grid-3col">
 
-              <input
-                class="fl-input"
-                type="text"
-                id="shipping_state"
-                name="shipping_state"
-                value="{{ $selectedShippingState }}"
-                placeholder="State / Province"
-                autocomplete="shipping address-level1"
-                aria-required="true">
+                  <div class="fl-group">
+                    <div class="input-inner">
+                      <input
+                        class="fl-input"
+                        type="text"
+                        id="shipping_city"
+                        name="shipping_city"
+                        placeholder="City"
+                        autocomplete="shipping address-level2"
+                        value="{{ is_array($shippingAddress) ? ($shippingAddress['city'] ?? '') : '' }}"
+                        aria-required="true">
+                      <label class="fl-label" for="shipping_city">
+                        City
+                      </label>
+                    </div>
+                  </div>
 
-              <label class="fl-label" for="shipping_state">
-                State / Province
-              </label>
+                  <div
+                    class="fl-group"
+                    id="shipping-state-container">
+                    @if($selectedShippingCountry === 'US')
 
-              @endif
-            </div>
+                    <div class="input-inner">
+                      <select
+                        class="fl-input"
+                        id="shipping_state"
+                        name="shipping_state"
+                        autocomplete="shipping address-level1"
+                        aria-label="State"
+                        aria-required="true">
+                        @foreach($states as $stateCode => $stateName)
+                        <option
+                          value="{{ $stateCode }}"
+                          {{ $selectedShippingState === $stateCode ? 'selected' : '' }}>
+                          {{ $stateName }}
+                        </option>
+                        @endforeach
+                      </select>
 
-            <div class="fl-group">
-              <input
-                class="fl-input"
-                type="text"
-                id="shipping_zip"
-                name="shipping_zip"
-                placeholder="ZIP code"
-                autocomplete="shipping postal-code"
-                value="{{ is_array($shippingAddress) ? ($shippingAddress['zip'] ?? '') : '' }}"
-                inputmode="numeric"
-                aria-required="true"
-                maxlength="10">
-              <label class="fl-label" for="shipping_zip">
-                ZIP code
-              </label>
-            </div>
+                      <label class="fl-label" for="shipping_state">
+                        State
+                      </label>
+                    </div>
 
-          </div>
-          <!-- Address 2 -->
-          <div class="fl-group">
-            <input
-              class="fl-input"
-              type="text"
-              id="shipping_phone"
-              name="shipping_phone"
-              placeholder="Phone Number"
-              value="{{ is_array($shippingAddress) ? ($shippingAddress['phone'] ?? '') : '' }}">
-            <label class="fl-label" for="shipping_phone">
-              Phone
-            </label>
-          </div>
-        </div>
-      </form>
-    </div>
-  </section>
+                    @else
 
-  <section class="checkout-section" aria-labelledby="shipping-heading" id="section-shipping">
-    <div class="checkout-section-head">
-      <div class="checkout-section-head-left">
-        <h2 class="step-title" id="shipping-heading">Billing Address</h2>
-      </div>
-    </div>
+                    <div class="input-inner">
+                      <input
+                        class="fl-input"
+                        type="text"
+                        id="shipping_state"
+                        name="shipping_state"
+                        value="{{ $selectedShippingState }}"
+                        placeholder="State / Province"
+                        autocomplete="shipping address-level1"
+                        aria-required="true">
 
-    <!-- Completed summary -->
-    <div class="section-summary" id="shipping-summary" style="display:none;" aria-live="polite">
-      <span id="shipping-summary-name"></span>
-      <span id="shipping-summary-address"></span>
-      <span id="shipping-summary-location"></span>
-    </div>
+                      <label class="fl-label" for="shipping_state">
+                        State / Province
+                      </label>
+                    </div>
 
-    <div class="checkout-section-body" id="shipping-form">
-      <form method="post" name="frmbillingaddress" id="frmbillingaddress">
-        <label class="field-check">
-          <input
-            type="checkbox"
-            id="chksamebill"
-            name="chksamebill"
-            checked >
-          <span style="font-size: var(--font-size-sm);">
-            Same as Shipping Address
-          </span>
-        </label>
-        <div id="divBillingAddr" >
-          <div style="display:flex; flex-direction:column; gap: var(--space-3);">
+                    @endif
+                  </div>
 
-            <div class="fl-group">
-              <select
-                class="fl-input"
-                id="billing_country"
-                name="billing_country"
-                aria-label="Country"
-                aria-required="true">
-                <option value=""></option>
+                  <div class="fl-group">
+                    <div class="input-inner">
+                      <input
+                        class="fl-input"
+                        type="text"
+                        id="shipping_zip"
+                        name="shipping_zip"
+                        placeholder="ZIP code"
+                        autocomplete="shipping postal-code"
+                        value="{{ is_array($shippingAddress) ? ($shippingAddress['zip'] ?? '') : '' }}"
+                        inputmode="numeric"
+                        aria-required="true"
+                        maxlength="10">
+                      <label class="fl-label" for="shipping_zip">
+                        ZIP code
+                      </label>
+                    </div>
+                  </div>
 
-                @foreach($countries as $countryCode => $countryName)
-                <option
-                  value="{{ $countryCode }}"
-                  {{ $selectedBillingCountry === $countryCode ? 'selected' : '' }}>
-                  {{ $countryName }}
-                </option>
-                @endforeach
-              </select>
-
-              <label class="fl-label" for="billing_country">
-                Country / Region
-              </label>
-            </div>
-
-            <!-- First / Last name -->
-            <div class="form-grid-2">
-              <div class="fl-group">
-                <input
-                  class="fl-input"
-                  type="text"
-                  id="billing_first_name"
-                  name="billing_first_name"
-                  placeholder="First name"
-                  value="{{ is_array($billingAddress) ? ($billingAddress['first_name'] ?? '') : '' }}"
-                  aria-required="true">
-                <label class="fl-label" for="billing_first_name">
-                  First name
-                </label>
+                </div>
+                <!-- Address 2 -->
+                <div class="fl-group">
+                  <div class="input-inner">
+                    <input
+                      class="fl-input"
+                      type="text"
+                      id="shipping_phone"
+                      name="shipping_phone"
+                      placeholder="Phone Number"
+                      value="{{ is_array($shippingAddress) ? ($shippingAddress['phone'] ?? '') : '' }}">
+                    <label class="fl-label" for="shipping_phone">
+                      Phone
+                    </label>
+                  </div>
+                </div>
               </div>
+            </form>
+          </div>
+        </section>
 
-              <div class="fl-group">
+        <section class="checkout-section" aria-labelledby="shipping-heading" id="section-shipping">
+          <div class="checkout-section-head">
+            <div class="checkout-section-head-left">
+              <h2 class="step-title" id="shipping-heading">Billing Address</h2>
+            </div>
+          </div>
+
+          <!-- Completed summary -->
+          <div class="section-summary" id="shipping-summary" style="display:none;" aria-live="polite">
+            <span id="shipping-summary-name"></span>
+            <span id="shipping-summary-address"></span>
+            <span id="shipping-summary-location"></span>
+          </div>
+
+          <div class="checkout-section-body" id="shipping-form">
+            <form method="post" name="frmbillingaddress" id="frmbillingaddress">
+              <label class="field-check">
                 <input
-                  class="fl-input"
-                  type="text"
-                  id="billing_last_name"
-                  name="billing_last_name"
-                  placeholder="Last name"
-                  value="{{ is_array($billingAddress) ? ($billingAddress['last_name'] ?? '') : '' }}"
-                  aria-required="true">
-                <label class="fl-label" for="billing_last_name">
-                  Last name
+                  type="checkbox"
+                  id="chksamebill"
+                  name="chksamebill"
+                  checked>
+                <span style="font-size: var(--font-size-sm);">
+                  Same as Shipping Address
+                </span>
+              </label>
+              <div id="divBillingAddr">
+                <div style="display:flex; flex-direction:column; gap: var(--space-3);">
+
+                  <div class="fl-group">
+                    <div class="input-inner">
+                      <select
+                        class="fl-input"
+                        id="billing_country"
+                        name="billing_country"
+                        aria-label="Country"
+                        aria-required="true">
+                        <option value=""></option>
+
+                        @foreach($countries as $countryCode => $countryName)
+                        <option
+                          value="{{ $countryCode }}"
+                          {{ $selectedBillingCountry === $countryCode ? 'selected' : '' }}>
+                          {{ $countryName }}
+                        </option>
+                        @endforeach
+                      </select>
+
+                      <label class="fl-label" for="billing_country">
+                        Country / Region
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- First / Last name -->
+                  <div class="form-grid-2">
+                    <div class="fl-group">
+                      <div class="input-inner">
+                        <input
+                          class="fl-input"
+                          type="text"
+                          id="billing_first_name"
+                          name="billing_first_name"
+                          placeholder="First name"
+                          value="{{ is_array($billingAddress) ? ($billingAddress['first_name'] ?? '') : '' }}"
+                          aria-required="true">
+                        <label class="fl-label" for="billing_first_name">
+                          First name
+                        </label>
+                      </div>
+                    </div>
+
+                    <div class="fl-group">
+                      <div class="input-inner">
+                        <input
+                          class="fl-input"
+                          type="text"
+                          id="billing_last_name"
+                          name="billing_last_name"
+                          placeholder="Last name"
+                          value="{{ is_array($billingAddress) ? ($billingAddress['last_name'] ?? '') : '' }}"
+                          aria-required="true">
+                        <label class="fl-label" for="billing_last_name">
+                          Last name
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Address -->
+                  <div class="fl-group" style="position:relative;">
+                    <div class="input-inner">
+                      <input
+                        class="fl-input"
+                        type="text"
+                        id="billing_address1"
+                        name="billing_address1"
+                        placeholder="Address"
+                        value="{{ is_array($billingAddress) ? ($billingAddress['address1'] ?? '') : '' }}"
+                        aria-required="true"
+                        role="combobox"
+                        aria-expanded="false"
+                        aria-autocomplete="list"
+                        aria-controls="address-suggestions">
+
+                      <label class="fl-label" for="billing_address1">
+                        Address
+                      </label>
+
+                      <span
+                        style="position:absolute; right:14px; top:50%; transform:translateY(-50%); color:var(--color-text-tertiary); pointer-events:none;"
+                        aria-hidden="true">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                          <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"></circle>
+                          <path d="M11 11L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
+                        </svg>
+                      </span>
+                    </div>
+
+                    <ul
+                      class="addr-suggestions"
+                      id="address-suggestions"
+                      role="listbox"
+                      aria-label="Address suggestions"
+                      hidden></ul>
+                  </div>
+
+                  <!-- Address 2 -->
+                  <div class="fl-group">
+                    <div class="input-inner">
+                      <input
+                        class="fl-input"
+                        type="text"
+                        id="billing_address2"
+                        name="billing_address2"
+                        placeholder="Apt, suite, etc. (optional)"
+                        value="{{ is_array($billingAddress) ? ($billingAddress['address2'] ?? '') : '' }}">
+                      <label class="fl-label" for="billing_address2">
+                        Apt, suite, etc. (optional)
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- City / State / ZIP -->
+                  <div class="form-grid-3col">
+
+                    <div class="fl-group">
+                      <div class="input-inner">
+                        <input
+                          class="fl-input"
+                          type="text"
+                          id="billing_city"
+                          name="billing_city"
+                          placeholder="City"
+                          value="{{ is_array($billingAddress) ? ($billingAddress['city'] ?? '') : '' }}"
+                          aria-required="true">
+                        <label class="fl-label" for="billing_city">
+                          City
+                        </label>
+                      </div>
+                    </div>
+
+                    <div
+                      class="fl-group"
+                      id="billing-state-container">
+                      @if($selectedBillingCountry === 'US')
+
+                      <div class="input-inner">
+                        <select
+                          class="fl-input"
+                          id="billing_state"
+                          name="billing_state"
+                          aria-label="State"
+                          aria-required="true">
+                          @foreach($states as $stateCode => $stateName)
+                          <option
+                            value="{{ $stateCode }}"
+                            {{ $selectedBillingState === $stateCode ? 'selected' : '' }}>
+                            {{ $stateName }}
+                          </option>
+                          @endforeach
+                        </select>
+
+                        <label class="fl-label" for="billing_state">
+                          State
+                        </label>
+                      </div>
+
+                      @else
+
+                      <div class="input-inner">
+                        <input
+                          class="fl-input"
+                          type="text"
+                          id="billing_state"
+                          name="billing_state"
+                          value="{{ $selectedBillingState }}"
+                          placeholder="State / Province"
+                          autocomplete="shipping address-level1"
+                          aria-required="true">
+
+                        <label class="fl-label" for="billing_state">
+                          State / Province
+                        </label>
+                      </div>
+
+                      @endif
+                    </div>
+
+                    <div class="fl-group">
+                      <div class="input-inner">
+                        <input
+                          class="fl-input"
+                          type="text"
+                          id="billing_zip"
+                          name="billing_zip"
+                          placeholder="ZIP code"
+                          autocomplete="shipping postal-code"
+                          value="{{ is_array($billingAddress) ? ($billingAddress['zip'] ?? '') : '' }}"
+                          inputmode="numeric"
+                          aria-required="true"
+                          maxlength="10">
+                        <label class="fl-label" for="billing_zip">
+                          ZIP code
+                        </label>
+                      </div>
+                    </div>
+
+                  </div>
+                  <!-- Address 2 -->
+                  <div class="fl-group">
+                    <div class="input-inner">
+                      <input
+                        class="fl-input"
+                        type="text"
+                        id="billing_phone"
+                        name="billing_phone"
+                        placeholder="Phone Number"
+                        value="{{ is_array($billingAddress) ? ($billingAddress['phone'] ?? '') : '' }}">
+                      <label class="fl-label" for="billing_phone">
+                        Phone
+                      </label>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </form>
+          </div>
+        </section>
+        @else
+        <section class="checkout-section" aria-labelledby="shipping-heading" id="section-shipping">
+          <div class="checkout-section-head">
+            <div class="checkout-section-head-left">
+              <h2 class="step-title" id="shipping-heading">Billing Shipping Information</h2>
+            </div>
+            {{--<button class="section-edit-btn" aria-label="Edit shipping address" onclick="editSection('shipping')">Edit</button>--}}
+          </div>
+          <div class="checkout-section-body" id="shipping-form">
+            <div id="addressBookWidgetDiv" style="height:300px;" aria-label="Amazon Address Book"></div>
+          </div>
+        </section>
+        @endif
+
+        <!-- ══ 4. SHIPPING METHOD ══════════════════════════════ -->
+        <section class="checkout-section" aria-labelledby="delivery-heading" id="section-delivery">
+          <div class="checkout-section-head">
+            <div class="checkout-section-head-left">
+              <h2 class="step-title" id="delivery-heading">Shipping method</h2>
+            </div>
+          </div>
+
+          <div class="checkout-section-body">
+            <!-- Order-by urgency line -->
+            <div class="divShipMethods">
+              <div id="error_ship_method" class="alert alert-danger text-center" role="alert" aria-live="polite"></div>
+              <div class="ship_method_loader"><span class="loader"></span></div>
+              <fieldset style="border:none; padding:0; margin:0; display:flex; flex-direction:column; gap:var(--space-3);">
+                <legend class="visually-hidden">Select shipping method</legend>
+              </fieldset>
+            </div>
+            <!-- Order add-ons: Protect My Order (default ON) · Request Signature · Gift Wrap
+                    Compact redesign (client spec, 2026-08-06) — same 3 toggles/IDs/
+                    handlers/pricing, restyled into one bordered list of single-line
+                    rows instead of 3 tall cards. -->
+            <div class="checkout-addons" style="margin-top: var(--space-5);">
+              <div class="addon-list">
+
+                <!-- Protect My Order -->
+                <label class="addon-row{{ $checkoutInsurance > 0 ? ' active' : '' }}" aria-label="Add Protect My Order">
+                  <span class="addon-icon" aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                      <path d="M11 2L3 5.5V10.5C3 15.1 6.6 19.4 11 20.5C15.4 19.4 19 15.1 19 10.5V5.5L11 2Z" stroke="#000" stroke-width="1.5"></path>
+                      <path d="M8 11L10 13L14 9" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                  </span>
+                  <span class="addon-body">
+                    <span class="addon-title">Protect My Order</span>
+                    <span class="addon-desc">Covers damage, loss &amp; theft</span>
+                  </span>
+                  <span class="addon-price" id="protection-addon-price">{{ $checkoutInsurance > 0 ? '+' . $money($checkoutInsurance) : 'Free' }}</span>
+                  <span class="toggle-switch">
+                    <input type="checkbox" id="protection" name="protection" {{ $checkoutInsurance > 0 ? 'checked' : '' }} onchange="handleProtectionToggle(this)">
+                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                  </span>
                 </label>
+
+                <!-- Request Signature -->
+                <label class="addon-row{{ $checkoutSignature > 0 ? ' active' : '' }}" aria-label="Add Request Signature">
+                  <span class="addon-icon" aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                      <path d="M3 16C5 13 7 12 8.5 13.5C9.5 14.5 8 16 6.5 15C5 14 6.5 9 8.5 7C10 5.5 11 6.5 10.5 8.5C10 11 8 14.5 10 16C11.5 17 13.5 15.5 15 13" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                      <path d="M16 17H19" stroke="#000" stroke-width="1.5" stroke-linecap="round"></path>
+                    </svg>
+                  </span>
+                  <span class="addon-body">
+                    <span class="addon-title">Request Signature</span>
+                    <span class="addon-desc">Signature required on delivery</span>
+                  </span>
+                  <span class="addon-price" id="signature-addon-price">{{ $checkoutSignature > 0 ? '+' . $money($checkoutSignature) : 'Free' }}</span>
+                  <span class="toggle-switch">
+                    <input type="checkbox" id="request-signature" name="request-signature" {{ $checkoutSignature > 0 ? 'checked' : '' }} onchange="handleSignatureToggle(this)">
+                    <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                  </span>
+                </label>
+                {{--
+                    <!-- Add Gift Wrap -->
+                    <label class="addon-row" aria-label="Add Gift Wrap">
+                      <span class="addon-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                          <path d="M3 8H19V19H3V8Z" stroke="#000" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M2 8H20V11H2V8Z" stroke="#000" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M11 8V19" stroke="#000" stroke-width="1.5"></path>
+                          <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#000" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#000" stroke-width="1.5" stroke-linejoin="round"></path>
+                        </svg>
+                      </span>
+                      <span class="addon-body">
+                        <span class="addon-title">Add Gift Wrap</span>
+                        <span class="addon-desc">Premium gift wrapping</span>
+                      </span>
+                      <span class="addon-price">{{ $checkoutGiftWrap > 0 ? '+' . $money($checkoutGiftWrap) : 'Free' }}</span>
+                <span class="toggle-switch">
+                  <input type="checkbox" id="gift-wrap" name="gift-wrap">
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </span>
+                </label>
+                --}}
               </div>
             </div>
+          </div>
+        </section>
 
-            <!-- Address -->
-            <div class="fl-group" style="position:relative;">
-              <input
-                class="fl-input"
-                type="text"
-                id="billing_address1"
-                name="billing_address1"
-                placeholder="Address"
-                value="{{ is_array($billingAddress) ? ($billingAddress['address1'] ?? '') : '' }}"
-                aria-required="true"
-                role="combobox"
-                aria-expanded="false"
-                aria-autocomplete="list"
-                aria-controls="address-suggestions">
-
-              <label class="fl-label" for="billing_address1">
-                Address
-              </label>
-
-              <span
-                style="position:absolute; right:14px; top:50%; transform:translateY(-50%); color:var(--color-text-tertiary); pointer-events:none;"
-                aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"></circle>
-                  <path d="M11 11L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
-                </svg>
-              </span>
-
-              <ul
-                class="addr-suggestions"
-                id="address-suggestions"
-                role="listbox"
-                aria-label="Address suggestions"
-                hidden></ul>
-            </div>
-
-            <!-- Address 2 -->
-            <div class="fl-group">
-              <input
-                class="fl-input"
-                type="text"
-                id="billing_address2"
-                name="billing_address2"
-                placeholder="Apt, suite, etc. (optional)"
-                value="{{ is_array($billingAddress) ? ($billingAddress['address2'] ?? '') : '' }}">
-              <label class="fl-label" for="billing_address2">
-                Apt, suite, etc. (optional)
-              </label>
-            </div>
-
-            <!-- City / State / ZIP -->
-            <div class="form-grid-3col">
-
-              <div class="fl-group">
-                <input
-                  class="fl-input"
-                  type="text"
-                  id="billing_city"
-                  name="billing_city"
-                  placeholder="City"
-                  value="{{ is_array($billingAddress) ? ($billingAddress['city'] ?? '') : '' }}"
-                  aria-required="true">
-                <label class="fl-label" for="billing_city">
-                  City
-                </label>
-              </div>
-
-              <div
-                class="fl-group"
-                id="billing-state-container">
-                @if($selectedBillingCountry === 'US')
-
-                <select
-                  class="fl-input"
-                  id="billing_state"
-                  name="billing_state"
-                  aria-label="State"
-                  aria-required="true">
-                  @foreach($states as $stateCode => $stateName)
-                  <option
-                    value="{{ $stateCode }}"
-                    {{ $selectedBillingState === $stateCode ? 'selected' : '' }}>
-                    {{ $stateName }}
-                  </option>
-                  @endforeach
-                </select>
-
-                <label class="fl-label" for="billing_state">
-                  State
-                </label>
-
+        <!-- ══ 5. PAYMENT ════════════════════════════════════════ -->
+        @if($method != 'afterpay' && $method != 'amazonpay')
+        <section class="checkout-section" aria-labelledby="payment-heading" id="section-payment">
+          <div class="checkout-section-head">
+            <div class="checkout-section-head-left">
+              <h2 class="step-title" id="payment-heading">
+                @if(!Auth::user() || (Auth::user() && Auth::user()->is_dropshipper == 'No'))
+                Payment
                 @else
-
-                <input
-                  class="fl-input"
-                  type="text"
-                  id="billing_state"
-                  name="billing_state"
-                  value="{{ $selectedBillingState }}"
-                  placeholder="State / Province"
-                  autocomplete="shipping address-level1"
-                  aria-required="true">
-
-                <label class="fl-label" for="billing_state">
-                  State / Province
-                </label>
-
+                Dropshipper Fund
                 @endif
-              </div>
-
-              <div class="fl-group">
-                <input
-                  class="fl-input"
-                  type="text"
-                  id="billing_zip"
-                  name="billing_zip"
-                  placeholder="ZIP code"
-                  autocomplete="shipping postal-code"
-                  value="{{ is_array($billingAddress) ? ($billingAddress['zip'] ?? '') : '' }}"
-                  inputmode="numeric"
-                  aria-required="true"
-                  maxlength="10">
-                <label class="fl-label" for="billing_zip">
-                  ZIP code
-                </label>
-              </div>
-
+              </h2>
             </div>
-            <!-- Address 2 -->
-            <div class="fl-group">
-              <input
-                class="fl-input"
-                type="text"
-                id="billing_phone"
-                name="billing_phone"
-                placeholder="Phone Number"
-                value="{{ is_array($billingAddress) ? ($billingAddress['phone'] ?? '') : '' }}">
-              <label class="fl-label" for="billing_phone">
-                Phone
-              </label>
-            </div>
-
-          </div>
-        </div>
-      </form>
-    </div>
-  </section>
-
-  <!-- ══ 4. SHIPPING METHOD ══════════════════════════════ -->
-  <section class="checkout-section" aria-labelledby="delivery-heading" id="section-delivery">
-    <div class="checkout-section-head">
-      <div class="checkout-section-head-left">
-        <h2 class="step-title" id="delivery-heading">Shipping method</h2>
-      </div>
-    </div>
-
-    <div class="checkout-section-body">
-      <!-- Order-by urgency line -->
-      <div class="divShipMethods">
-        <div id="error_ship_method" class="alert alert-danger text-center" role="alert" aria-live="polite"></div>
-        <div class="ship_method_loader"><span class="loader"></span></div>
-        <fieldset style="border:none; padding:0; margin:0; display:flex; flex-direction:column; gap:var(--space-3);">
-          <legend class="visually-hidden">Select shipping method</legend>
-        </fieldset>
-      </div>
-      <!-- Order add-ons: Protect My Order (default ON) · Request Signature · Gift Wrap
-               Compact redesign (client spec, 2026-08-06) — same 3 toggles/IDs/
-               handlers/pricing, restyled into one bordered list of single-line
-               rows instead of 3 tall cards. -->
-      <div class="checkout-addons" style="margin-top: var(--space-5);">
-        <div class="addon-list">
-
-          <!-- Protect My Order -->
-          <label class="addon-row{{ $checkoutInsurance > 0 ? ' active' : '' }}" aria-label="Add Protect My Order">
-            <span class="addon-icon" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                <path d="M11 2L3 5.5V10.5C3 15.1 6.6 19.4 11 20.5C15.4 19.4 19 15.1 19 10.5V5.5L11 2Z" stroke="#000" stroke-width="1.5"></path>
-                <path d="M8 11L10 13L14 9" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+            <!-- SSL badge inline -->
+            <div style="display:flex; align-items:center; gap:4px; font-size:11px; color: var(--color-text-tertiary);">
+              <svg width="12" height="13" viewBox="0 0 12 13" fill="none" aria-hidden="true">
+                <path d="M6 1L1 3.5V6.5C1 9.5 3.2 12.2 6 13C8.8 12.2 11 9.5 11 6.5V3.5L6 1Z" stroke="#16A34A" stroke-width="1.2"></path>
               </svg>
-            </span>
-            <span class="addon-body">
-              <span class="addon-title">Protect My Order</span>
-              <span class="addon-desc">Covers damage, loss &amp; theft</span>
-            </span>
-            <span class="addon-price" id="protection-addon-price">{{ $checkoutInsurance > 0 ? '+' . $money($checkoutInsurance) : 'Free' }}</span>
-            <span class="toggle-switch">
-              <input type="checkbox" id="protection" name="protection" {{ $checkoutInsurance > 0 ? 'checked' : '' }} onchange="handleProtectionToggle(this)">
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </span>
-          </label>
+              SSL Secure
+            </div>
+          </div>
 
-          <!-- Request Signature -->
-          <label class="addon-row{{ $checkoutSignature > 0 ? ' active' : '' }}" aria-label="Add Request Signature">
-            <span class="addon-icon" aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                <path d="M3 16C5 13 7 12 8.5 13.5C9.5 14.5 8 16 6.5 15C5 14 6.5 9 8.5 7C10 5.5 11 6.5 10.5 8.5C10 11 8 14.5 10 16C11.5 17 13.5 15.5 15 13" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                <path d="M16 17H19" stroke="#000" stroke-width="1.5" stroke-linecap="round"></path>
+          <div class="checkout-section-body">
+            <!-- Payment method tabs -->
+            <div role="tabpanel" id="pay-panel-card" aria-labelledby="pay-tab-card">
+              <div style="display:flex; flex-direction:column; gap: var(--space-3);">
+                @if(!Auth::user() || (Auth::user() && Auth::user()->is_dropshipper == 'No'))
+                <div id="stripe-card-payment">
+                  <label class="error" id="stripe-error"></label>
+                  <div class="fl-group pb-2">
+                    <div class="input-inner">
+                      <div id="stripe-card-number" class="stripe-element fl-input"></div>
+                      <label class="fl-label" for="card-number">Card number</label>
+                    </div>
+                  </div>
+
+                  <div class="form-grid-2">
+                    <div class="fl-group">
+                      <div class="input-inner">
+                        <div id="stripe-card-expiry" class="stripe-element fl-input"></div>
+                        <label class="fl-label" for="stripe-card-expiry">Expiry</label>
+                      </div>
+                    </div>
+
+                    <div class="fl-group" style="position:relative;">
+                      <div class="input-inner">
+                        <div id="stripe-card-cvv" class="stripe-element fl-input"></div>
+                        <label class="fl-label" for="stripe-card-cvv">CVV</label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div id="stripe-card-error" class="stripe-card-error" role="alert"></div>
+
+                </div>
+                @else
+                <div class="row" id="dropshipper_details"></div>
+                @endif
+
+                <div class="checkout-paypal">
+                  <!-- Accepted cards row -->
+                  <div class="accepted-cards" aria-label="Accepted payment cards">
+                    <img class="card-logo" src="{{ url('images/checkout-new/visa.svg') }}" alt="Visa">
+                    <img class="card-logo" src="{{ url('images/checkout-new/mastercard.svg') }}" alt="Mastercard">
+                    <img class="card-logo" src="{{ url('images/checkout-new/american-express.svg') }}" alt="American Express">
+                    <img class="card-logo" src="{{ url('images/checkout-new/discover.svg') }}" alt="Discover">
+                    <img class="card-logo paypal-logo" src="{{ url('images/checkout-new/paypal.svg') }}" alt="PayPal">
+                  </div>
+                  <div class="strip-logodiv">
+                      <img src="{{ url('public/images/powered-by-strip-logo.png') }}" alt="Guaranteed safe &amp; secure checkout powered by stripe" class="">
+                  </div>
+                </div>
+              </div>
+            </div>
+
+  <!-- Security bar -->
+  <div class="security-bar" style="margin-top: var(--space-5);">
+    <div class="security-bar-item">
+      <svg class="security-bar-icon" viewBox="0 0 14 16" fill="none" aria-hidden="true">
+        <path d="M7 1L1 3.5V7.5C1 11.1 3.6 14.4 7 15.5C10.4 14.4 13 11.1 13 7.5V3.5L7 1Z" stroke="currentColor" stroke-width="1.2"></path>
+        <path d="M4.5 8L6 10L9.5 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"></path>
+      </svg>
+      SSL Encrypted
+    </div>
+    <div class="security-bar-item">
+      <svg class="security-bar-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+        <rect x="1" y="5" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"></rect>
+        <path d="M4 5V4C4 2.3 5.3 1 7 1C8.7 1 10 2.3 10 4V5" stroke="currentColor" stroke-width="1.2"></path>
+      </svg>
+      256-bit Encryption
+    </div>
+    <div class="security-bar-item">
+      <svg class="security-bar-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+        <path d="M7 1L13 4V8C13 11 10.5 13.5 7 14C3.5 13.5 1 11 1 8V4L7 1Z" stroke="currentColor" stroke-width="1.2"></path>
+      </svg>
+      PCI Compliant
+    </div>
+  </div>
+  </div>
+        </section>
+        @endif
+
+        @if($method == 'amazonpay')
+        <section class="checkout-section" aria-labelledby="payment-heading" id="section-payment">
+          <div class="checkout-section-head">
+            <div class="checkout-section-head-left">
+              <h2 class="step-title" id="payment-heading">Payment</h2>
+            </div>
+            <!-- SSL badge inline -->
+            <div style="display:flex; align-items:center; gap:4px; font-size:11px; color: var(--color-text-tertiary);">
+              <svg width="12" height="13" viewBox="0 0 12 13" fill="none" aria-hidden="true">
+                <path d="M6 1L1 3.5V6.5C1 9.5 3.2 12.2 6 13C8.8 12.2 11 9.5 11 6.5V3.5L6 1Z" stroke="#16A34A" stroke-width="1.2"></path>
               </svg>
-            </span>
-            <span class="addon-body">
-              <span class="addon-title">Request Signature</span>
-              <span class="addon-desc">Signature required on delivery</span>
-            </span>
-            <span class="addon-price" id="signature-addon-price">{{ $checkoutSignature > 0 ? '+' . $money($checkoutSignature) : 'Free' }}</span>
-            <span class="toggle-switch">
-              <input type="checkbox" id="request-signature" name="request-signature" {{ $checkoutSignature > 0 ? 'checked' : '' }} onchange="handleSignatureToggle(this)">
-              <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            </span>
-          </label>
-          {{--
-              <!-- Add Gift Wrap -->
-              <label class="addon-row" aria-label="Add Gift Wrap">
-                <span class="addon-icon" aria-hidden="true">
-                  <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                    <path d="M3 8H19V19H3V8Z" stroke="#000" stroke-width="1.5" stroke-linejoin="round"></path>
-                    <path d="M2 8H20V11H2V8Z" stroke="#000" stroke-width="1.5" stroke-linejoin="round"></path>
-                    <path d="M11 8V19" stroke="#000" stroke-width="1.5"></path>
-                    <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#000" stroke-width="1.5" stroke-linejoin="round"></path>
-                    <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#000" stroke-width="1.5" stroke-linejoin="round"></path>
-                  </svg>
-                </span>
-                <span class="addon-body">
-                  <span class="addon-title">Add Gift Wrap</span>
-                  <span class="addon-desc">Premium gift wrapping</span>
-                </span>
-                <span class="addon-price">{{ $checkoutGiftWrap > 0 ? '+' . $money($checkoutGiftWrap) : 'Free' }}</span>
-          <span class="toggle-switch">
-            <input type="checkbox" id="gift-wrap" name="gift-wrap">
-            <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          </span>
-          </label>
-          --}}
-        </div>
-      </div>
-    </div>
-  </section>
-  {{--
-      <!-- ══ COMPLETE YOUR ORDER (recommendations, above Payment) ══ -->
-      <section class="upsell-section complete-your-order" aria-labelledby="upsell-heading" aria-label="Complete Your Order">
-        <p class="upsell-title" id="upsell-heading">Complete Your Order</p>
-        <div class="upsell-carousel" role="list" aria-label="Suggested add-on products, swipe to browse">
-
-          <div class="upsell-card" role="listitem">
-            <img class="upsell-thumb" src="{{ url('/images/noimage-lrg.jpg') }}" alt="Chanel Chance Eau Tendre" loading="lazy" width="120" height="92">
-  <div class="upsell-info">
-    <div class="upsell-brand">Chanel</div>
-    <div class="upsell-name">Chance Eau Tendre EDP 1.7 oz</div>
-    <div class="upsell-price-row">
-      <span class="upsell-price">$115.00</span>
-    </div>
-  </div>
-  <button class="upsell-add" aria-label="Add Chanel Chance Eau Tendre to cart" type="button"><span aria-hidden="true">＋</span> Add</button>
-  </div>
-
-  <div class="upsell-card" role="listitem">
-    <img class="upsell-thumb" src="{{ url('/images/noimage-lrg.jpg') }}" alt="Chanel Chance Eau Tendre" loading="lazy" width="120" height="92">
-    <div class="upsell-info">
-      <div class="upsell-brand">Versace</div>
-      <div class="upsell-name">Bright Crystal EDT 3.4 oz</div>
-      <div class="upsell-price-row">
-        <span class="upsell-price">$69.99</span>
-        <span class="upsell-original">$85.00</span>
-      </div>
-    </div>
-    <button class="upsell-add" aria-label="Add Versace Bright Crystal to cart" type="button"><span aria-hidden="true">＋</span> Add</button>
-  </div>
-
-  <div class="upsell-card" role="listitem">
-    <img class="upsell-thumb" src="{{ url('/images/noimage-lrg.jpg') }}" alt="Chanel Chance Eau Tendre" loading="lazy" width="120" height="92">
-    <div class="upsell-info">
-      <div class="upsell-brand">MaxAroma</div>
-      <div class="upsell-name">Travel Atomizer 10 ml</div>
-      <div class="upsell-price-row">
-        <span class="upsell-price">$14.99</span>
-      </div>
-    </div>
-    <button class="upsell-add" aria-label="Add Travel Atomizer to cart" type="button"><span aria-hidden="true">＋</span> Add</button>
-  </div>
-
-  <div class="upsell-card" role="listitem">
-    <img class="upsell-thumb" src="{{ url('/images/noimage-lrg.jpg') }}" alt="Chanel Chance Eau Tendre" loading="lazy" width="120" height="92">
-    <div class="upsell-info">
-      <div class="upsell-brand">MaxAroma</div>
-      <div class="upsell-name">Signature Gift Box</div>
-      <div class="upsell-price-row">
-        <span class="upsell-price">$9.99</span>
-      </div>
-    </div>
-    <button class="upsell-add" aria-label="Add Signature Gift Box to cart" type="button"><span aria-hidden="true">＋</span> Add</button>
-  </div>
-
-  <div class="upsell-card" role="listitem">
-    <img class="upsell-thumb" src="{{ url('/images/noimage-lrg.jpg') }}" alt="Chanel Chance Eau Tendre" loading="lazy" width="120" height="92">
-    <div class="upsell-info">
-      <div class="upsell-brand">MaxAroma</div>
-      <div class="upsell-name">Fragrance Sampler Set</div>
-      <div class="upsell-price-row">
-        <span class="upsell-price">$24.99</span>
-        <span class="upsell-original">$32.00</span>
-      </div>
-    </div>
-    <button class="upsell-add" aria-label="Add Fragrance Sampler Set to cart" type="button"><span aria-hidden="true">＋</span> Add</button>
-  </div>
-
-  </div>
-  </section>
-  --}}
-  <!-- ══ 5. PAYMENT ════════════════════════════════════════ -->
-  @if($method != 'afterpay')
-  <section class="checkout-section" aria-labelledby="payment-heading" id="section-payment">
-    <div class="checkout-section-head">
-      <div class="checkout-section-head-left">
-        <h2 class="step-title" id="payment-heading">Payment</h2>
-      </div>
-      <!-- SSL badge inline -->
-      <div style="display:flex; align-items:center; gap:4px; font-size:11px; color: var(--color-text-tertiary);">
-        <svg width="12" height="13" viewBox="0 0 12 13" fill="none" aria-hidden="true">
-          <path d="M6 1L1 3.5V6.5C1 9.5 3.2 12.2 6 13C8.8 12.2 11 9.5 11 6.5V3.5L6 1Z" stroke="#16A34A" stroke-width="1.2"></path>
-        </svg>
-        SSL Secure
-      </div>
-    </div>
-
-    <div class="checkout-section-body">
-      <!-- Payment method tabs -->
-      <div class="payment-tabs" role="tablist" aria-label="Payment methods" style="margin-bottom: var(--space-5);">
-        <button class="payment-tab active" data-method="STRIPE" role="tab" aria-selected="true" id="pay-tab-card" aria-controls="pay-panel-card" onclick="switchPayTab('card')">
-          <svg width="16" height="12" viewBox="0 0 16 12" fill="none" aria-hidden="true">
-            <rect x="1" y="1" width="14" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3"></rect>
-            <path d="M1 5H15" stroke="currentColor" stroke-width="1.3"></path>
-          </svg>
-          @if(!Auth::user() || (Auth::user() && Auth::user()->is_dropshipper == 'No'))
-          Card
-          @else
-          Dropshipper Fund
-          @endif
-        </button>
-        {{--
-            @if($CartAttr["IsPaypalExpressCheckout"] == 'Yes')
-            <button class="payment-tab" data-method="PAYPAL" role="tab" aria-selected="false" id="pay-tab-paypal" aria-controls="pay-panel-paypal" onclick="switchPayTab('paypal')">PayPal</button>
-            @endif
-            <button class="payment-tab" data-method="AFFIRM" role="tab" aria-selected="false" id="pay-tab-affirm" aria-controls="pay-panel-affirm" onclick="switchPayTab('affirm')">Affirm</button>
-            --}}
-      </div>
-
-      <!-- Card Panel -->
-      <div role="tabpanel" id="pay-panel-card" aria-labelledby="pay-tab-card">
-        <div style="display:flex; flex-direction:column; gap: var(--space-3);">
-          @if(!Auth::user() || (Auth::user() && Auth::user()->is_dropshipper == 'No'))
-          <div id="stripe-card-payment">
-            <label class="error" id="stripe-error"></label>
-            <div class="fl-group pb-2">
-              <div id="stripe-card-number" class="stripe-element fl-input"></div>
-              <label class="fl-label" for="card-number">Card number</label>
+              SSL Secure
             </div>
-
-            <div class="form-grid-2">
-              <div class="fl-group">
-                <div id="stripe-card-expiry" class="stripe-element fl-input"></div>
-                <label class="fl-label" for="stripe-card-expiry">Expiry</label>
-              </div>
-
-              <div class="fl-group" style="position:relative;">
-                <div id="stripe-card-cvv" class="stripe-element fl-input"></div>
-                <label class="fl-label" for="stripe-card-cvv">CVV</label>
-              </div>
-            </div>
-
-            <div id="stripe-card-error" class="stripe-card-error" role="alert"></div>
-
           </div>
-          @else
-          <div class="row" id="dropshipper_details"></div>
-          @endif
 
-          <!-- Accepted cards row -->
-          <div class="accepted-cards" aria-label="Accepted payment cards">
-            <img class="card-logo" src="{{ url('images/checkout-new/visa.svg') }}" alt="Visa">
-            <img class="card-logo" src="{{ url('images/checkout-new/mastercard.svg') }}" alt="Mastercard">
-            <img class="card-logo" src="{{ url('images/checkout-new/american-express.svg') }}" alt="American Express">
-            <img class="card-logo" src="{{ url('images/checkout-new/discover.svg') }}" alt="Discover">
-            <img class="card-logo" src="{{ url('images/checkout-new/paypal.svg') }}" alt="PayPal">
+          <div class="checkout-section-body">
+            <div id="walletWidgetDiv" class="mt-3 mb-3" style="height:300px;" aria-label="Amazon Wallet"></div>
           </div>
-        </div>
-      </div>
-      {{--
-          @if($CartAttr["IsPaypalExpressCheckout"] == 'Yes')
-          <!-- PayPal Panel (hidden) -->
-          <div role="tabpanel" id="pay-panel-paypal" aria-labelledby="pay-tab-paypal" hidden="">
-            <div style="text-align:center; padding: var(--space-8) var(--space-4);">
-              <p style="color: var(--color-text-secondary); font-size: var(--font-size-sm); margin-bottom: var(--space-4);">You'll be redirected to PayPal to complete your payment securely.</p>
-              <!-- <button type="button" class="btn btn-full btnPaypal" style="background:#003087; color:white; border-color:#003087; height:52px; font-size:var(--font-size-base); font-weight:700;">Continue with PayPal</button> -->
-              <div id="paypal-button-container-checkout-pg" class="btnPaypal" style="position: relative;z-index:1;" role="region" aria-label="Paypal Button"></div>
-              <div data-pp-message data-pp-style-layout="text" data-pp-style-logo-type="inline" data-pp-style-text-color="black" data-pp-style-text-size="12" data-pp-amount="{{$NetTotal}}" data-pp-placement=product aria-hidden="true">
-    </div>
-    </div>
-    </div>
-    @endif
-    <!-- Affirm Panel (hidden) -->
-    <div role="tabpanel" id="pay-panel-affirm" aria-labelledby="pay-tab-affirm" hidden="">
-      <div style="padding: var(--space-4);">
-        <div class="savings-banner" style="margin-bottom: var(--space-4);">
-          <svg class="savings-banner-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <path d="M10 2L12.5 7H18L13.5 10.5L15.5 16L10 12.5L4.5 16L6.5 10.5L2 7H7.5L10 2Z" fill="currentColor"></path>
-          </svg>
-          <span>Pay as low as <strong>$28/month</strong> with Affirm. No hidden fees.</span>
-        </div>
-        <button type="button" class="btn btn-full" style="background:#000; color:white; height:52px;">Continue with Affirm</button>
-      </div>
-    </div>
-    --}}
-    <!-- Security bar -->
-    <div class="security-bar" style="margin-top: var(--space-5);">
-      <div class="security-bar-item">
-        <svg class="security-bar-icon" viewBox="0 0 14 16" fill="none" aria-hidden="true">
-          <path d="M7 1L1 3.5V7.5C1 11.1 3.6 14.4 7 15.5C10.4 14.4 13 11.1 13 7.5V3.5L7 1Z" stroke="currentColor" stroke-width="1.2"></path>
-          <path d="M4.5 8L6 10L9.5 6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"></path>
-        </svg>
-        SSL Encrypted
-      </div>
-      <div class="security-bar-item">
-        <svg class="security-bar-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-          <rect x="1" y="5" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"></rect>
-          <path d="M4 5V4C4 2.3 5.3 1 7 1C8.7 1 10 2.3 10 4V5" stroke="currentColor" stroke-width="1.2"></path>
-        </svg>
-        256-bit Encryption
-      </div>
-      <div class="security-bar-item">
-        <svg class="security-bar-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-          <path d="M7 1L13 4V8C13 11 10.5 13.5 7 14C3.5 13.5 1 11 1 8V4L7 1Z" stroke="currentColor" stroke-width="1.2"></path>
-        </svg>
-        PCI Compliant
-      </div>
-    </div>
-    </div>
-  </section>
-  @endif
+        </section>
+        @endif
 
   @if($method == 'afterpay')
-  <div id="afterpay-widget-container"></div>
-  <input type="hidden" name="pschecksum" id="pschecksum" value="" aria-hidden="true">
-  <script>
-    // Ensure this function is defined before loading afterpay.js
-    function createAfterpayWidget() {
-      window.afterpayWidget = new AfterPay.Widgets.PaymentSchedule({
-        token: '{{Session::get("ShoppingCart.AfterPay.Checkout_Token")}}',
-        target: '#afterpay-widget-container',
-        locale: 'en-US',
-        onReady: function(event) {
-          var paymentScheduleChecksum;
-          paymentScheduleChecksum = event.data.paymentScheduleChecksum;
-          afterpayWidget.update({
-            amount: {
-              amount: "{{$NetTotal}}",
-              currency: "USD"
-            },
-          })
-          $("#pschecksum").val(paymentScheduleChecksum);
-          if ($("#ap_psChecksum").length > 0) {
-            $("#ap_psChecksum").val(paymentScheduleChecksum);
-          }
-        },
-        onChange: function(event) {
-          // Fires after each update and on any other state changes.
-          // See "Getting the widget's state" for more details.
-          // console.log(event);
-          var paymentScheduleChecksum;
-          if (event.data.isValid == true) {
-            $("#alert_order").html("");
-            $("#alert_ap").hide();
-            $("#checkout_widget_ap").show();
-
-            paymentScheduleChecksum = event.data.paymentScheduleChecksum;
-            $("#pschecksum").val(paymentScheduleChecksum);
-            if ($("#ap_psChecksum").length > 0) {
-              $("#ap_psChecksum").val(paymentScheduleChecksum);
-            }
-          } else {
-            //issue
-            // console.log(event);
-            $("#alert_order").html("AfterPay is disabled because of amount range limit reached.");
-            $("#alert_ap").show();
-            $("#checkout_widget_ap").hide();
-          }
-        },
-        onError: function(event) {
-          // See "Handling widget errors" for more details.
-          // console.log(event);
-          $("#alert_order").html("AfterPay is disabled because of amount range limit reached.");
-          $("#alert_ap").show();
-          $("#checkout_widget_ap").hide();
-
-          // if($("#net_total_amt").data("amt") >= $("#net_total_amt").data("minap") && $("#net_total_amt").data("amt") < $("#net_total_amt").data("maxap")){
-          //code here
-          // }
-          // $("#ap_checkoutwidget").hide();
-        },
-      })
-    }
-  </script>
-  <script src="{{$token_js_url}}" async onload="createAfterpayWidget()"> </script>
+  <div id="afterpay-widget">
+    @include('newcheckout.afterpay-widget')
+  </div>
   @endif
+
   <!-- ══ 7. ORDER REVIEW + PLACE ORDER ════════════════════ -->
   <section class="place-order-section" aria-labelledby="review-heading" id="review-block">
     <input type="hidden" name="selectedPaymentMethod" id="selectedPaymentMethod" value="{{ $selectedPaymentMethod }}" />
     <h2 class="step-title" id="review-heading" style="margin-bottom: var(--space-5);">Review your order</h2>
-
     <div class="review-table" aria-label="Order review" style="margin-bottom: var(--space-5); padding-bottom: var(--space-5); border-bottom: 1px solid var(--color-border-default);">
-      <div class="review-row">
+      <div class="review-row" @if($checkoutEmail == "") style="visibility: hidden;" @else style="visibility: visible;" @endif>
         <span class="review-row-label">Contact</span>
         <span class="review-row-value" id="review-contact-value">{{ $checkoutEmail }}</span>
         <button class="review-row-edit" onclick="editSection('contact')" aria-label="Edit contact information">Edit</button>
@@ -1582,102 +1516,95 @@ is_string($image)
       </div>
       @endif
       {{--
-          <div class="review-row">
-            <span class="review-row-label">Payment</span>
-            <span class="review-row-value">Visa ending in 4242</span>
-            <button class="review-row-edit" onclick="editSection('payment')" aria-label="Edit payment method">Edit</button>
-          </div>
-          --}}
+                <div class="review-row">
+                  <span class="review-row-label">Payment</span>
+                  <span class="review-row-value">Visa ending in 4242</span>
+                  <button class="review-row-edit" onclick="editSection('payment')" aria-label="Edit payment method">Edit</button>
+                </div>
+                --}}
+    </div>
+    {{-- Collapsible order summary (Shopify-style): the mobile sticky
+                  footer hides itself once this section is in view, so this
+                  keeps item thumbnails + the expandable breakdown reachable
+                  right where the customer actually places the order. -->
+
+          <button type="button" class="review-summary-toggle" id="review-summary-toggle" aria-expanded="false" aria-controls="review-summary-panel" onclick="toggleReviewSummary()" aria-label="Show order summary">
+
+              <div class="review-summary-thumb" aria-hidden="true">
+                <img src="{{ url('/images/noimage-lrg.jpg') }}" alt="">
+        <span class="review-summary-qty" id="review-summary-qty">{{ $cartItemCount }}</span>
     </div>
 
-    <!-- Collapsible order summary (Shopify-style): the mobile sticky
-             footer hides itself once this section is in view, so this
-             keeps item thumbnails + the expandable breakdown reachable
-             right where the customer actually places the order. -->
-    <div class="review-summary-card" id="review-summary-card">
-      <button type="button" class="review-summary-toggle" id="review-summary-toggle" aria-expanded="false" aria-controls="review-summary-panel" onclick="toggleReviewSummary()" aria-label="Show order summary">
-        {{--
-        <div class="review-summary-thumb" aria-hidden="true">
-          <img src="{{ url('/images/noimage-lrg.jpg') }}" alt="">
-          <span class="review-summary-qty" id="review-summary-qty">{{ $cartItemCount }}</span>
-        </div>
-        --}}
-        <div class="review-summary-total">
-          <span class="place-order-total-label">Total</span>
-          <div class="review-summary-tax" id="review-summary-tax-value">Includes {{ $money($checkoutTax) }} tax</div>
-        </div>
-        <div class="review-summary-amount" id="place-order-total-amount" aria-label="Order total {{ $money($checkoutNetTotal) }}">{{ $money($checkoutNetTotal) }}</div>
-        <svg class="review-summary-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-        </svg>
-      </button>
-      <div class="review-table">
-        <hr>
-        <div class="review-row">
-          <span class="review-row-label">Special Request</span>
-        </div>
-        <div>
-          <textarea class="fl-input" name="customer_comment" id="customer_comment" rows="5" style="height:auto;" placeholder="Special Request"></textarea>
-          <div class="review-summary-tax" id="review-summary-tax-value">This request and notes are optional. We'll do our best to accommodate your request, but it’s not guaranteed.</div>
-        </div>
-        <div>
-          <label class="field-check">
-            <input type="checkbox" id="chkagree" name="chkagree" checked>
-            <span style="font-size: var(--font-size-sm);">By placing and order on MaxAroma.com you agree with the terms and conditions.</span>
-          </label>
-        </div>
+    <div class="review-summary-total">
+      <span class="place-order-total-label">Total</span>
+      <div class="review-summary-tax" id="review-summary-tax-value">Includes {{ $money($checkoutTax) }} tax</div>
+    </div>
+    <div class="review-summary-amount" id="place-order-total-amount" aria-label="Order total {{ $money($checkoutNetTotal) }}">{{ $money($checkoutNetTotal) }}</div>
+    <svg class="review-summary-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+    </svg>
+    </button>  --}}
+    <div class="review-table">
+      <div class="review-row">
+        <span class="review-row-label">Special Request</span>
       </div>
-      <div class="review-summary-panel" id="review-summary-panel">
-        <div class="review-summary-clip">
-          <div class="review-summary-inner">
-            @foreach(array_slice($cart, 0, 2, true) as $item)
-            @php
-            $productName = $cartItemName($item);
-            $quantity = $cartItemQty($item);
-            $itemTotal = $cartItemTotal($item);
-            $image = $cartItemImage($item);
-            @endphp
-            <div class="msum-item">
-              <div class="msum-item-thumb">
-                <img src="{{ $image ?: url('/images/noimage-lrg.jpg') }}" alt="{{ $productName }}">
-                <span class="msum-item-qty" aria-hidden="true">{{ $quantity }}</span>
-              </div>
-              <span class="msum-item-name">{{ $productName }}</span>
-              <span class="msum-item-price">{{ $money($itemTotal) }}</span>
-            </div>
-            @endforeach
-            <div class="msum-divider"></div>
-            <div class="msum-row"><span class="msum-row-label">Discount</span><span class="msum-discount" id="msum-discount-value">−{{ $money($checkoutDiscount) }}</span></div>
-            <div class="msum-row" id="review-code-discount-row" hidden=""><span class="msum-row-label">Code <span id="review-code-name"></span></span><span class="msum-discount" id="review-code-discount-value">−$0.00</span></div>
-            <div class="msum-row" id="review-protection-row" {{ $checkoutInsurance > 0 ? '' : 'hidden' }}><span class="msum-row-label">Protect My Order</span><span>{{ $money($checkoutInsurance) }}</span></div>
-            <div class="msum-row" id="review-signature-row" {{ $checkoutSignature > 0 ? '' : 'hidden' }}><span class="msum-row-label">Request Signature</span><span>{{ $money($checkoutSignature) }}</span></div>
-            <div class="msum-row" id="review-giftwrap-row" {{ $checkoutGiftWrap > 0 ? '' : 'hidden' }}><span class="msum-row-label">Gift wrap</span><span>{{ $money($checkoutGiftWrap) }}</span></div>
-            <div class="msum-row"><span class="msum-row-label">Shipping</span><span class="msum-success" id="msum-shipping-value">{{ $checkoutShipping > 0 ? $money($checkoutShipping) : 'Free' }}</span></div>
-            <div class="msum-row"><span class="msum-row-label">Taxes</span><span id="msum-tax-value">{{ $money($checkoutTax) }}</span></div>
-            <div class="msum-row msum-total"><span>Total</span><span id="review-summary-total-value">{{ $money($checkoutNetTotal) }}</span></div>
+      <div>
+        <textarea class="fl-input" name="customer_comment" id="customer_comment" rows="5" style="height:auto;" placeholder="Special Request"></textarea>
+        <div class="review-summary-tax" id="review-summary-tax-value">This request and notes are optional. We'll do our best to accommodate your request, but it's not guaranteed.</div>
+      </div>
+      {{--
+      @if(isset($CreditLimitDetails) && $method != 'amazonpay')
+        @if($CreditLimitDetails['CreditLimitFlag'] == 2)
+          <div id="creditlimit_details">
+            <label class="field-check">
+              <input type="checkbox" checked id="chkcreditlimit" name="chkcreditlimit" value="{{ $CreditLimitDetails['RemainCreditLimit'] }}">
+              <span style="font-size: var(--font-size-sm);">
+                @if($CreditLimitDetails['RemainCreditLimit'] > 0)
+                  Use your account balance, Your account balance is : {{Price($CreditLimitDetails['RemainCreditLimit'])}}
+                @else
+                  Your account balance has been applied.
+                @endif
+              </span>
+            </label>
           </div>
-        </div>
+        @else
+          <div id="creditlimit_details">
+            <label class="field-check">
+              <input type="checkbox" id="chkcreditlimit" name="chkcreditlimit" value="{{ $CreditLimitDetails['CreditLimit'] }}">
+              <span style="font-size: var(--font-size-sm);">
+                Use your account balance, Your account balance is : ${{ number_format($CreditLimitDetails['CreditLimit'],2,'.','') }}
+              </span>
+            </label>
+          </div>
+        @endif
+      @endif
+      --}}
+      <div>
+        <label class="field-check">
+          <input type="checkbox" id="chkagree" name="chkagree" checked>
+          <span style="font-size: var(--font-size-sm);">
+            By placing your order you agree to MaxAroma's
+            <a href="/terms-and-conditions.html" target="_blank" rel="noopener">Terms of Service</a> and
+            <a href="/privacy-policy.html" target="_blank" rel="noopener">Privacy Policy</a>.
+            Your payment is processed securely. We never store your card details.
+          </span>
+        </label>
+        @if(Session::has('ShowStockLeftMessage') && Session::get('ShowStockLeftMessage') == 'Yes')
+        <div class="clsgreen pb-2 text-center">Your items are almost sold out - secure them now.</div>
+        @endif
       </div>
     </div>
-
     <!-- CTA -->
-    <button type="button" class="btn btn-cta btn-full" aria-label="Place order for {{ $money($checkoutNetTotal) }}" id="place-order-btn">
-      <span class="btn-text" id="place-order-btn-text">Place Order · {{ $money($checkoutNetTotal) }}</span>
-    </button>
-
-    <p class="terms-note">
-      By placing your order you agree to MaxAroma's
-      <a href="/terms" target="_blank" rel="noopener">Terms of Service</a> and
-      <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.
-      Your payment is processed securely. We never store your card details.
-    </p>
+    <div class="place-order-cta-wrap" id="place-order-cta-wrap">
+      <button type="button" class="btn btn-cta btn-full" aria-label="Place order for {{ $money($checkoutNetTotal) }}" id="place-order-btn">
+        <span class="btn-text" id="place-order-btn-text">Place Order · {{ $money($checkoutNetTotal) }}</span>
+      </button>
+    </div>
   </section>
-
-  </div><!-- end .checkout-form-col -->
+</div><!-- end .checkout-form-col -->
 
   <!-- ── RIGHT COLUMN — ORDER SUMMARY ───────────────────── -->
   <aside class="checkout-sidebar" aria-label="Order summary" id="order-summary-sidebar">
-
     <!-- Order Summary Card -->
     <div class="order-summary-card" id="order-summary-card">
       <button class="order-summary-toggle" aria-expanded="false" aria-controls="order-summary-body" onclick="toggleOrderSummary()" type="button">
@@ -1706,109 +1633,133 @@ is_string($image)
         </div>
       </button>
 
+      <div class="free_shipping mobile-hide">
+        <div class="free_shipping_inner" id="promo-card" role="status" aria-live="polite">
+          <!-- In-progress state -->
+          <div class="free-gift-state free-gift-progress">
+            <div class="free-gift-head">
+              <span class="promo-info-wrap">
+                <button type="button" class="promo-info-btn" id="promo-info-btn" hidden="" aria-label="Which products qualify for this offer?" aria-expanded="false" aria-controls="promo-tooltip" onclick="togglePromoTooltip(event)">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"></circle>
+                    <path d="M8 7.2V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
+                    <circle cx="8" cy="5" r="0.9" fill="currentColor"></circle>
+                  </svg>
+                </button>
+                <span class="promo-tooltip" id="promo-tooltip" role="tooltip"></span>
+              </span>
+            </div>
+            <div class="free-gift-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="98" id="promo-progressbar" aria-label="Progress toward your promotion">
+              <div class="free-gift-fill free-shipping" id="promo-fill" style="width: 98.1%;"></div>
+            </div>
+            <p class="free-gift-remaining">
+              You're <strong id="promo-amount" class="free-shipping-amount">$3.26 away</strong>
+              <span id="promo-remaining-suffix">to unlock free shipping</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div class="order-summary-body" id="order-summary-body" role="region" aria-label="Order details">
         <div class="order-summary-clip">
           <div class="order-summary-inner">
 
             <!-- ══ DEMO ONLY — promo mode preview switcher ══
-                 Lets the client preview all 3 promo states (flat threshold, GWP
-                 site-wide, GWP restricted) live, without touching code. Remove
-                 this block once PROMO_CONFIG is wired to the real backend. -->
-            <div class="promo-demo-switcher compact" style="margin-bottom: var(--space-3);" aria-label="Promo mode preview, for review only">
-              <span class="promo-demo-label">🔧 PREVIEW MODE (for review only):</span>
-              <button type="button" class="promo-demo-btn active" data-preset="free_samples" aria-pressed="true" disabled>Free Samples</button>
-              <button type="button" class="promo-demo-btn" data-preset="gwp_site_wide" aria-pressed="false" disabled>GWP · Site-wide</button>
-              <button type="button" class="promo-demo-btn" data-preset="gwp_restricted" aria-pressed="false" disabled>GWP · Restricted (Dior, Versace)</button>
-            </div>
+                    Lets the client preview all 3 promo states (flat threshold, GWP
+                    site-wide, GWP restricted) live, without touching code. Remove
+                    this block once PROMO_CONFIG is wired to the real backend. -->
+            <div id="checkout-offers" class="moblie-show">
+              <div class="promo-demo-switcher compact" style="margin-bottom: var(--space-3);" aria-label="Promo mode preview, for review only">
+                <span class="promo-demo-label"></span>
+              </div>
+              <!-- ══ Purchase-threshold promo module (Free Samples OR Gift With Purchase) ══
+                      One module, two mutually exclusive modes. The active mode, threshold,
+                      eligibility scope and messaging are all driven by PROMO_CONFIG (backend). -->
+              <div class="purchase-threshold-promo" style="margin-bottom: var(--space-4);">
+                <div class="free-gift-card compact" id="promo-card" role="status" aria-live="polite">
 
-            <!-- ══ Purchase-threshold promo module (Free Samples OR Gift With Purchase) ══
-                 One module, two mutually exclusive modes. The active mode, threshold,
-                 eligibility scope and messaging are all driven by PROMO_CONFIG (backend). -->
-            <div class="purchase-threshold-promo" style="margin-bottom: var(--space-4);">
-              <div class="free-gift-card compact" id="promo-card" role="status" aria-live="polite">
-
-                <!-- In-progress state -->
-                <div class="free-gift-state free-gift-progress">
-                  <div class="free-gift-head">
-                    <div class="free-gift-icon" aria-hidden="true">
-                      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                        <path d="M3 8H19V19H3V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                        <path d="M2 8H20V11H2V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                        <path d="M11 8V19" stroke="#16A34A" stroke-width="1.5"></path>
-                        <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                        <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                      </svg>
-                    </div>
-                    <div class="free-gift-title" id="promo-heading"><span id="promo-title-text">Unlock your free samples</span></div>
-                    <span class="promo-info-wrap">
-                      <button type="button" class="promo-info-btn" id="promo-info-btn" hidden="" aria-label="Which products qualify for this offer?" aria-expanded="false" aria-controls="promo-tooltip" onclick="togglePromoTooltip(event)">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                          <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"></circle>
-                          <path d="M8 7.2V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
-                          <circle cx="8" cy="5" r="0.9" fill="currentColor"></circle>
+                  <!-- In-progress state -->
+                  <div class="free-gift-state free-gift-progress">
+                    <div class="free-gift-head">
+                      <div class="free-gift-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                          <path d="M3 8H19V19H3V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M2 8H20V11H2V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M11 8V19" stroke="#16A34A" stroke-width="1.5"></path>
+                          <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
                         </svg>
-                      </button>
-                      <span class="promo-tooltip" id="promo-tooltip" role="tooltip"></span>
-                    </span>
-                  </div>
-                  <div class="free-gift-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="98" id="promo-progressbar" aria-label="Progress toward your promotion">
-                    <div class="free-gift-fill" id="promo-fill" style="width: 98.1%;"></div>
-                  </div>
-                  <p class="free-gift-remaining">
-                    You're <strong id="promo-amount">$3.26 away</strong> <span id="promo-remaining-suffix">from free samples!</span>
-                  </p>
-                </div>
-
-                <!-- Unlocked state -->
-                <div class="free-gift-state free-gift-unlocked">
-                  <div class="free-gift-unlocked-row">
-                    <div class="free-gift-icon" aria-hidden="true">
-                      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                        <path d="M3 8H19V19H3V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                        <path d="M2 8H20V11H2V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                        <path d="M11 8V19" stroke="#16A34A" stroke-width="1.5"></path>
-                        <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                        <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                      </svg>
+                      </div>
+                      <div class="free-gift-title" id="promo-heading"><a href="#" id="free_sample"><span id="promo-title-text">Unlock your free samples</span></a></div>
+                      <span class="promo-info-wrap">
+                        <button type="button" class="promo-info-btn" id="promo-info-btn" hidden="" aria-label="Which products qualify for this offer?" aria-expanded="false" aria-controls="promo-tooltip" onclick="togglePromoTooltip(event)">
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                            <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"></circle>
+                            <path d="M8 7.2V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
+                            <circle cx="8" cy="5" r="0.9" fill="currentColor"></circle>
+                          </svg>
+                        </button>
+                        <span class="promo-tooltip" id="promo-tooltip" role="tooltip"></span>
+                      </span>
                     </div>
-                    <div>
-                      <div class="free-gift-unlocked-title">🎉 Congratulations!</div>
-                      <div class="free-gift-unlocked-desc" id="promo-success-desc">You've unlocked your free samples!</div>
+                    <div class="free-gift-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="98" id="promo-progressbar" aria-label="Progress toward your promotion">
+                      <div class="free-gift-fill" id="promo-fill" style="width: 98.1%;"></div>
+                    </div>
+                    <p class="free-gift-remaining">
+                      You're <strong id="promo-amount">$3.26 away</strong> <span id="promo-remaining-suffix">from free samples!</span>
+                    </p>
+                  </div>
+
+                  <!-- Unlocked state -->
+                  <div class="free-gift-state free-gift-unlocked">
+                    <div class="free-gift-unlocked-row">
+                      <div class="free-gift-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                          <path d="M3 8H19V19H3V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M2 8H20V11H2V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M11 8V19" stroke="#16A34A" stroke-width="1.5"></path>
+                          <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                        </svg>
+                      </div>
+                      <div>
+                        <div class="free-gift-unlocked-title">🎉 Congratulations!</div>
+                        <div class="free-gift-unlocked-desc" id="promo-success-desc">You've unlocked your free samples!</div>
+                      </div>
                     </div>
                   </div>
-                </div>
 
+                </div>
               </div>
             </div>
-
             <!-- Savings banner — DISABLED for now, keep markup for future re-enable
-            <div class="savings-banner">
-              <svg class="savings-banner-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="M10 2C5.6 2 2 5.6 2 10S5.6 18 10 18 18 14.4 18 10 14.4 2 10 2Z" stroke="currentColor" stroke-width="1.3"/>
-                <path d="M7 10.5L9 12.5L13 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-              </svg>
-              <span>You're saving <strong>$47.03</strong> on this order!</span>
-            </div>
-            -->
+                <div class="savings-banner">
+                  <svg class="savings-banner-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="M10 2C5.6 2 2 5.6 2 10S5.6 18 10 18 18 14.4 18 10 14.4 2 10 2Z" stroke="currentColor" stroke-width="1.3"/>
+                    <path d="M7 10.5L9 12.5L13 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                  </svg>
+                  <span>You're saving <strong>$47.03</strong> on this order!</span>
+                </div>
+                -->
 
             <!-- Products: first 2 always visible, remainder in scroll area -->
-            <div class="order-items-list" id="checkout-cart-items" aria-label="Items in cart">
+            <div class="order-items-list" id="checkout-cart-items" data-total-row="{{ count($cart) }}" aria-label="Items in cart">
               @include('newcheckout.cart-loader')
               @foreach(array_slice($cart, 0, 2, true) as $index => $item)
-                @php
-                  $productName = $cartItemName($item);
-                  $quantity = $cartItemQty($item);
-                  $itemTotal = $cartItemTotal($item);
-                  $image = $cartItemImage($item);
-                  $brand = $cartItemBrand($item);
-                  $sku = $cartItemSku($item);
-                  $category = $cartItemCategory($item);
-                  $productId = $cartItemProductId($item);
-                  $isFreeGift =(!empty($item['IS_Free_Gift']) && strtolower((string) $item['IS_Free_Gift']) === 'yes') || (!empty($item['Is_Free_Gift']) && strtolower((string) $item['Is_Free_Gift']) === 'yes');
-                  $isFreeSample = !empty($item['Is_Free_Sample']) && strtolower((string) $item['Is_Free_Sample']) === 'yes';
-                @endphp
+              @php
+              $productName = $cartItemName($item);
+              $quantity = $cartItemQty($item);
+              $itemTotal = $cartItemTotal($item);
+              $image = $cartItemImage($item);
+              $brand = $cartItemBrand($item);
+              $sku = $cartItemSku($item);
+              $category = $cartItemCategory($item);
+              $productId = $cartItemProductId($item);
+              $isFreeGift =(!empty($item['IS_Free_Gift']) && strtolower((string) $item['IS_Free_Gift']) === 'yes') || (!empty($item['Is_Free_Gift']) && strtolower((string) $item['Is_Free_Gift']) === 'yes');
+              $isFreeSample = !empty($item['Is_Free_Sample']) && strtolower((string) $item['Is_Free_Sample']) === 'yes';
+              @endphp
 
-              <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-free-gift="{{ $isFreeGift ? '1' : '0' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
+              <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-free-gift="{{ $isFreeGift ? '1' : '0' }}" data-free-sample="{{ $isFreeSample ? '1' : '0' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
                 <div class="order-item-image">
                   <img class="order-item-thumb" src="{{ $image ?: url('/images/noimage-lrg.jpg') }}" alt="{{ $productName }}" loading="lazy">
                 </div>
@@ -1839,9 +1790,19 @@ is_string($image)
                   @if($isFreeGift || $isFreeSample)
 
                   <span>Qty :{{ $quantity }}</span>
-				   @if(!($isFreeGift && (($item['FreeGiftCoupon'] ?? 'No') === 'Yes')))	
+                  @if(
+                  $isFreeSample
+                  ||
+                  (
+                  $isFreeGift
+                  && (($item['FreeGiftCoupon'] ?? 'No') !== 'Yes')
+                  && (($item['FreeGiftRuleSkuCount'] ?? 1) > 1)
+                  )
+                  )
+
                   <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
-                   @endif
+                  @endif
+
                   @else
                   @if(($item['IsGiftCertificateItem'] ?? 'No') === 'No')
                   <div class="qty-stepper" role="group" aria-label="Quantity for {{ $productName }}">
@@ -1862,7 +1823,7 @@ is_string($image)
                 $item['BogoDiscountMessage'] ?? '';
                 @endphp
                 @if(!empty($bogoDiscountMessage))
-                <div class="order-item-bogo-message pt-1" id="OrderInfoDiv">
+                <div class="order-item-bogo-message pt-2" id="OrderInfoDiv">
                   {!! $bogoDiscountMessage !!}
                 </div>
                 @endif
@@ -1872,8 +1833,6 @@ is_string($image)
               </div>
             </div>
             @endforeach
-
-            @if(count($cart) > 2)
             <!-- More items trigger (no nested scroll — opens drawer) -->
             <button type="button" class="view-all-items" onclick="openCartDrawer()" aria-haspopup="dialog" aria-controls="cart-drawer">
               <span class="view-all-stack" aria-hidden="true">
@@ -1882,18 +1841,18 @@ is_string($image)
                 </span>
                 <img class="view-all-thumb" src="{{ url('/images/noimage-lrg.jpg') }}" alt="">
               </span>
-              <span class="view-all-label"><strong id="more-items-count">+ {{ (count($cart) - 2) }} More Items</strong> in your order</span>
+              <span class="view-all-label"><strong id="more-items-count"></strong> in your order</span>
               <span class="view-all-cta">View All Items <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                   <path d="M3 8H13M13 8L9 4M13 8L9 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
                 </svg></span>
             </button>
-            @endif
+
           </div>
 
           <!-- Coupon Code / E-Gift Card / Shipping Rate Calculator
-                 accordions — moved above Totals per client feedback
-                 (2026-08-05), so they sit right under the item list
-                 instead of below the Total row. -->
+                    accordions — moved above Totals per client feedback
+                    (2026-08-05), so they sit right under the item list
+                    instead of below the Total row. -->
           <div class="summary-accordion-group" style="margin-top: var(--space-1);">
             <div class="summary-accordion">
               <button class="summary-accordion-head" onclick="toggleSummaryAccordion('coupon')" aria-expanded="false" aria-controls="coupon-panel" type="button" id="coupon-toggle">
@@ -1920,15 +1879,15 @@ is_string($image)
                   data-yotpo-code="{{ $yotpoRewardCode }}">
                   @if ($promoCouponCode !== '')
                   <div
-                    class="coupon-applied animate-in"
+                    class="coupon-applied animate-in cuponcode-sec"
                     data-discount-kind="coupon"
                     data-discount-code="{{ $promoCouponCode }}"
                     role="status"
                     style="margin-top:12px;">
-                    <div>
+                    <div class="cuppon-applied-text">
                       <span class="coupon-applied-code">{{ $promoCouponCode }}</span>
-                      <span style="font-size:12px;color:var(--color-text-success);margin-left:8px;">Applied</span>
-                    </div>
+                   </div>
+                    <span class="apply-code">Applied</span>
                     <button
                       type="button"
                       id="maxaroma-remove-coupon"
@@ -1938,15 +1897,15 @@ is_string($image)
 
                   @if ($yotpoRewardCode !== '')
                   <div
-                    class="coupon-applied animate-in"
+                    class="coupon-applied animate-in cuponcode-sec"
                     data-discount-kind="reward"
                     data-discount-code="{{ $yotpoRewardCode }}"
                     role="status"
                     style="margin-top:12px;">
-                    <div>
+                    <div class="cuppon-applied-text">
                       <span class="coupon-applied-code">{{ $yotpoRewardCode }}</span>
-                      <span style="font-size:12px;color:var(--color-text-success);margin-left:8px;">Applied</span>
                     </div>
+                    <span class="apply-code">Applied</span>
                     <button
                       type="button"
                       id="maxaroma-remove-yotpo-reward"
@@ -1958,14 +1917,8 @@ is_string($image)
             </div>
 
             <!-- E-Gift Card accordion -->
-            @if (
-            strtolower(trim(Session::get('eusertype') ?? '')) != 'wholesaler'
-            &&
-            trim(Session::get('is_dropshipper') ?? '') != 'Yes'
-            &&
-            ($onlyGCPurchased ?? 0) == 0
-            )
-
+            @if (strtolower(trim(Session::get('eusertype') ?? '')) != 'wholesaler' && trim(Session::get('is_dropshipper') ?? '') != 'Yes'
+            &&($onlyGCPurchased ?? 0) == 0)
             <div class="summary-accordion">
               <button class="summary-accordion-head" onclick="toggleSummaryAccordion('giftcard')" aria-expanded="false" aria-controls="giftcard-panel" type="button" id="giftcard-toggle">
                 <span class="summary-accordion-title">
@@ -1989,122 +1942,227 @@ is_string($image)
               </div>
             </div>
             @endif
-            {{--
-                <!-- Shipping Rate Calculator accordion -->
-               @if(($onlyGCPurchased ?? 0) == 0)
-                <div class="summary-accordion">
-                  <button class="summary-accordion-head" onclick="toggleSummaryAccordion('shipcalc')" aria-expanded="false" aria-controls="shipcalc-panel" type="button" id="shipcalc-toggle">
-                    <span class="summary-accordion-title">
-                      <svg width="16" height="14" viewBox="0 0 18 14" fill="none" aria-hidden="true">
-                        <path d="M1 3H11V11H1V3Z" stroke="currentColor" stroke-width="1.2"></path>
-                        <path d="M11 6H14L17 9V11H11V6Z" stroke="currentColor" stroke-width="1.2"></path>
-                        <circle cx="4" cy="11.5" r="1.3" stroke="currentColor" stroke-width="1.2"></circle>
-                        <circle cx="13.5" cy="11.5" r="1.3" stroke="currentColor" stroke-width="1.2"></circle>
-                      </svg>
-                      Shipping Rate Calculator
-                    </span>
-                    <svg class="summary-accordion-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                      <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
+
+          </div>
+          <!-- Totals -->
+          <div class="summary-totals" style="margin-top: var(--space-4);">
+            @include('newcheckout.cart-loader')
+            <div class="summary-row">
+              <span class="summary-row-label">Subtotal ({{ $cartItemCount }} items)</span>
+              <span class="summary-row-value" id="summary-subtotal-value">{{ $money($checkoutSubTotal) }}</span>
+            </div>
+            <div class="summary-row savings" <?= ($checkoutDiscount <= 0) ? 'hidden="trur"' : '' ?> >
+              <span class="summary-row-label">Savings</span>
+              <span class="summary-row-value" id="summary-savings-value">-{{ $money($checkoutDiscount) }}</span>
+            </div>
+            @if(($onlyGCPurchased ?? 0) == 0)
+            <div class="summary-row">
+              <span class="summary-row-label">Shipping</span>
+              <span class="summary-row-value" id="summary-shipping-value">{{ $checkoutShipping > 0 ? $money($checkoutShipping) : 'Free' }}</span>
+            </div>
+            <div class="summary-row">
+              <span class="summary-row-label">Estimated tax</span>
+              <span class="summary-row-value" id="summary-tax-value">{{ $money($checkoutTax) }}</span>
+            </div>
+            <div class="summary-row" id="protection-row">
+              <span class="summary-row-label">Protect My Order</span>
+              <span class="summary-row-value">{{ $money($checkoutInsurance) }}</span>
+            </div>
+            <div class="summary-row" id="signature-row" {{ $checkoutSignature > 0 ? '' : 'hidden' }}>
+              <span class="summary-row-label">Request Signature</span>
+              <span class="summary-row-value">{{ $money($checkoutSignature) }}</span>
+            </div>
+            @endif
+            <div class="summary-row" id="gift-wrap-row" {{ $checkoutGiftWrap > 0 ? '' : 'hidden' }}>
+              <span class="summary-row-label">Gift wrap</span>
+              <span class="summary-row-value">{{ $money($checkoutGiftWrap) }}</span>
+            </div>
+            <div class="summary-row total">
+              <span class="summary-row-label">Total</span>
+              <span class="summary-row-value" id="summary-total-value">{{ $money($checkoutNetTotal) }}</span>
+            </div>
+          </div>
+
+          <!-- Policy strip -->
+          <div class="policy-strip" aria-label="Shopping policies">
+            <div class="policy-item">
+              <svg class="policy-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M7 1L13 4V8C13 11 10.5 13.5 7 14C3.5 13.5 1 11 1 8V4L7 1Z" stroke="currentColor" stroke-width="1.2"></path>
+              </svg>
+              Secure checkout
+            </div>
+            <div class="policy-item">
+              <svg class="policy-icon" viewBox="0 0 14 12" fill="none" aria-hidden="true">
+                <path d="M1 9L3.5 11.5L13 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"></path>
+              </svg>
+              100% Authentic
+            </div>
+            <div class="policy-item">
+              <svg class="policy-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M7 1C9.5 1 11.5 3 11.5 5.5C11.5 8 9.5 13 7 13C4.5 13 2.5 8 2.5 5.5C2.5 3 4.5 1 7 1Z" stroke="currentColor" stroke-width="1.2"></path>
+              </svg>
+              Free Returns
+            </div>
+          </div>
+
+        </div><!-- end .order-summary-inner -->
+      </div><!-- end .order-summary-clip -->
+    </div><!-- end .order-summary-body -->
+    </div><!-- end .order-summary-card -->
+
+      <div class="free_shipping mobile-show">
+        <div class="free_shipping_inner" id="promo-card" role="status" aria-live="polite">
+          <!-- In-progress state -->
+          <div class="free-gift-state free-gift-progress">
+            <div class="free-gift-head">
+              <span class="promo-info-wrap">
+                <button type="button" class="promo-info-btn" id="promo-info-btn" hidden="" aria-label="Which products qualify for this offer?" aria-expanded="false" aria-controls="promo-tooltip" onclick="togglePromoTooltip(event)">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"></circle>
+                    <path d="M8 7.2V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
+                    <circle cx="8" cy="5" r="0.9" fill="currentColor"></circle>
+                  </svg>
+                </button>
+                <span class="promo-tooltip" id="promo-tooltip" role="tooltip"></span>
+              </span>
+            </div>
+            <div class="free-gift-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="98" id="promo-progressbar" aria-label="Progress toward your promotion">
+              <div class="free-gift-fill free-shipping" id="promo-fill" style="width: 98.1%;"></div>
+            </div>
+            <p class="free-gift-remaining">
+              You're <strong id="promo-amount" class="free-shipping-amount">$3.26 away</strong>
+              <span id="promo-remaining-suffix">to unlock free shipping</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div id="checkout-offers" class="mobile-hide" style="margin-bottom: var(--space-4);">
+        <div class="promo-demo-switcher compact" style="margin-bottom: var(--space-3);" aria-label="Promo mode preview, for review only">
+          <span class="promo-demo-label">🔧 PREVIEW MODE (for review only):</span>
+        </div>
+        <!-- ══ Purchase-threshold promo module (Free Samples OR Gift With Purchase) ══
+                One module, two mutually exclusive modes. The active mode, threshold,
+                eligibility scope and messaging are all driven by PROMO_CONFIG (backend). -->
+        <div class="purchase-threshold-promo" style="margin-bottom: var(--space-4);">
+          <div class="free-gift-card compact" id="promo-card" role="status" aria-live="polite">
+
+            <!-- In-progress state -->
+            <div class="free-gift-state free-gift-progress">
+              <div class="free-gift-head">
+                <div class="free-gift-icon" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                    <path d="M3 8H19V19H3V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                    <path d="M2 8H20V11H2V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                    <path d="M11 8V19" stroke="#16A34A" stroke-width="1.5"></path>
+                    <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                    <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                  </svg>
+                </div>
+                <div class="free-gift-title" id="promo-heading"><a href="#" id="free_sample"><span id="promo-title-text">Unlock your free samples</span></a></div>
+                <span class="promo-info-wrap">
+                  <button type="button" class="promo-info-btn" id="promo-info-btn" hidden="" aria-label="Which products qualify for this offer?" aria-expanded="false" aria-controls="promo-tooltip" onclick="togglePromoTooltip(event)">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"></circle>
+                      <path d="M8 7.2V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
+                      <circle cx="8" cy="5" r="0.9" fill="currentColor"></circle>
                     </svg>
                   </button>
-                  <div class="summary-accordion-body" id="shipcalc-panel" hidden="">
-                    <p class="shipcalc-hint">Estimate shipping to your destination.</p>
-                    <div class="shipcalc-grid">
-                      <div class="fl-group">
-                        <select class="fl-input fl-input-sm" id="calc-country" aria-label="Country">
-                          <option value="US" selected="">United States</option>
-                          <option value="CA">Canada</option>
-                          <option value="GB">United Kingdom</option>
-                          <option value="AU">Australia</option>
-                        </select>
-                        <label class="fl-label" for="calc-country">Country</label>
-                      </div>
-                      <div class="fl-group">
-                        <select class="fl-input fl-input-sm" id="calc-state" aria-label="State">
-                          <option value="NY" selected="">New York</option>
-                          <option value="CA">California</option>
-                          <option value="TX">Texas</option>
-                          <option value="FL">Florida</option>
-                        </select>
-                        <label class="fl-label" for="calc-state">State / Province</label>
-                      </div>
-                    </div>
-                    <div class="fl-group" style="margin-top: var(--space-2);">
-                      <input class="fl-input fl-input-sm" type="text" id="calc-zip" placeholder="ZIP / Postal code" inputmode="numeric" aria-label="ZIP or postal code">
-                      <label class="fl-label" for="calc-zip">ZIP / Postal code</label>
-                    </div>
-                    <button type="button" class="btn btn-secondary btn-full" style="margin-top: var(--space-3);" onclick="recalcShipping()">Calculate Shipping</button>
-                    <div id="shipcalc-result" class="shipcalc-result" aria-live="polite"></div>
-                  </div>
+                  <span class="promo-tooltip" id="promo-tooltip" role="tooltip"></span>
+                </span>
+              </div>
+              <div class="free-gift-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="98" id="promo-progressbar" aria-label="Progress toward your promotion">
+                <div class="free-gift-fill" id="promo-fill" style="width: 98.1%;"></div>
+              </div>
+              <p class="free-gift-remaining">
+                You're <strong id="promo-amount">$3.26 away</strong> <span id="promo-remaining-suffix">from free samples!</span>
+              </p>
+            </div>
+
+            <!-- Unlocked state -->
+            <div class="free-gift-state free-gift-unlocked">
+              <div class="free-gift-unlocked-row">
+                <div class="free-gift-icon" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                    <path d="M3 8H19V19H3V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                    <path d="M2 8H20V11H2V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                    <path d="M11 8V19" stroke="#16A34A" stroke-width="1.5"></path>
+                    <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                    <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                  </svg>
+                </div>
+                <div>
+                  <div class="free-gift-unlocked-title">🎉 Congratulations!</div>
+                  <div class="free-gift-unlocked-desc" id="promo-success-desc">You've unlocked your free samples!</div>
                 </div>
               </div>
-				      @endif
-              --}}
-            <!-- Totals -->
-            <div class="summary-totals" style="margin-top: var(--space-4);">
-              @include('newcheckout.cart-loader')
-              <div class="summary-row">
-                <span class="summary-row-label">Subtotal ({{ $cartItemCount }} items)</span>
-                <span class="summary-row-value" id="summary-subtotal-value">{{ $money($checkoutSubTotal) }}</span>
-              </div>
-              <div class="summary-row savings">
-                <span class="summary-row-label">Savings</span>
-                <span class="summary-row-value" id="summary-savings-value">−{{ $money($checkoutDiscount) }}</span>
-              </div>
-              @if(($onlyGCPurchased ?? 0) == 0)
-              <div class="summary-row">
-                <span class="summary-row-label">Shipping</span>
-                <span class="summary-row-value" id="summary-shipping-value">{{ $checkoutShipping > 0 ? $money($checkoutShipping) : 'Free' }}</span>
-              </div>
-              <div class="summary-row">
-                <span class="summary-row-label">Estimated tax</span>
-                <span class="summary-row-value" id="summary-tax-value">{{ $money($checkoutTax) }}</span>
-              </div>
-              <div class="summary-row" id="protection-row">
-                <span class="summary-row-label">Protect My Order</span>
-                <span class="summary-row-value">{{ $money($checkoutInsurance) }}</span>
-              </div>
-              <div class="summary-row" id="signature-row" {{ $checkoutSignature > 0 ? '' : 'hidden' }}>
-                <span class="summary-row-label">Request Signature</span>
-                <span class="summary-row-value">{{ $money($checkoutSignature) }}</span>
-              </div>
-              @endif
-              <div class="summary-row" id="gift-wrap-row" {{ $checkoutGiftWrap > 0 ? '' : 'hidden' }}>
-                <span class="summary-row-label">Gift wrap</span>
-                <span class="summary-row-value">{{ $money($checkoutGiftWrap) }}</span>
-              </div>
-              <div class="summary-row total">
-                <span class="summary-row-label">Total</span>
-                <span class="summary-row-value" id="summary-total-value">{{ $money($checkoutNetTotal) }}</span>
-              </div>
             </div>
 
-            <!-- Policy strip -->
-            <div class="policy-strip" aria-label="Shopping policies">
-              <div class="policy-item">
-                <svg class="policy-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                  <path d="M7 1L13 4V8C13 11 10.5 13.5 7 14C3.5 13.5 1 11 1 8V4L7 1Z" stroke="currentColor" stroke-width="1.2"></path>
-                </svg>
-                Secure checkout
-              </div>
-              <div class="policy-item">
-                <svg class="policy-icon" viewBox="0 0 14 12" fill="none" aria-hidden="true">
-                  <path d="M1 9L3.5 11.5L13 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"></path>
-                </svg>
-                100% Authentic
-              </div>
-              <div class="policy-item">
-                <svg class="policy-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                  <path d="M7 1C9.5 1 11.5 3 11.5 5.5C11.5 8 9.5 13 7 13C4.5 13 2.5 8 2.5 5.5C2.5 3 4.5 1 7 1Z" stroke="currentColor" stroke-width="1.2"></path>
-                </svg>
-                Free Returns
-              </div>
-            </div>
+          </div>
+        </div>
+      </div>
+    {{--
+    <div class="purchase-threshold-promo mobile-show" style="margin-bottom: var(--space-4);">
+                <div class="free-gift-card compact" id="promo-card" role="status" aria-live="polite">
 
-          </div><!-- end .order-summary-inner -->
-        </div><!-- end .order-summary-clip -->
-      </div><!-- end .order-summary-body -->
-    </div><!-- end .order-summary-card -->
+                  <!-- In-progress state -->
+                  <div class="free-gift-state free-gift-progress">
+                    <div class="free-gift-head">
+                      <div class="free-gift-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                          <path d="M3 8H19V19H3V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M2 8H20V11H2V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M11 8V19" stroke="#16A34A" stroke-width="1.5"></path>
+                          <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                        </svg>
+                      </div>
+                      <div class="free-gift-title" id="promo-heading"><a href="#" id="free_sample"><span id="promo-title-text">Unlock your free samples</span></a></div>
+                      <span class="promo-info-wrap">
+                        <button type="button" class="promo-info-btn" id="promo-info-btn" hidden="" aria-label="Which products qualify for this offer?" aria-expanded="false" aria-controls="promo-tooltip" onclick="togglePromoTooltip(event)">
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                            <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"></circle>
+                            <path d="M8 7.2V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
+                            <circle cx="8" cy="5" r="0.9" fill="currentColor"></circle>
+                          </svg>
+                        </button>
+                        <span class="promo-tooltip" id="promo-tooltip" role="tooltip"></span>
+                      </span>
+                    </div>
+                    <div class="free-gift-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="98" id="promo-progressbar" aria-label="Progress toward your promotion">
+                      <div class="free-gift-fill" id="promo-fill" style="width: 98.1%;"></div>
+                    </div>
+                    <p class="free-gift-remaining">
+                      You're <strong id="promo-amount">$3.26 away</strong> <span id="promo-remaining-suffix">from free samples!</span>
+                    </p>
+                  </div>
+
+                  <!-- Unlocked state -->
+                  <div class="free-gift-state free-gift-unlocked">
+                    <div class="free-gift-unlocked-row">
+                      <div class="free-gift-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                          <path d="M3 8H19V19H3V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M2 8H20V11H2V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M11 8V19" stroke="#16A34A" stroke-width="1.5"></path>
+                          <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                        </svg>
+                      </div>
+                      <div>
+                        <div class="free-gift-unlocked-title">🎉 Congratulations!</div>
+                        <div class="free-gift-unlocked-desc" id="promo-success-desc">You've unlocked your free samples!</div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+    </div>
+    --}}
+    <!-- Desktop Sticky Place Order Dock (Aligned with right-side Order Summary panel) -->
+    <div class="order-summary-sticky-dock" id="order-summary-sticky-dock" role="region" aria-label="Desktop Sticky Place Order Action">
+      <div class="order-summary-sticky-inner" id="order-summary-sticky-inner"></div>
+    </div>
 
     <!-- Aroma Club reward program -->
     <a class="aroma-club-card" href="https://www.maxaroma.com/reward-point-program.html" target="_blank" rel="noopener" aria-label="Join Aroma Club rewards program — opens in new tab">
@@ -2189,7 +2247,7 @@ is_string($image)
 
   <!-- Back to cart -->
   <div class="back-to-cart-wrap">
-    <a href="https://www.maxaroma.com/checkout/cart" class="back-to-cart">
+    <a href="{{ url("/shoppingcart") }}" class="back-to-cart">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <path d="M9.5 3.5L5 8l4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
       </svg>
@@ -2198,7 +2256,7 @@ is_string($image)
   </div>
 
   <!-- Why shop with MaxAroma — mobile only: placed near checkout completion,
-       above the footer. On desktop this block lives in the sidebar instead. -->
+        above the footer. On desktop this block lives in the sidebar instead. -->
   <div class="reassurance-bottom-section">
     <div class="sidebar-reassurance">
       <p class="sidebar-reassurance-title">Why shop with MaxAroma</p>
@@ -2267,11 +2325,10 @@ is_string($image)
   @include('layouts.popups')
 
   <!-- ═══════════════════════════════════════════════════════════
-       MOBILE STICKY FOOTER
-  ═══════════════════════════════════════════════════════════ -->
+        MOBILE STICKY FOOTER
+    ═══════════════════════════════════════════════════════════ -->
   <div class="mobile-summary-overlay" id="mobile-summary-overlay" hidden="" onclick="toggleMobileSummary()"></div>
   <div class="mobile-sticky-footer" role="complementary" aria-label="Checkout action bar" id="mobile-footer" style="opacity: 1; pointer-events: auto;">
-
     <!-- Expandable order-summary breakdown (slides up) -->
     <div class="mobile-summary-panel" id="mobile-summary-panel">
       <div class="mobile-summary-clip">
@@ -2330,15 +2387,15 @@ is_string($image)
           <path d="M5 12.5L10 7.5L15 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
         </svg>
       </button>
-      <button type="button" class="btn btn-cta mobile-footer-btn" onclick="handlePlaceOrder()" aria-label="Place order for {{ $money($checkoutNetTotal) }}">
+      <button type="button" class="btn btn-cta mobile-footer-btn" id="place-order-mobile" aria-label="Place order for {{ $money($checkoutNetTotal) }}">
         Place Order
       </button>
     </div>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════
-       "Remove Protect My Order?" confirmation (D1)
-  ═══════════════════════════════════════════════════════════ -->
+        "Remove Protect My Order?" confirmation (D1)
+    ═══════════════════════════════════════════════════════════ -->
   <div class="protect-confirm-overlay" id="protect-confirm-overlay" hidden="" onclick="keepProtection()"></div>
   <div class="protect-confirm-modal" id="protect-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="protect-confirm-title" aria-describedby="protect-confirm-body" hidden="">
     <div class="protect-confirm-icon" aria-hidden="true">
@@ -2383,9 +2440,9 @@ is_string($image)
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════
-       CART DRAWER (right-side on desktop, bottom-sheet on mobile)
-       Holds ALL items — no nested scroll in the summary itself.
-  ═══════════════════════════════════════════════════════════ -->
+        CART DRAWER (right-side on desktop, bottom-sheet on mobile)
+        Holds ALL items — no nested scroll in the summary itself.
+    ═══════════════════════════════════════════════════════════ -->
   <div class="drawer-overlay" id="cart-drawer-overlay" hidden="" onclick="closeCartDrawer()"></div>
   <aside class="cart-drawer" id="cart-drawer" role="dialog" aria-modal="true" aria-labelledby="cart-drawer-title" hidden="">
     <div class="cart-drawer-handle" aria-hidden="true"></div>
@@ -2427,7 +2484,8 @@ is_string($image)
       && strtolower((string) $item['Is_Free_Sample']) === 'yes';
       @endphp
 
-      <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-free-gift="{{ $isFreeGift ? '1' : '0' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
+      <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-free-gift="{{ $isFreeGift ? '1' : '0' }}" data-free-sample="{{ $isFreeSample ? '1' : '0' }}"
+        data-brand="{{ $brand }}" data-category="{{ $category }}">
         <div class="order-item-image">
           <img class="order-item-thumb" src="{{ $image ?: url('/images/noimage-lrg.jpg') }}" alt="{{ $productName }}" loading="lazy">
         </div>
@@ -2458,7 +2516,16 @@ is_string($image)
           @if($isFreeGift || $isFreeSample)
 
           <span>Qty : {{ $quantity }}</span>
-          @if(!($isFreeGift && (($item['FreeGiftCoupon'] ?? 'No') === 'Yes')))
+          @if(
+          $isFreeSample
+          ||
+          (
+          $isFreeGift
+          && (($item['FreeGiftCoupon'] ?? 'No') !== 'Yes')
+          && (($item['FreeGiftRuleSkuCount'] ?? 1) > 1)
+          )
+          )
+
           <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
           @endif
           @else
@@ -2503,10 +2570,9 @@ is_string($image)
   </div>
 
   <script>
-    $("#chksamebill").change(function(){
+    $("#chksamebill").change(function() {
       $("#divBillingAddr").hide();
-      if(!$(this).prop('checked'))
-      {
+      if (!$(this).prop('checked')) {
         $("#divBillingAddr").show();
       }
     })
@@ -2514,7 +2580,7 @@ is_string($image)
     window.stripePaymentUrls = {
       pay: @json(route('checkout.payment.stripe.pay')),
       verify: @json(route('checkout.payment.stripe.verify')),
-      stripePaymentIntent : @json(route('create-stripe-intent'))
+      stripePaymentIntent: @json(route('create-stripe-intent'))
     };
     window.selectedPayMethod = $(".payment-tab .active").attr('data-method');
     window.checkoutUrls = {
@@ -2525,30 +2591,31 @@ is_string($image)
     window.amazon = {
       client_id: "{{ config('CLIENT_ID') }}",
       merchant_id: "{{ config('MERCHANT_ID') }}",
-      callback_url: "{{ config('CALLBACK_CHECKOUT_URL') }}"
+      callback_url: "{{ config('CALLBACK_CHECKOUT_URL') }}",
+      address:""
     }
     window.stripeinfo = {
-      stripekey : "{{config('services.stripe.striptkey')}}",
-      stripesecret : "{{config('services.stripe.secret')}}"
+      stripekey: "{{config('services.stripe.striptkey')}}",
+      stripesecret: "{{config('services.stripe.secret')}}"
     }
   </script>
 
   @php $StripeCardVer = filemtime(config('global.SITE_JS_CORE_PATH').'stripe-card.js'); @endphp
   @php $StripeServiceVer = filemtime(config('global.SITE_JS_CORE_PATH').'stripe-service.js'); @endphp
-  <script src="https://js.stripe.com/v3/"></script>
 
+  <script src="https://js.stripe.com/v3/"></script>
   <script src="{{config('global.SITE_JS_CORE')}}stripe-card.js?ver={{$StripeCardVer}}"></script>
   <!-- <script src="{{config('global.SITE_JS_CORE')}}stripe-service.js?ver={{$StripeServiceVer}}"></script> -->
   <script>
-    StripeCard.init(
-      @json(config('services.stripe.striptkey'))
-    );
+      StripeCard.init(
+        @json(config('services.stripe.striptkey'))
+      );
   </script>
-  @include("newcheckout.stripe-buttons")
-  @include("newcheckout.paypal")
-  @include("newcheckout.amazon")
   @if($method != 'afterpay')
-  @include("newcheckout.afterpay")
+    @include("newcheckout.stripe-buttons")
+    @include("newcheckout.paypal")
+    @include("newcheckout.amazon")
+    @include("newcheckout.afterpay")
   @endif
   <script>
     /* ============================================================
@@ -2827,6 +2894,119 @@ is_string($image)
       toggle.setAttribute('aria-label', open ? 'Hide order summary' : 'Show order summary');
     }
 
+    // ── Desktop Sticky Place Order Dock (>= 992px) ───────────────
+    (function initDesktopStickyPlaceOrder() {
+      function setupStickyObserver() {
+        const ctaWrap = document.getElementById('place-order-cta-wrap');
+        const placeOrderBtn = document.getElementById('place-order-btn');
+        const dock = document.getElementById('order-summary-sticky-dock');
+        const dockInner = document.getElementById('order-summary-sticky-inner');
+        const summaryCard = document.getElementById('order-summary-card') || document.getElementById('order-summary-sidebar');
+        if (!ctaWrap || !placeOrderBtn || !dock || !dockInner) return;
+
+        const DESKTOP_MIN_WIDTH = 992;
+        let isSticky = false;
+
+        function isDesktop() {
+          return window.innerWidth >= DESKTOP_MIN_WIDTH;
+        }
+
+        function syncStickyDockPosition() {
+          if (!summaryCard || !dock) return;
+          const rect = summaryCard.getBoundingClientRect();
+          dock.style.left = rect.left + 'px';
+          dock.style.width = rect.width + 'px';
+        }
+
+        function setSticky(active) {
+          if (!isDesktop()) active = false;
+          if (active === isSticky) {
+            if (active) syncStickyDockPosition();
+            return;
+          }
+          isSticky = active;
+          if (active) {
+            syncStickyDockPosition();
+            if (!dockInner.contains(placeOrderBtn)) {
+              dockInner.appendChild(placeOrderBtn);
+            }
+            document.body.classList.add('place-order-sticky');
+          } else {
+            document.body.classList.remove('place-order-sticky');
+            if (!ctaWrap.contains(placeOrderBtn)) {
+              ctaWrap.appendChild(placeOrderBtn);
+            }
+          }
+        }
+
+        // Keep dock position perfectly aligned with right Order Summary panel
+        window.addEventListener('resize', function() {
+          if (!isDesktop()) {
+            setSticky(false);
+          } else {
+            syncStickyDockPosition();
+            const rect = ctaWrap.getBoundingClientRect();
+            const inViewport = (rect.top < window.innerHeight && rect.bottom > 0);
+            setSticky(!inViewport);
+          }
+        }, { passive: true });
+
+        window.addEventListener('scroll', function() {
+          if (isSticky) {
+            syncStickyDockPosition();
+          }
+        }, { passive: true });
+
+        if ('ResizeObserver' in window && summaryCard) {
+          const ro = new ResizeObserver(function() {
+            if (isSticky) syncStickyDockPosition();
+          });
+          ro.observe(summaryCard);
+        }
+
+        if ('IntersectionObserver' in window) {
+          const observer = new IntersectionObserver(
+            function(entries) {
+              if (!isDesktop()) {
+                setSticky(false);
+                return;
+              }
+              const entry = entries[0];
+              // Hide sticky when original button area is visible; show when outside viewport
+              if (entry.isIntersecting) {
+                setSticky(false);
+              } else {
+                setSticky(true);
+              }
+            },
+            {
+              root: null,
+              threshold: 0
+            }
+          );
+          observer.observe(ctaWrap);
+        } else {
+          function checkScroll() {
+            if (!isDesktop()) {
+              setSticky(false);
+              return;
+            }
+            const rect = ctaWrap.getBoundingClientRect();
+            const inViewport = (rect.top < window.innerHeight && rect.bottom > 0);
+            setSticky(!inViewport);
+          }
+          window.addEventListener('scroll', checkScroll, { passive: true });
+          checkScroll();
+        }
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupStickyObserver);
+      } else {
+        setupStickyObserver();
+      }
+    })();
+
     // ── Backend-driven checkout state ─────────────────────────────
     // Do not calculate checkout totals in the Blade. checkout.js receives the
     // backend totals response and updates the common UI. These handlers only
@@ -2915,6 +3095,7 @@ is_string($image)
        * PROTECTION ON
        * =========================================================
        */
+      /*
       if (checkbox.checked) {
 
         if (
@@ -2931,7 +3112,7 @@ is_string($image)
 
         return;
       }
-
+      */
       /*
        * =========================================================
        * PROTECTION OFF REQUEST
@@ -3157,7 +3338,7 @@ is_string($image)
         window.MaxaromaOnePageCheckout
           .setShippingInsurance('add');
       }
-
+      syncAddonCard('protection');
       /*
        * Existing modal close behavior.
        */
@@ -3177,7 +3358,7 @@ is_string($image)
 
     function _protectConfirmKeydown(e) {
       if (e.key === 'Escape') {
-        keepProtection();
+        //keepProtection();
         return;
       }
 
@@ -3661,7 +3842,7 @@ is_string($image)
         ) {
 
           savingsEl.textContent =
-            '−$' +
+            '-$' +
             discount.toFixed(2);
         }
 
@@ -3734,7 +3915,7 @@ is_string($image)
         ) {
 
           mobileDiscount.textContent =
-            '−$' +
+            '-$' +
             discount.toFixed(2);
         }
       }
@@ -3788,6 +3969,7 @@ is_string($image)
           });
 
           container.innerHTML =
+            '<div class="input-inner">' +
             '<select class="fl-input" ' +
             'id="shipping_state" ' +
             'name="shipping_state" ' +
@@ -3797,12 +3979,14 @@ is_string($image)
             options +
             '</select>' +
             '<label class="fl-label" ' +
-            'for="shipping_state">State</label>';
+            'for="shipping_state">State</label>' +
+            '</div>';
 
           return;
         }
 
         container.innerHTML =
+          '<div class="input-inner">' +
           '<input class="fl-input" ' +
           'type="text" ' +
           'id="shipping_state" ' +
@@ -3812,7 +3996,8 @@ is_string($image)
           'autocomplete="shipping address-level1" ' +
           'aria-required="true">' +
           '<label class="fl-label" ' +
-          'for="shipping_state">State / Province</label>';
+          'for="shipping_state">State / Province</label>' +
+          '</div>';
       }
 
       function renderBillingState(country, currentValue) {
@@ -3845,6 +4030,7 @@ is_string($image)
           });
 
           container.innerHTML =
+            '<div class="input-inner">' +
             '<select class="fl-input" ' +
             'id="billing_state" ' +
             'name="billing_state" ' +
@@ -3854,12 +4040,14 @@ is_string($image)
             options +
             '</select>' +
             '<label class="fl-label" ' +
-            'for="billing_state">State</label>';
+            'for="billing_state">State</label>' +
+            '</div>';
 
           return;
         }
 
         container.innerHTML =
+          '<div class="input-inner">' +
           '<input class="fl-input" ' +
           'type="text" ' +
           'id="billing_state" ' +
@@ -3869,7 +4057,8 @@ is_string($image)
           'autocomplete="shipping address-level1" ' +
           'aria-required="true">' +
           '<label class="fl-label" ' +
-          'for="billing_state">State / Province</label>';
+          'for="billing_state">State / Province</label>' +
+          '</div>';
       }
 
       document.addEventListener(
@@ -3944,7 +4133,7 @@ is_string($image)
          * Shipping
          * ---------------------------------------------------------
          */
-		
+
         shippingMethods: @json(route('checkoutnew.shipping.methods')),
         setShippingMethod: @json(route('checkoutnew.shipping.method')),
         shippingInsurance: @json(route('checkoutnew.shipping.insurance')),
@@ -4036,7 +4225,7 @@ is_string($image)
      * Checkout state
      * ---------------------------------------------------------
      */
-	
+
     window.MaxaromaCheckout.selectedShippingMethodId =
       @json($selectedShippingMethodId);
 

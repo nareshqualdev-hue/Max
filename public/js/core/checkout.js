@@ -4321,11 +4321,24 @@ sequence
        * EMPTY CART
        * =====================================================
        */
-      if (!cart.length) {
-        window.location.href = "/shoppingcart";
+			  if (
+			response.status === "redirect" ||
+			response.redirect
+		) {
+			window.location.href =
+				response.redirect || "/shoppingcart";
 
-        return;
-      }
+			return;
+		}
+
+/*
+ * EMPTY CART
+ */
+if (!cart.length) {
+    window.location.href = "/shoppingcart";
+
+    return;
+}
 
       /*
        * =====================================================
@@ -6338,237 +6351,393 @@ sequence
 
     return deferred.promise();
   }
-  function appendNewFreeGiftCartItem(cartItem) {
-    if (!cartItem) {
-      return;
-    }
+function appendNewFreeGiftCartItem(cartItem) {
+  if (!cartItem) {
+    return;
+  }
 
-    const productId = parseInt(
-      cartItem.ProductID || cartItem.product_id || cartItem.id || 0,
+  const productId = parseInt(
+    cartItem.ProductID ||
+      cartItem.product_id ||
+      cartItem.id ||
+      0,
+    10,
+  );
+
+  const cartId = parseInt(
+    cartItem.CartID ||
+      cartItem.cart_id ||
+      0,
+    10,
+  );
+
+  if (!productId) {
+    return;
+  }
+
+  /*
+   * ---------------------------------------------------------
+   * FREE GIFT RULE SKU COUNT
+   *
+   * 1 SKU
+   *      => Remove hidden
+   *
+   * Multiple SKUs
+   *      => Remove visible
+   *
+   * Coupon Free Gift
+   *      => Remove hidden
+   * ---------------------------------------------------------
+   */
+  const freeGiftRuleSkuCount =
+    parseInt(
+      cartItem.FreeGiftRuleSkuCount ||
+        cartItem.free_gift_rule_sku_count ||
+        1,
       10,
+    ) || 1;
+
+  /*
+   * ---------------------------------------------------------
+   * Prevent duplicate Free Gift
+   * ---------------------------------------------------------
+   */
+  const existingGift = document.querySelector(
+    '.order-item-row[data-product-id="' +
+      productId +
+      '"][data-free-gift="1"]',
+  );
+
+  if (existingGift) {
+    return;
+  }
+
+  /*
+   * ---------------------------------------------------------
+   * Use existing checkout item row as template.
+   * ---------------------------------------------------------
+   */
+  const template = document.querySelector(
+    '.order-item-row:not([data-free-gift="1"])',
+  );
+
+  if (!template) {
+    console.error(
+      "Free Gift: existing cart row template not found.",
     );
 
-    const cartId = parseInt(cartItem.CartID || cartItem.cart_id || 0, 10);
+    return;
+  }
 
-    if (!productId) {
-      return;
-    }
+  const row = template.cloneNode(true);
 
-    /*
-     * Do not append the same Free Gift twice.
-     */
-    const existingGift = document.querySelector(
-      '.order-item-row[data-product-id="' +
-        productId +
-        '"][data-free-gift="1"]',
-    );
+  row.dataset.productId = String(productId);
+  row.dataset.freeGift = "1";
 
-    if (existingGift) {
-      return;
-    }
+  if (cartId) {
+    row.dataset.cartId = String(cartId);
+  }
 
-    /*
-     * Find an existing cart row and clone it.
-     *
-     * This preserves the designer's existing HTML/design.
-     * We are NOT creating a new cart design here.
-     */
-    const template = document.querySelector(
-      '.order-item-row:not([data-free-gift="1"])',
-    );
+  /*
+   * ---------------------------------------------------------
+   * Product data
+   * ---------------------------------------------------------
+   */
+  const productName =
+    cartItem.ProductName ||
+    cartItem.products_name ||
+    cartItem.product_name ||
+    cartItem.name ||
+    "Free Gift";
 
-    if (!template) {
-      console.error("Free Gift: existing cart row template not found.");
+  const quantity =
+    parseInt(
+      cartItem.Qty ||
+        cartItem.qty ||
+        cartItem.quantity ||
+        1,
+      10,
+    ) || 1;
 
-      return;
-    }
+  const sku =
+    cartItem.ORGSKU ||
+    cartItem.SKU ||
+    cartItem.sku ||
+    "";
 
-    const row = template.cloneNode(true);
+  let giftSku = String(sku);
 
-    row.dataset.productId = String(productId);
+  if (
+    giftSku &&
+    giftSku.toUpperCase().indexOf("GIFT-") !== 0
+  ) {
+    giftSku = "GIFT-" + giftSku;
+  }
 
-    if (cartId) {
-      row.dataset.cartId = String(cartId);
-    }
+  /*
+   * ---------------------------------------------------------
+   * Product name
+   * ---------------------------------------------------------
+   */
+  const nameElement = row.querySelector(
+    ".order-item-name",
+  );
 
-    row.dataset.freeGift = "1";
+  if (nameElement) {
+    nameElement.textContent = productName;
+  }
 
-    /*
-     * Free Gift quantity.
-     */
-    const quantity =
-      parseInt(cartItem.Qty || cartItem.qty || cartItem.quantity || 1, 10) || 1;
+  /*
+   * ---------------------------------------------------------
+   * Brand
+   * ---------------------------------------------------------
+   */
+  const brandElement = row.querySelector(
+    ".order-item-brand",
+  );
 
-    const controls = row.querySelector(".order-item-controls");
+  if (brandElement) {
+    brandElement.textContent =
+      cartItem.manufactureName ||
+      cartItem.ManufactureName ||
+      cartItem.brand ||
+      cartItem.Brand ||
+      "";
+  }
 
-    if (controls) {
-      const stepper = controls.querySelector(".qty-stepper");
+  /*
+   * ---------------------------------------------------------
+   * SKU
+   * ---------------------------------------------------------
+   */
+  const skuElement = row.querySelector(
+    ".order-item-sku",
+  );
 
-      if (stepper) {
-        const qtyValue = stepper.querySelector(".qty-value");
+  if (skuElement) {
+    skuElement.textContent =
+      giftSku;
+  }
 
-        if (qtyValue) {
-          qtyValue.textContent = quantity;
-        }
+  /*
+   * ---------------------------------------------------------
+   * FINAL SALE
+   *
+   * IMPORTANT:
+   * The Free Gift row is cloned from a normal product row.
+   *
+   * Therefore remove ALL cloned .order-item-variant
+   * elements first.
+   *
+   * Then add Final Sale ONLY when the Free Gift backend
+   * cart item actually contains a non-empty FinalSale value.
+   * ---------------------------------------------------------
+   */
+  const finalSale =
+    cartItem.FinalSale ||
+    cartItem.final_sale ||
+    "";
 
-        /*
-         * Free Gift:
-         * Keep the existing quantity box design,
-         * but remove only +/- buttons.
-         */
-        stepper.querySelectorAll(".qty-btn").forEach(function (button) {
-          button.remove();
-        });
-      }
+  /*
+   * Remove any variant elements inherited from
+   * the normal product template.
+   */
+  row
+    .querySelectorAll(".order-item-variant")
+    .forEach(function (element) {
+      element.remove();
+    });
 
-      /*
-       * Free Gift label stays beside quantity.
-       */
-      const existingLabel = controls.querySelector(".free-gift-label");
+  /*
+   * Add Final Sale only if backend sends it.
+   */
+  if (String(finalSale).trim() !== "") {
+    const finalSaleElement =
+      document.createElement("div");
 
-      if (!existingLabel) {
-        const label = document.createElement("span");
+    finalSaleElement.className =
+      "order-item-variant";
 
-        label.className = "free-gift-label";
-
-        label.textContent = "Free Gift";
-
-        controls.appendChild(label);
-      }
-
-      /*
-       * Free Gift must not have Remove action.
-       */
-      controls.querySelectorAll(".item-remove").forEach(function (button) {
-        button.remove();
-      });
-    }
-
-    /*
-     * Product name.
-     */
-    const productName =
-      cartItem.ProductName ||
-      cartItem.products_name ||
-      cartItem.product_name ||
-      cartItem.name ||
-      "Free Gift";
-
-    const sku = cartItem.ORGSKU || cartItem.SKU || cartItem.sku || "";
-
-    let giftSku = String(sku);
-
-    if (giftSku && giftSku.toUpperCase().indexOf("GIFT-") !== 0) {
-      giftSku = "GIFT-" + giftSku;
-    }
-
-    const skuElement = row.querySelector(".order-item-sku");
+    finalSaleElement.textContent =
+      String(finalSale).trim();
 
     if (skuElement) {
-      skuElement.textContent = "Item SKU: " + giftSku;
+      skuElement.insertAdjacentElement(
+        "afterend",
+        finalSaleElement,
+      );
     }
-
-    const nameElement = row.querySelector(".order-item-name");
-
-    if (nameElement) {
-      nameElement.textContent = productName;
-    }
-
-    /*
-     * Product image.
-     */
-    const imageUrl = getFreeGiftImageUrl(cartItem);
-
-    const imageElement = row.querySelector("img");
-
-    if (imageElement) {
-      imageElement.src = imageUrl;
-
-      imageElement.removeAttribute("srcset");
-    }
-
-    /*
-     * Free Gift should not be treated as a normal
-     * paid quantity item.
-     *
-     * Keep existing price HTML/design but show $0.00.
-     */
-    const priceElement = row.querySelector(".order-item-price-current");
-
-    if (priceElement) {
-      priceElement.textContent = "$0.00";
-    }
-
-    /*
-     * Free Gift must not have a normal quantity
-     * +/- control or remove button.
-     */
-    row
-      .querySelectorAll(".qty-stepper, .item-remove")
-      .forEach(function (element) {
-        element.remove();
-      });
-
-    /*
-     * Add Free Gift label if the existing row has
-     * a suitable product-name area.
-     */
-    const nameContainer = row.querySelector(".order-item-name");
-
-    if (nameContainer && !row.querySelector(".free-gift-label")) {
-      const label = document.createElement("span");
-
-      label.className = "free-gift-label";
-
-      label.textContent = "FREE GIFT";
-
-      nameContainer.appendChild(label);
-    }
-
-    /*
-     * ---------------------------------------------------------
-     * MAIN CHECKOUT LIST
-     * ---------------------------------------------------------
-     *
-     * Append ONLY the new Free Gift.
-     */
-    const mainList = document.getElementById("checkout-cart-items");
-
-    if (mainList) {
-      const moreButton = mainList.querySelector(".view-all-items");
-
-      if (moreButton) {
-        mainList.insertBefore(row, moreButton);
-      } else {
-        mainList.appendChild(row);
-      }
-    }
-
-    /*
-     * ---------------------------------------------------------
-     * CART DRAWER
-     * ---------------------------------------------------------
-     *
-     * Use another clone so both locations have
-     * independent DOM nodes.
-     */
-    const drawerBody = document.querySelector(".cart-drawer-body");
-
-    if (drawerBody) {
-      const drawerRow = row.cloneNode(true);
-
-      drawerBody.appendChild(drawerRow);
-    }
-
-    /*
-     * Update count using the actual current cart.
-     *
-     * Free Gift is intentionally excluded from the
-     * normal "+ X More Items" count by the existing
-     * updateCartItemCountAfterChange() logic.
-     */
   }
- function loadDropshipperDetails()
+
+  /*
+   * ---------------------------------------------------------
+   * Product image
+   * ---------------------------------------------------------
+   */
+  const imageElement = row.querySelector("img");
+
+  if (imageElement) {
+    imageElement.src =
+      getFreeGiftImageUrl(cartItem);
+
+    imageElement.removeAttribute("srcset");
+  }
+
+  /*
+   * ---------------------------------------------------------
+   * Free Gift price
+   * ---------------------------------------------------------
+   */
+  const priceElement = row.querySelector(
+    ".order-item-price-current",
+  );
+
+  if (priceElement) {
+    priceElement.textContent = "$0.00";
+  }
+
+  /*
+   * ---------------------------------------------------------
+   * FREE GIFT CONTROLS
+   *
+   * Match Refresh layout exactly:
+   *
+   * Qty : 1
+   *
+   * Do NOT show:
+   * - + button
+   * - - button
+   * - qty-stepper
+   * - Free Gift label
+   * ---------------------------------------------------------
+   */
+  const controls = row.querySelector(
+    ".order-item-controls",
+  );
+
+  if (controls) {
+    controls.innerHTML = "";
+
+    const qtyText =
+      document.createElement("span");
+
+    qtyText.textContent =
+      "Qty :" + quantity;
+
+    controls.appendChild(
+      qtyText,
+    );
+
+    /*
+     * -------------------------------------------------------
+     * Coupon Free Gift
+     *
+     * Coupon generated Free Gift cannot be removed.
+     * -------------------------------------------------------
+     */
+    const freeGiftCoupon =
+      String(
+        cartItem.FreeGiftCoupon ||
+          cartItem.free_gift_coupon ||
+          "No",
+      ).toLowerCase();
+
+    /*
+     * -------------------------------------------------------
+     * REMOVE BUTTON RULE
+     *
+     * 1 configured SKU:
+     *     => No Remove
+     *
+     * Multiple configured SKUs:
+     *     => Remove allowed
+     *
+     * FreeGiftCoupon = Yes:
+     *     => No Remove
+     * -------------------------------------------------------
+     */
+    if (
+      freeGiftRuleSkuCount > 1 &&
+      freeGiftCoupon !== "yes"
+    ) {
+      const removeButton =
+        document.createElement("button");
+
+      removeButton.className =
+        "item-remove";
+
+      removeButton.type = "button";
+
+      removeButton.setAttribute(
+        "aria-label",
+        "Remove " +
+          productName +
+          " from cart",
+      );
+
+      removeButton.textContent =
+        "Remove";
+
+      removeButton.setAttribute(
+        "onclick",
+        "removeItem(this)",
+      );
+
+      controls.appendChild(
+        removeButton,
+      );
+    }
+  }
+
+  /*
+   * ---------------------------------------------------------
+   * MAIN CHECKOUT LIST
+   * ---------------------------------------------------------
+   */
+  const mainList =
+    document.getElementById(
+      "checkout-cart-items",
+    );
+
+  if (mainList) {
+    const moreButton =
+      mainList.querySelector(
+        ".view-all-items",
+      );
+
+    if (moreButton) {
+      mainList.insertBefore(
+        row,
+        moreButton,
+      );
+    } else {
+      mainList.appendChild(
+        row,
+      );
+    }
+  }
+
+  /*
+   * ---------------------------------------------------------
+   * CART DRAWER
+   * ---------------------------------------------------------
+   */
+  const drawerBody =
+    document.querySelector(
+      ".cart-drawer-body",
+    );
+
+  if (drawerBody) {
+    const drawerRow =
+      row.cloneNode(true);
+
+    drawerBody.appendChild(
+      drawerRow,
+    );
+  }
+}
+
+function loadDropshipperDetails()
   {
     $.ajax({
       type: "POST",
